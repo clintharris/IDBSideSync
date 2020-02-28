@@ -6,7 +6,11 @@ let _data = {
 };
 
 function insert(table, row) {
+  // This is roughly comparable to assigning a primary key value to the row if
+  // it were in a RDBMS.
   let id = uuidv4();
+  // Because we're going to generate a "change" message for every field in the
+  // object that is being "inserted" (i.e., there)
   let fields = Object.keys(row);
 
   sendMessages(
@@ -16,6 +20,9 @@ function insert(table, row) {
         row: row.id || id,
         column: k,
         value: row[k],
+        // Note that every message we create/send gets its own, globally-unique
+        // timestamp. In effect, there is a 1-1 relationship between the time-
+        // stamp and this specific message.
         timestamp: Timestamp.send(getClock()).toString()
       };
     })
@@ -34,6 +41,9 @@ function update(table, params) {
         row: params.id,
         column: k,
         value: params[k],
+        // Note that every message we create/send gets its own, globally-unique
+        // timestamp. In effect, there is a 1-1 relationship between the time-
+        // stamp and this specific message.
         timestamp: Timestamp.send(getClock()).toString()
       };
     })
@@ -47,6 +57,9 @@ function delete_(table, id) {
       row: id,
       column: 'tombstone',
       value: 1,
+      // Note that every message we create/send gets its own, globally-unique
+      // timestamp. In effect, there is a 1-1 relationship between the time-
+      // stamp and this specific message.
       timestamp: Timestamp.send(getClock()).toString()
     }
   ]);

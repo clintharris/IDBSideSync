@@ -71,7 +71,7 @@ function addMessages(groupId, messages) {
 
       let res = queryRun(
         `INSERT OR IGNORE INTO messages (timestamp, group_id, dataset, row, column, value) VALUES
-           (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+          (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
         [timestamp, groupId, dataset, row, column, serializeValue(value)]
       );
 
@@ -101,6 +101,10 @@ app.post('/sync', (req, res) => {
 
   let newMessages = [];
   if (clientMerkle) {
+    // Get the point in time (in minutes?) at which the two collections of
+    // messages "forked." In other words, at this point in time, something
+    // changed (e.g., one collection inserted a message that the other lacks)
+    // which resulted in differing hashes.
     let diffTime = merkle.diff(trie, clientMerkle);
     if (diffTime) {
       let timestamp = new Timestamp(diffTime, 0, '0').toString();

@@ -8,7 +8,9 @@
   }
 })(this, function(murmurhash) {
   var config = {
-    // Maximum physical clock drift allowed, in ms
+    // Maximum physical clock drift allowed, in ms. In other words, if we
+    // receive a message from another node and that node's time differes from
+    // ours by more than this many milliseconds, throw an error.
     maxDrift: 60000
   };
 
@@ -108,7 +110,20 @@
     if (lNew - phys > config.maxDrift) {
       throw new Timestamp.ClockDriftError(lNew, phys, config.maxDrift);
     }
+
     if (cNew > 65535) {
+      // We don't support counters greater than 65535 because we need to ensure
+      // that, when converted to a hex string, it doesn't use more than 4 chars
+      // (see Timestamp.toString). For example:
+      //   (65533).toString(16) -> fffd
+      //   (65534).toString(16) -> fffe
+      //   (65535).toString(16) -> ffff
+      //   (65536).toString(16) -> 10000 -- oops, this is 5 chars
+      // It's not that a larger counter couldn't be used--that would just mean
+      // increasing the expected length of the counter part of the timestamp
+      // and updating the code that parses/generates that string. Some sort of
+      // length needs to be picked, and therefore there is going to be some sort
+      // of limit to how big the counter can be.
       throw new Timestamp.OverflowError();
     }
 
@@ -135,9 +150,13 @@
 
     // Assert the node id and remote clock drift
     if (msg.node() === clock.timestamp.node()) {
+      // Whoops, looks like the message came from the same node ID as ours!
       throw new Timestamp.DuplicateNodeError(clock.timestamp.node());
     }
+
     if (lMsg - phys > config.maxDrift) {
+      // Whoops, the other node's physical time differs from ours by more than
+      // the configured limit (e.g., 1 minute).
       throw new Timestamp.ClockDriftError();
     }
 
