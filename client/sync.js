@@ -8,12 +8,13 @@ function setSyncingEnabled(flag) {
 }
 
 async function post(data) {
-  let res = await fetch('https://crdt.jlongster.com/server/sync', {
+  // let res = await fetch('https://crdt.jlongster.com/server/sync', {
+  let res = await fetch('http://localhost:8006/sync', {
     method: 'POST',
     body: JSON.stringify(data),
     headers: {
-      'Content-Type': 'application/json'
-    }
+      'Content-Type': 'application/json',
+    },
   });
   res = await res.json();
 
@@ -24,8 +25,8 @@ async function post(data) {
 }
 
 /**
- * Apply the data operation contained in a message to our local data store (i.e., set a new property value for a
- * secified dataset/table/row/column).
+ * Apply the data operation contained in a message to our local data store
+ * (i.e., set a new property value for a secified dataset/table/row/column).
  */
 function apply(msg) {
   let table = _data[msg.dataset];
@@ -42,20 +43,17 @@ function apply(msg) {
 }
 
 /**
- * For an incoming array of messages, build a Map where each key is an _incoming_ message for a dataset/row/column and
- * the value is the most recent _local_ message we have for the same dataset/row/column (if we have one--it may map to
- * undefined).
- * 
- * In other words, map all the incoming messages to the most recent message we have for the same field (if we have one;
- * if we don't the value will be `undefined`).
+ * For an incoming array of messages, build a Map where each key is an
+ * _incoming_ message for a specific field (i.e., dataset + row + column) and
+ * the value is the most recent _local_ message for that same field (if one
+ * exists). If none exists, it will map to `undefined`.
  */
-function compareMessages(incomingMessages) {
-  let existingMessages = new Map();
+function mapIncomingToLocalMessagesForField(incomingMessages) {
+  let incomingFieldMsgToLocalFieldMsgMap = new Map();
 
-  // This could be optimized, but keeping it simple for now. Need to
-  // find the latest message that exists for the dataset/row/column
-  // for each incoming message, so sort it first
-
+  // We are going to be searching for the _most recent_ local message for
+  // specific fields, so we'll want to sort the local messages by timestamp
+  // first.
   let sortedLocalMessages = [..._messages].sort((m1, m2) => {
     if (m1.timestamp < m2.timestamp) {
       return 1;
@@ -65,41 +63,44 @@ function compareMessages(incomingMessages) {
     return 0;
   });
 
-  incomingMessages.forEach(msg1 => {
-    // Remember: find() can return `undefined` if no match is found...
-    let existingMsg = sortedLocalMessages.find(
-      msg2 =>
-        msg1.dataset === msg2.dataset &&
-        msg1.row === msg2.row &&
-        msg1.column === msg2.column
+  incomingMessages.forEach(incomingMsg => {
+    // Attempt to find the most recent local message for the same field as the
+    // current incoming message (note that find() can return `undefined` if no
+    // match is found).
+    let mostRecentLocalMsg = sortedLocalMessages.find(
+      localMsg =>
+        incomingMsg.dataset === localMsg.dataset &&
+        incomingMsg.row === localMsg.row &&
+        incomingMsg.column === localMsg.column
     );
 
-    // ...so we could be setting the value to `undefined` (meaning: we don't
-    // have a _local_ message for the same dataset/row/column). Note that the
-    // incoming message OBJECT is being used as a key here (something you
-    // couldn't do if an Object were used insteaad of a Map)
-    existingMessages.set(msg1, existingMsg);
+    // Note that the incoming message OBJECT is being used as a key here
+    // (something you couldn't do if an Object were used insteaad of a Map)
+    incomingFieldMsgToLocalFieldMsgMap.set(incomingMsg, mostRecentLocalMsg);
   });
 
-  return existingMessages;
+  return incomingFieldMsgToLocalFieldMsgMap;
 }
 
-/**
- * Look at each incoming message. If it is new to us (i.e., we don't have it in
- * our local store), or is newer than the message we have for the same field
- * (i.e., dataset/row/column), then we need apply it to our local data store and
- * add the message to our local collection of messages.
- */
 function applyMessages(incomingMessages) {
-  let incomingToLocalMsgForFieldMap = compareMessages(incomingMessages);
+  let incomingToLocalMsgsForField = mapIncomingToLocalMessagesForField(
+    incomingMessages
+  );
   let clock = getClock();
 
+  // Look at each incoming message. If it's new to us (i.e., we don't have it in
+  // our local store), or is newer than the message we have for the same field
+  // (i.e., dataset + row + column), then apply it to our local data store and
+  // insert it into our local collection of messages and merkle tree (which is
+  // basically a specialized index of those messages).
   incomingMessages.forEach(incomingMsgForField => {
-    // `incomingToLocalMsgForFieldMap` is a Map instance, which means objects
+    // `incomingToLocalMsgsForField` is a Map instance, which means objects
     // can be used as keys. If this is the first time we've encountered the
     // message, then we won't have a _local_ version in the Map and `.get()`
     // will return `undefined`.
-    let mostRecentLocalMsgForField = incomingToLocalMsgForFieldMap.get(incomingMsgForField);
+    let mostRecentLocalMsgForField = incomingToLocalMsgsForField.get(
+      incomingMsgForField
+    );
 
     // If there is no corresponding local message (i.e., this is a "new" /
     // unknown incoming message), OR the incoming message is "newer" than the
@@ -111,7 +112,10 @@ function applyMessages(incomingMessages) {
     // a custom implementation of valueOf() that retuns a string. So, in effect,
     // comparing timestamps below is comparing the toString() value of the
     // Timestamp objects.
-    if (!mostRecentLocalMsgForField || mostRecentLocalMsgForField.timestamp < incomingMsgForField.timestamp) {
+    if (
+      !mostRecentLocalMsgForField ||
+      mostRecentLocalMsgForField.timestamp < incomingMsgForField.timestamp
+    ) {
       // `apply()` means that we're going to actually update our local data
       // store with the operation contained in the message.
       apply(incomingMsgForField);
@@ -121,7 +125,10 @@ function applyMessages(incomingMessages) {
     // a corresponding local message for the same dataset/row/column OR we did
     // but it has a different timestamp than ours), we need to add it to our
     // array of local messages and update the merkle tree.
-    if (!mostRecentLocalMsgForField || mostRecentLocalMsgForField.timestamp !== incomingMsgForField.timestamp) {
+    if (
+      !mostRecentLocalMsgForField ||
+      mostRecentLocalMsgForField.timestamp !== incomingMsgForField.timestamp
+    ) {
       clock.merkle = merkle.insert(
         clock.merkle,
         Timestamp.parse(incomingMsgForField.timestamp)
@@ -175,7 +182,7 @@ async function sync(initialMessages = [], since = null) {
       // that makes it easy to see which messages we (the client) know about
       // for given timestamps. The other node (server) will use this to quickly
       // figure out which messages it has that we do not have.
-      merkle: getClock().merkle
+      merkle: getClock().merkle,
     });
   } catch (e) {
     throw new Error('network-failure');
