@@ -1,27 +1,89 @@
-# Architecture
+# Notes
 
-  - Distributed database
-  - Database CRUD operations only result in messages that are passed around--those messages then get applied to each client's data store.
-  - Each time a change is made to a specific cell, a message is created that logs "when" the event happened and what changed.
+The purpose of this doc is to supplement the code in the `crdt-example-app` with notes that help describe how things work. While the example app uses a todo list as a use case, the real focus is on demonstrating the underlying distributed database and CRDT concepts; that is also the focus of these notes.
+
+## How it Works: Summary
+
+In a nutshell, the UI sits on top of a distributed database that is kept in sync using CRDT techniques:
+  - CRUD operations do not modify an underlying data store _directly_ as would be the case with a typical database.
+  - Instead, when a change is made to a specific field, a message is created that logs _which_ field was changed, _what_ the new value is for that field, and _when_ the change happened,.
     - The "when" is a hybrid logical clock timestamp.
-  - These messages are shared among clients; a central server is used as a "message buffer".
-  - When a client syncs:
-    - It `POST`s its own merkle tree (JSON) to the other client/server
-    - The other client/server can compare the merkle tree to its own to quickly get a rough time at which the trees started to differ. It can then send all of its messages that have timestamps >= that time.
-    - The client receives these messages from the server and applies them to its local database (note that it's possible that it will re-apply some messages that it already has)
-    - If there are multiple messages affecting the value of a cell, the most recent one (based on HLC) wins.
-  - Relies on a hybrid logical clock so that the timestamps on all messages are always moving forward and the logical times between nodes are sort of kept in sync at the same time.
-    - Fundamentally, this is just a combination of a human-readable time and a counter that can never go backwards
-    - The main desire is to be able to determine the _order of events_ (i.e., A happened before B), NOT the actual time things happened.
-    - This makes it possible to know which message was the last to set a value for some field (i.e., what is the current value for a field).
+  - Each agent maintains its own collection of these messages; in effect, they create an "operation journal / log".
+    - An accompanying data structure, a merkle tree, is also maintained that makes it possible to _quickly_ compare different message collections and figure out (roughly) which messages need to be exchanged to sync the collections.
+    - The merkle tree only stores what it needs to answer the question "what is the last time at which the collections had the same messages?": time (as keys) and hashes (as values) made from all known messages at those times.
+  - These messages are shared among agents, including a server agent that just acts as a centralized "message buffer" for syncing agents that can't connect directly.
+  - When an agent (A₁) syncs with another agent (A₂):
+    - A₁ sends its own merkle tree (JSON) to A₂ (which could be a server).
+    - A₂ can compare the incoming merkle tree to its own tree to quickly establish a rough time at which the trees started to differ (T₁). - A₂ can then send all of its messages that have a timestamps >= T₁.
+    - A₁ receives these messages from A₂ and applies them to its local database.
+      - Note that it's possible that it will apply some messages that it already has--that's ok. The main goal of the merkle tree approach is to _quickly_ figure out which messages need to be exchanged based if they were created after some time, not the _exact_ messages that need to be exchanged (which could result in an expensive process of lookig up _a lot_ of individual messages by some identifier before exchanging them).
+    - If, in the set of incoming messages, there is more than one message targeting the same field, only the most recent one (as determined from the message's timestamp) is used to update the field value.
+      - Each message timestamp is based on a hybrid logical clock.
+        - This combines a "physical" time (i.e., a normal-looking date/time) and a counter that can never go backwards (a.k.a., a "monotonic" clock)
+        - HLC timestamps make it possible to determine the _order_ of events amongst a group of agents whose physical clocks might not be in sync (i.e., the goal is to establish causality--A happened before B--NOT the actual time things happened).
 
-## Clocks
 
-The main goal with this topic is to be able to _order_ events (aka "causality"). In other words: we don't care so much about exactly _when_ the events happened.
+### Slightly more detailed workflow
 
-We care more about being able to know which event was the _last_ to happen. Because in this context, that means: what is the most recent message that set a value for some a field in a data store object.
+1. When UI widgest are used to create/edit/delete todos, the following `db.*` functions are called with data params. Example:
 
-### Logical clocks and the Lamport timestamp/clock
+    ```javascript
+    db.insert('todos', { name, type, order: getNumTodos() });
+    db.update('todos', { id: uiState.editingTodo.id, name: value });
+    db.delete_('todos', e.target.dataset.id);
+    ```
+
+1. The `db.*` method creates one or more messages from the object that is passed in and then "sends" them:
+
+    ```javascript
+    // db.js
+    function update(table, params) {
+      let fields = Object.keys(params).filter(k => k !== 'id');
+      sync.sendMessages(
+        fields.map(k => {
+          return {
+            dataset: table,
+            row: params.id,
+            column: k,
+            value: params[k],
+            // Note that every message we create/send gets its own, globally-
+            // unique timestamp. In effect, there is a 1-1 relationship between
+            // the timestamp and this specific message.
+            timestamp: Timestamp.send(getClock()).toString()
+          };
+        })
+      );
+    }
+    ```
+
+1. `sync.sendMessages()` applies the message to the local data store first, then attempts to initiate a sync.
+
+    ```javascript
+    // sync.js
+    function sendMessages(messages) {
+      applyMessages(messages);
+      sync(messages);
+    }
+    ```
+
+1. `sync.applyMessages()` looks at each incoming message (which will be aimed at changing data for a specific dataset + row + field) and does the following:
+  - Do we have any local messages for the same field?
+    - If so, is the incoming message for that field newer than ours?
+      - If so, `apply()` the incoming message's value for the specified dataset/row/field to our own datastore.
+  - Do we already have a copy of this message in our local store of messages and merkle tree?
+    - If not, add it.
+
+
+
+
+
+## Concepts
+
+### Clocks
+
+The main goal with clocks as they pertain to distributed databases is to be able to _order_ events. In other words, knowing which event was the _last_ to happen is more of a concern than knowing exactly _when_ they happened, because in this context, the question being asked is: what is the _most recent_ message that set a value for a field?
+
+#### Logical clocks and the Lamport timestamp/clock
 
 A logical clock is a mechanism that makes it possible to determine "one-way causality": if "A happened before B". It cannot, however, determine if "B happened after A". (Note that two-way causality is supported by a logical clock variant called a "vector clock.")
 
@@ -38,7 +100,7 @@ In other words, every node/process maintains its own counter/timestamp and _alwa
 
 A _Lamport timestamp_ is just a "monotonically" increasing (i.e., never decreasing) counter.
 
-#### Sending algorithm
+##### Sending algorithm
 
 ```javascript
 // Sending is an event. Any time an event happens, ensure time moves forward (i.e., increment the timestamp/counter)
@@ -48,7 +110,7 @@ time = time + 1
 send(message, time)
 ```
 
-#### Receiving algorithm
+##### Receiving algorithm
 
 ```javascript
 // Receiving is an event. Any time an event happens, ensure time moves forward
@@ -59,9 +121,9 @@ function receive(message, time_stamp) {
 }
 ```
 
-### Hybrid Logical Clock
+#### Hybrid Logical Clock
 
-An HLC combies both a _physical_ and _logical_ clock. It was designed to provide one-way (as with LC rather than VC) causality detection while maintaining a clock value close to the physical clock, so one can use HLC timestamp as a drop-in replacement for a physical clock timestamp. Rules:
+An HLC combines both a _physical_ and _logical_ clock. It was designed to provide one-way (as with LC rather than VC) causality detection while maintaining a clock value close to the physical clock, so one can use HLC timestamp as a drop-in replacement for a physical clock timestamp. Rules:
 
   1. Each node maintain its own monotonic counter, `c` (just like with logical clocks)
   1. Each node keeps track of the largest physical time it has encountered so far
@@ -80,7 +142,11 @@ In other words, if the physical clocks on all nodes are in perfect sync, then th
   - MongoDB 3.6 (released ~2017) uses HLC's and "oplogs" (i.e., a log of operations, much like messages in this app): https://www.mongodb.com/blog/post/transactions-background-part-4-the-global-logical-clock
   - https://www.youtube.com/watch?v=CMBjvCzDVkY
 
-# Browser
+
+
+
+
+## How it Works in Detail
 
 
 ## `index.html`
@@ -96,6 +162,7 @@ In other words, if the physical clocks on all nodes are in perfect sync, then th
     - `db.js`
     - `main.js`
 
+
 ## main.js
 
   - Creates a `uiState` variable:
@@ -104,12 +171,10 @@ In other words, if the physical clocks on all nodes are in perfect sync, then th
     - isAddingType: false,
     - isDeletingType: false
 
-  - Creates a "clock" (a timestamp, really)
+  - Creates a "clock" (a timestamp, really, but we called a "clock" because it will periodically be updated when events occur)
     - This is just an object with two props: a `MutableTimestamp` and a merkle tree
     - When we talk about the clock, we're really talking about the `MutableTimestamp` in this object
-    - The timestamp is 
     - It's more like a counter... It gets "incremented" every time a message is sent or received
-      - 
 
   - `render()`
     - Uses `append()` to insert HTML into <div id="root">
@@ -145,8 +210,7 @@ The "clock" is really a private variable (an object) that has two components:
   - a mutable timestamp
   - a merkle tree
 
-This file exposes function for getting/setting the singleton app clock, as well as creating one, and serializing/deserializing clocks (i.e., to/from JSON).
-
+This file exposes functions for getting/setting the singleton app clock, as well as creating one, and serializing/deserializing clocks (i.e., to/from JSON).
 
 
 ## timestamp.js
@@ -186,14 +250,11 @@ Examples:
 Timestamp.send(clock)
   - This function is used to create a new timestamp every time a message is sent (i.e., every time a database CRUD operation causes a new message to be created/sent)
   - Creates/returns a new `Timestamp` using the `clock` arg.
-  - The 
-
-
 
 
 ## db.js
 
-This file basically simulates a database. It sets up a couple of global variables that are data stores for messages and todo objects, and creates global functions for CRUD operations on those stores. In a more realistic app, one might use something like IndexedDB object stores.
+This file exposes functions that resemble a database API. It sets up a couple of global variables that are in-memory data stores for messages and todo objects, and creates global functions for CRUD operations on those stores. In a more realistic app, one might use something like IndexedDB or SQLite as the underlying storage mechanism.
 
 Each data store is comparable to a database table:
   - `todo`: an array of `{ name: string, type: string, order: number }` objects
@@ -293,6 +354,7 @@ Every message includes a timestamp generated via `Timestamp.send(getClock()).toS
 
 ## sync.js
 
+> TODO
 
 ## merkle.js
 
@@ -448,6 +510,7 @@ Client #1 already knows about the 🍓 message, so this shows that the mechanism
 
 ### Pruning
 
+> TODO
 
 ## Reference
 
@@ -460,3 +523,4 @@ Client #1 already knows about the 🍓 message, so this shows that the mechanism
 
 ### Timestamp class
 
+> TODO
