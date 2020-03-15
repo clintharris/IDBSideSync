@@ -8,10 +8,9 @@
   }
 })(this, function(murmurhash) {
   var config = {
-    // Maximum physical clock drift allowed, in ms. In other words, if we
-    // receive a message from another node and that node's time differes from
-    // ours by more than this many milliseconds, throw an error.
-    maxDrift: 60000
+    // Maximum physical clock drift allowed, in ms. In other words, if we receive a message from another node and that
+    // node's time differs from ours by more than this many milliseconds, throw an error.
+    maxDrift: 60000,
   };
 
   class Timestamp {
@@ -19,7 +18,7 @@
       this._state = {
         millis: millis,
         counter: counter,
-        node: node
+        node: node,
       };
     }
 
@@ -36,7 +35,7 @@
             .toString(16)
             .toUpperCase()
         ).slice(-4),
-        ('0000000000000000' + this.node()).slice(-16)
+        ('0000000000000000' + this.node()).slice(-16),
       ].join('-');
     }
 
@@ -72,11 +71,7 @@
   }
 
   MutableTimestamp.from = timestamp => {
-    return new MutableTimestamp(
-      timestamp.millis(),
-      timestamp.counter(),
-      timestamp.node()
-    );
+    return new MutableTimestamp(timestamp.millis(), timestamp.counter(), timestamp.node());
   };
 
   // Timestamp generator initialization
@@ -89,8 +84,8 @@
   };
 
   /**
-   * Timestamp send. Generates a unique, monotonic timestamp suitable
-   * for transmission to another system in string format
+   * Timestamp send. Generates a unique, monotonic timestamp suitable for transmission to another system in string
+   * format
    */
   Timestamp.send = function(clock) {
     // Retrieve the local wall time
@@ -112,18 +107,15 @@
     }
 
     if (cNew > 65535) {
-      // We don't support counters greater than 65535 because we need to ensure
-      // that, when converted to a hex string, it doesn't use more than 4 chars
-      // (see Timestamp.toString). For example:
+      // We don't support counters greater than 65535 because we need to ensure that, when converted to a hex string, it
+      // doesn't use more than 4 chars (see Timestamp.toString). For example:
       //   (65533).toString(16) -> fffd
       //   (65534).toString(16) -> fffe
       //   (65535).toString(16) -> ffff
-      //   (65536).toString(16) -> 10000 -- oops, this is 5 chars
-      // It's not that a larger counter couldn't be used--that would just mean
-      // increasing the expected length of the counter part of the timestamp
-      // and updating the code that parses/generates that string. Some sort of
-      // length needs to be picked, and therefore there is going to be some sort
-      // of limit to how big the counter can be.
+      //   (65536).toString(16) -> 10000 -- oops, this is 5 chars It's not that a larger counter couldn't be
+      // used--that would just mean increasing the expected length of the counter part of the timestamp and updating the
+      // code that parses/generates that string. Some sort of length needs to be picked, and therefore there is going to
+      // be some sort of limit to how big the counter can be.
       throw new Timestamp.OverflowError();
     }
 
@@ -131,16 +123,11 @@
     clock.timestamp.setMillis(lNew);
     clock.timestamp.setCounter(cNew);
 
-    return new Timestamp(
-      clock.timestamp.millis(),
-      clock.timestamp.counter(),
-      clock.timestamp.node()
-    );
+    return new Timestamp(clock.timestamp.millis(), clock.timestamp.counter(), clock.timestamp.node());
   };
 
-  // Timestamp receive. Parses and merges a timestamp from a remote
-  // system with the local timeglobal uniqueness and monotonicity are
-  // preserved
+  // Timestamp receive. Parses and merges a timestamp from a remote system with the local timeglobal uniqueness and
+  // monotonicity are preserved
   Timestamp.recv = function(clock, msg) {
     var phys = Date.now();
 
@@ -192,11 +179,7 @@
     clock.timestamp.setMillis(lNew);
     clock.timestamp.setCounter(cNew);
 
-    return new Timestamp(
-      clock.timestamp.millis(),
-      clock.timestamp.counter(),
-      clock.timestamp.node()
-    );
+    return new Timestamp(clock.timestamp.millis(), clock.timestamp.counter(), clock.timestamp.node());
   };
 
   /**
@@ -209,8 +192,7 @@
         var millis = Date.parse(parts.slice(0, 3).join('-')).valueOf();
         var counter = parseInt(parts[3], 16);
         var node = parts[4];
-        if (!isNaN(millis) && !isNaN(counter))
-          return new Timestamp(millis, counter, node);
+        if (!isNaN(millis) && !isNaN(counter)) return new Timestamp(millis, counter, node);
       }
     }
     return null;
