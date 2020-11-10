@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "es6",
+    "module": "umd", // UMD because we want the output to run in browser and node.
+    "moduleResolution": "node", // TypeScript only resolves 'uuidv4' if moduleResolution=node
+    "esModuleInterop": true,
+    "lib": ["es2015"],
+    "strict": true,
+    "declaration": true,
+    "outDir": "dist",
+    "sourceMap": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "**/*.spec.ts"]
+}

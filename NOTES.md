@@ -14,14 +14,15 @@ In a nutshell, the UI sits on top of a distributed database that is kept in sync
   - These messages are shared among agents, including a server agent that just acts as a centralized "message buffer" for syncing agents that can't connect directly.
   - When an agent (A₁) syncs with another agent (A₂):
     - A₁ sends its own merkle tree (JSON) to A₂ (which could be a server).
-    - A₂ can compare the incoming merkle tree to its own tree to quickly establish a rough time at which the trees started to differ (T₁). - A₂ can then send all of its messages that have a timestamps >= T₁.
+    - A₂ can compare the incoming merkle tree to its own tree to quickly establish a rough time at which the trees started to differ (T₁).
+    - A₂ can then send all of its messages that have a timestamps >= T₁.
     - A₁ receives these messages from A₂ and applies them to its local database.
       - Note that it's possible that it will apply some messages that it already has--that's ok. The main goal of the merkle tree approach is to _quickly_ figure out which messages need to be exchanged based if they were created after some time, not the _exact_ messages that need to be exchanged (which could result in an expensive process of lookig up _a lot_ of individual messages by some identifier before exchanging them).
     - If, in the set of incoming messages, there is more than one message targeting the same field, only the most recent one (as determined from the message's timestamp) is used to update the field value.
       - Each message timestamp is based on a hybrid logical clock.
         - This combines a "physical" time (i.e., a normal-looking date/time) and a counter that can never go backwards (a.k.a., a "monotonic" clock)
-        - HLC timestamps make it possible to determine the _order_ of events amongst a group of agents whose physical clocks might not be in sync (i.e., the goal is to establish causality--A happened before B--NOT the actual time things happened).
 
+        - HLC timestamps make it possible to determine the _order_ of events amongst a group of agents whose physical clocks might not be in sync (i.e., the goal is to establish causality--A happened before B--NOT the actual time things happened).
 
 ### Slightly more detailed workflow
 
@@ -129,7 +130,7 @@ An HLC combines both a _physical_ and _logical_ clock. It was designed to provid
   1. Each node keeps track of the largest physical time it has encountered so far
     - this is called the "logical" time (`l`)
   1. When a message is received:
-    - The receiving node updates its own logical lock to ensure that it moves forward by picking whichever of the following is greater:
+    - The receiving node updates its own logical clock to ensure that it moves forward by picking whichever of the following is greater:
        a. the current physical time (e.g., `Date.now()`), or
        b. the logical time stored in the message
     - If the logical times are all equal, increment the counter (`c`)
@@ -163,6 +164,24 @@ In other words, if the physical clocks on all nodes are in perfect sync, then th
     - `main.js`
 
 
+## clock.js
+
+This file exposes functions for creating/getting/setting the singleton app "clock" object (a timestamp, really, but we called a "clock" because it will periodically be updated when events occur and continues to move "forward" in time). The "clock" object consists of two things:
+
+  1. a mutable timestamp
+  2. a merkle tree
+
+Note that there are also functions for serializing/deserializing clock objects (i.e., to/from JSON).
+
+
+## sync.js
+
+  - Initializes the "clock" object when loaded (by calling `clock.js:setClock()`).
+    - This is just an object with two props: a `MutableTimestamp` and a merkle tree
+    - When we talk about the clock, we're really talking about the `MutableTimestamp` in this object
+    - It's more like a counter... It gets "incremented" every time a message is sent or received
+
+
 ## main.js
 
   - Creates a `uiState` variable:
@@ -170,11 +189,6 @@ In other words, if the physical clocks on all nodes are in perfect sync, then th
     - editingTodo: null,
     - isAddingType: false,
     - isDeletingType: false
-
-  - Creates a "clock" (a timestamp, really, but we called a "clock" because it will periodically be updated when events occur)
-    - This is just an object with two props: a `MutableTimestamp` and a merkle tree
-    - When we talk about the clock, we're really talking about the `MutableTimestamp` in this object
-    - It's more like a counter... It gets "incremented" every time a message is sent or received
 
   - `render()`
     - Uses `append()` to insert HTML into <div id="root">
@@ -201,16 +215,6 @@ In other words, if the physical clocks on all nodes are in perfect sync, then th
       - `makeClientId()` is just part of a UUID (specifically, the last 16 chars).
         - UUID: `37c2877f-fbf4-40f3-bdb7-87f4536dc989` 
         - client ID: `bdb7-87f4536dc989` (without the hyphen)
-
-
-## clock.js
-
-The "clock" is really a private variable (an object) that has two components:
-
-  - a mutable timestamp
-  - a merkle tree
-
-This file exposes functions for getting/setting the singleton app clock, as well as creating one, and serializing/deserializing clocks (i.e., to/from JSON).
 
 
 ## timestamp.js
@@ -350,11 +354,6 @@ Every message includes a timestamp generated via `Timestamp.send(getClock()).toS
   - `Timestamp.send()`: generates a unique, "monotonic" timestamp as a string
     - `getClock()`
 
-
-
-## sync.js
-
-> TODO
 
 ## merkle.js
 
