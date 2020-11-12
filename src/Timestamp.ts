@@ -12,10 +12,22 @@ import { IClock } from './Clock';
 // })(this, function(murmurhash) {
 
 interface IOptions {
+  maxCounter: number;
   maxDrift: number;
 }
 
-const config: IOptions = {
+export const HLC_CONFIG: IOptions = {
+  // We don't support counters greater than 65535 because we need to ensure that, when converted to a hex string, it
+  // doesn't use more than 4 chars (see Timestamp.toString). For example:
+  //   (65533).toString(16) -> fffd
+  //   (65534).toString(16) -> fffe
+  //   (65535).toString(16) -> ffff
+  //   (65536).toString(16) -> 10000 -- oops, this is 5 chars It's not that a larger counter couldn't be
+  // used--that would just mean increasing the expected length of the counter part of the timestamp and updating the
+  // code that parses/generates that string. Some sort of length needs to be picked, and therefore there is going to
+  // be some sort of limit to how big the counter can be.
+  maxCounter: 65535,
+
   // Maximum physical clock drift allowed, in ms. In other words, if we receive a message from another node and that
   // node's time differs from ours by more than this many milliseconds, throw an error.
   maxDrift: 60000,
@@ -31,7 +43,7 @@ export class Timestamp {
   // * useful for mocking/unit testing
   public static init(options: { maxDrift?: number } = {}) {
     if (options.maxDrift) {
-      config.maxDrift = options.maxDrift;
+      HLC_CONFIG.maxDrift = options.maxDrift;
     }
   }
 
@@ -54,7 +66,7 @@ export class Timestamp {
     // local HLC singleton's physical time should either be in the past, or _maybe_ "now" if we happened to _just_
     // update it. If the HLC's time is somehow ahead of ours, something could be off (e.g., perhaps our local system
     // clock is messed up).
-    if (hlcTime - now > config.maxDrift) {
+    if (hlcTime - now > HLC_CONFIG.maxDrift) {
       throw new Timestamp.ClockDriftError(
         `Local HLC singleton's physical time is somehow in the future compared to local system time. Is the local ` +
           `system's clock set correctly?`
@@ -68,16 +80,7 @@ export class Timestamp {
     // otherwise we can reset the counter to 0.
     const nextCount = hlcTime === nextTime ? clock.timestamp.counter() + 1 : 0;
 
-    if (nextCount > 65535) {
-      // We don't support counters greater than 65535 because we need to ensure that, when converted to a hex string, it
-      // doesn't use more than 4 chars (see Timestamp.toString). For example:
-      //   (65533).toString(16) -> fffd
-      //   (65534).toString(16) -> fffe
-      //   (65535).toString(16) -> ffff
-      //   (65536).toString(16) -> 10000 -- oops, this is 5 chars It's not that a larger counter couldn't be
-      // used--that would just mean increasing the expected length of the counter part of the timestamp and updating the
-      // code that parses/generates that string. Some sort of length needs to be picked, and therefore there is going to
-      // be some sort of limit to how big the counter can be.
+    if (nextCount > HLC_CONFIG.maxCounter) {
       throw new Timestamp.OverflowError();
     }
 
@@ -103,7 +106,7 @@ export class Timestamp {
       throw new Timestamp.DuplicateNodeError(clock.timestamp.node());
     }
 
-    if (lMsg - phys > config.maxDrift) {
+    if (lMsg - phys > HLC_CONFIG.maxDrift) {
       // Whoops, the other node's physical time differs from ours by more than
       // the configured limit (e.g., 1 minute).
       throw new Timestamp.ClockDriftError();
@@ -130,10 +133,10 @@ export class Timestamp {
         : 0;
 
     // Check the result for drift and counter overflow
-    if (lNew - phys > config.maxDrift) {
+    if (lNew - phys > HLC_CONFIG.maxDrift) {
       throw new Timestamp.ClockDriftError();
     }
-    if (cNew > 65535) {
+    if (cNew > HLC_CONFIG.maxCounter) {
       throw new Timestamp.OverflowError();
     }
 

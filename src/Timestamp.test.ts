@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { Timestamp, MutableTimestamp } from './Timestamp';
+import { Timestamp, MutableTimestamp, HLC_CONFIG } from './Timestamp';
 import { makeClock } from './Clock';
 
 afterEach(() => {
@@ -78,7 +78,7 @@ describe('Timestamp', () => {
 
       // Timer doesn't support count values greater than 65535 because it needs to ensure that, when the count is
       // converted to a hex string, it doesn't use more than 4 chars (see Timestamp.toString).
-      const counterThreshold = 65535;
+      const counterThreshold = HLC_CONFIG.maxCounter;
       const initialCounterValue = counterThreshold - 10;
 
       const clock = makeClock(new Timestamp(Date.now(), initialCounterValue, 'node1'));
