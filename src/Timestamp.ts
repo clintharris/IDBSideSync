@@ -51,34 +51,37 @@ export class Timestamp {
    * Use this function to advance the time of the passed-in hybrid logical clock (i.e., our local HLC clock singleton),
    * and return that time as a new HLC timestamp.
    *
-   * This function is called whenever a record is being inserted, updated, or deleted in the data store. These are all
-   * events that need to be recorded in the operation log / journal, and need their own HLC timestamps so that they can
-   * be consistently ordered/sorted on any client.
+   * For context, this function should normally be called in cases when we are creating a new oplog entry as part of
+   * local data changes (i.e., not in response to processing oplog entries received from another node). In other words,
+   * whenever the local node initiates a CRUD operation, we need to create a new journal entry, which means we need to
+   * create a new HLC timestamp for that entry--and that implies advancing the clock.
    *
-   * Note: at some point this function might be moved to the `Clock` and renamed `next()` to more clearly indicate that
-   * it is really just advancing the local HLC and returning the resulting, next HLC time.
+   * Note: at some point this function might be moved to the `Clock` and renamed `next()` (or `tick()`) to more clearly
+   * indicate that it is really just advancing the local HLC and returning the resulting time.
    */
   public static send(clock: IClock): Timestamp {
-    const now = Date.now();
-    const hlcTime = clock.timestamp.millis();
+    const systemTime = Date.now();
+    const ourHlcTime = clock.timestamp.millis();
 
     // If our local system clock has been ticking away correctly since the last time we updated our local HLC, then the
     // local HLC singleton's physical time should either be in the past, or _maybe_ "now" if we happened to _just_
     // update it. If the HLC's time is somehow ahead of ours, something could be off (e.g., perhaps our local system
     // clock is messed up).
-    if (hlcTime - now > HLC_CONFIG.maxDrift) {
+    if (ourHlcTime - systemTime > HLC_CONFIG.maxDrift) {
+      const hlcTimeStr = new Date(ourHlcTime).toISOString();
+      const sysTimeStr = new Date(systemTime).toISOString();
       throw new Timestamp.ClockDriftError(
-        `Local HLC singleton's physical time is somehow in the future compared to local system time. Is the local ` +
-          `system's clock set correctly?`
+        `Local HLC's physical time (${hlcTimeStr}) is ahead of system time (${sysTimeStr}) by more than ` +
+          `${HLC_CONFIG.maxDrift} msec. Is system clock set correctly?`
       );
     }
 
     // Calculate the next physical time, ensuring that it only moves forward.
-    const nextTime = Math.max(hlcTime, now);
+    const nextTime = Math.max(ourHlcTime, systemTime);
 
     // Determine the next counter value. The counter only needs to increment if the physical time did NOT change;
     // otherwise we can reset the counter to 0.
-    const nextCount = hlcTime === nextTime ? clock.timestamp.counter() + 1 : 0;
+    const nextCount = ourHlcTime === nextTime ? clock.timestamp.counter() + 1 : 0;
 
     if (nextCount > HLC_CONFIG.maxCounter) {
       throw new Timestamp.OverflowError();
@@ -91,60 +94,98 @@ export class Timestamp {
     return new Timestamp(clock.timestamp.millis(), clock.timestamp.counter(), clock.timestamp.node());
   }
 
-  // Timestamp receive. Parses and merges a timestamp from a remote system with the local timeglobal uniqueness and
-  // monotonicity are preserved
-  public static recv(clock: IClock, msg: Timestamp) {
-    var phys = Date.now();
+  /**
+   * Use this function to advance the time of the passed-in hybrid logical clock (i.e., our local HLC clock singleton),
+   * such that the next time occurs _after_ that of the passed-in HLC timestamp, and return that next HLC time.
+   *
+   * This function will always update the passed-in HLC (i.e., our local node's HLC) to the most recent physical time
+   * that we know about, meaning: whichever of the local system time, local HLC, and passed-in timestamp has the most
+   * recent physical time.
+   *
+   * If, for some reason, our local HLC or the passed-in timestamp has a physical time more recent than our local system
+   * (CPU) time, one of those physical times will be used as the new "current" HLC physical time. In that case, however,
+   * the physical time hasn't actually changed (i.e., our HLC has the same physical time as an existing event) so we
+   * have to increment the HLC's counter to ensure that the logical time is moved forward.
+   *
+   * Normally, this function should only be called when we are processing oplog entries from other nodes. In that
+   * scenario, out goal is to ensure that the local node's HLC is always set to a time that occurs _after_ all HLC event
+   * times we have encountered. In other words, we are "syncing" our clock with the other nodes in the distributed
+   * system (since, conceptually, they are all trying to "share" an HLC and can advance that clock's time--for
+   * everyone--whenever a new event is recorded).
+   *
+   * So whenever we counter an event that was published from some other node, we need to update our own HLC so that it
+   * is set to a time that occurs _after_ all previous "clock ticks" made by other nodes. This way, if we create a new
+   * oplog entry recording some new data change, we can trust that the timestamp for that event occurs after all the
+   * other events we know about. In effect, this is how all the data change messages/events can be consistently ordered
+   * across the distributed system.
+   *
+   * Note: at some point this function's logic might be integrated into to the `send()` function (e.g., with the second
+   * "external timestamp" arg being optioanl).
+   */
+  public static recv(ourClock: IClock, theirTimestamp: Timestamp): Timestamp {
+    const systemTime = Date.now();
 
-    // Unpack the message wall time/counter
-    var lMsg = msg.millis();
-    var cMsg = msg.counter();
+    const ourHlcTime = ourClock.timestamp.millis();
+    const ourCounter = ourClock.timestamp.counter();
 
-    // Assert the node id and remote clock drift
-    if (msg.node() === clock.timestamp.node()) {
-      // Whoops, looks like the message came from the same node ID as ours!
-      throw new Timestamp.DuplicateNodeError(clock.timestamp.node());
+    const theirHlcTime = theirTimestamp.millis();
+    const theirCounter = theirTimestamp.counter();
+
+    // We only expect this function to be called with `theirTimestamp` values whose node ID is different from ours
+    // (i.e., as part of processing oplog entries from _other_ nodes). With that in mind, we expect all nodes to have
+    // unique IDs; encountering one that matches ours is an error.
+    if (theirTimestamp.node() === ourClock.timestamp.node()) {
+      throw new Timestamp.DuplicateNodeError(ourClock.timestamp.node());
     }
 
-    if (lMsg - phys > HLC_CONFIG.maxDrift) {
-      // Whoops, the other node's physical time differs from ours by more than
-      // the configured limit (e.g., 1 minute).
+    // TODO: consider increasing the allowed difference for clock times coming from other systems; only allowing for
+    // a 1-minute difference between any other clock in the distributed system seems like it could be error prone...
+    if (theirHlcTime - systemTime > HLC_CONFIG.maxDrift) {
       throw new Timestamp.ClockDriftError();
     }
 
-    // Unpack the clock.timestamp logical time and counter
-    var lOld = clock.timestamp.millis();
-    var cOld = clock.timestamp.counter();
-
-    // Calculate the next logical time and counter.
-    // Ensure that the logical time never goes backward;
-    // * if all logical clocks are equal, increment the max counter,
-    // * if max = old > message, increment local counter,
-    // * if max = messsage > old, increment message counter,
-    // * otherwise, clocks are monotonic, reset counter
-    var lNew = Math.max(Math.max(lOld, phys), lMsg);
-    var cNew =
-      lNew === lOld && lNew === lMsg
-        ? Math.max(cOld, cMsg) + 1
-        : lNew === lOld
-        ? cOld + 1
-        : lNew === lMsg
-        ? cMsg + 1
-        : 0;
+    // Given our HLC time, the incoming timestamp's time, and the current system time, pick whichever is most recent. If
+    // our local system (CPU) time is older than either of these, it means we'll end up _re-using_ a physical time from
+    // either our HLC or the passed-in timestamp (i.e., we didn't move time forward)--so we'll have to make sure to
+    // increment the counter.
+    const nextTime = Math.max(Math.max(ourHlcTime, systemTime), theirHlcTime);
 
     // Check the result for drift and counter overflow
-    if (lNew - phys > HLC_CONFIG.maxDrift) {
+    if (nextTime - systemTime > HLC_CONFIG.maxDrift) {
       throw new Timestamp.ClockDriftError();
     }
-    if (cNew > HLC_CONFIG.maxCounter) {
+
+    // By default, assume the physical time is changing (i.e., that the counter will "reset" to zero).
+    let nextCounter = 0;
+
+    // Now check to see if the physical time didn't actually change (in which case we need to increment thee counter).
+    if (nextTime === ourHlcTime && nextTime === theirHlcTime) {
+      // The next physical time that will be used isn't changing--it's the same as both our local HLC's phyiscal time
+      // _and_ the incoming HLC's physical time. In that scenario it's important to increment the "logical" part of the
+      // time--the counter--to ensure that time moves forward. Note that we are incrementing the greater of the existing
+      // counters to make sure the next counter differs.
+      nextCounter = Math.max(ourCounter, theirCounter) + 1;
+    } else if (nextTime === ourHlcTime) {
+      // The next physical time that will be used isn't changing--it's the same as our local HLC's physical time--so we need
+      // to increment the counter in a way that ensures it differs from the rest of our local HLC (which is why we are
+      // incrementing _that_ counter).
+      nextCounter = ourCounter + 1;
+    } else if (nextTime === theirHlcTime) {
+      // The next physical time that will be used isn't changing--it's the same as the incoming HLC's time--so we need
+      // to increment the counter in a way that ensures it differs from the rest of the incoming HLC (which is why we
+      // are incrementing _that_ counter).
+      nextCounter = theirCounter + 1;
+    }
+
+    if (nextCounter > HLC_CONFIG.maxCounter) {
       throw new Timestamp.OverflowError();
     }
 
-    // Repack the logical time/counter
-    clock.timestamp.setMillis(lNew);
-    clock.timestamp.setCounter(cNew);
+    // Update our HLC.
+    ourClock.timestamp.setMillis(nextTime);
+    ourClock.timestamp.setCounter(nextCounter);
 
-    return new Timestamp(clock.timestamp.millis(), clock.timestamp.counter(), clock.timestamp.node());
+    return new Timestamp(ourClock.timestamp.millis(), ourClock.timestamp.counter(), ourClock.timestamp.node());
   }
 
   /**

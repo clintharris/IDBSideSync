@@ -55,17 +55,36 @@ describe('Timestamp', () => {
       expect(clock.timestamp.counter()).toEqual(counter + 1);
     });
 
-    it(`throws an error if local physical time occurs _before_ HLC's physical time`, () => {
-      const clock = makeClock(new Timestamp(Date.now(), 0, 'node1'));
+    it(`advances clock time to HLC's time if it is more recent, within allowed threshold`, () => {
+      const hlcTime = Date.now();
+      const hlcCounter = 0;
 
-      // Set local system time to be in the past (i.e., a time that occurs _before_ that of the HLC clock's time).
-      overrideSystemTime('2014-01-09T00:00:00Z');
+      const hlc = makeClock(new Timestamp(hlcTime, hlcCounter, 'node1'));
+
+      // Set local system time to be in the past (relative to the HLC), but not _too far_ in the past...
+      const past = new Date(hlcTime - HLC_CONFIG.maxDrift);
+      overrideSystemTime(past.toISOString());
+
+      Timestamp.send(hlc);
+
+      expect(hlc.timestamp.millis()).toEqual(hlcTime);
+      expect(hlc.timestamp.counter()).toEqual(hlcCounter + 1);
+    });
+
+    it(`throws an error if HLC's physical time is more recent than local time by more than allowed threshold`, () => {
+      const now = Date.now();
+
+      const hlc = makeClock(new Timestamp(now, 0, 'node1'));
+
+      // Set local system time to be further in the past (relative to the HLC) than what is allowed
+      const past = new Date(now - (HLC_CONFIG.maxDrift + 1));
+      overrideSystemTime(past.toISOString());
 
       expect(() => {
         // The attempt to advance the passed-in clock's time should fail due to its time occuring _after_ the local
         // system's current time by a substantial amount (i.e., this simulates an oplog message from a system whose
         // clock is really out of whack--or possibly the local system's clock being really off).
-        Timestamp.send(clock);
+        Timestamp.send(hlc);
       }).toThrow(Timestamp.ClockDriftError);
     });
 
@@ -100,8 +119,24 @@ describe('Timestamp', () => {
     });
   });
 
-  it('recv() works', () => {
-    // TODO
+  describe('recv()', () => {
+    it('throws an error if the local clock and passed-in timestamp are associated with the same node', () => {
+      // Create a local clock associated with a node ID
+      const clock = makeClock(new Timestamp(Date.parse('2020-01-01T00:00:02Z'), 123, 'node1'));
+
+      // Create a timestamp associated with the _same_ node ID
+      const timestamp = new Timestamp(Date.now(), 1, clock.timestamp.node());
+
+      // Verify that recv() throws an error when we ask it to advance the clock time using this timestamp. This is
+      // desired behavior because if the timestamp has the same node ID, that implies we have _already_ processed
+      // that event (and already adjusted our HLC time for that event).
+      expect(() => {
+        // The attempt to advance the passed-in clock's time should fail due to its time occuring _after_ the local
+        // system's current time by a substantial amount (i.e., this simulates an oplog message from a system whose
+        // clock is really out of whack--or possibly the local system's clock being really off).
+        Timestamp.recv(clock, timestamp);
+      }).toThrow(Timestamp.DuplicateNodeError);
+    });
   });
 
   it('parse() works', () => {
