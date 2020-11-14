@@ -120,6 +120,70 @@ describe('Timestamp', () => {
   });
 
   describe('recv()', () => {
+    it('advances clock to system time if that is the most recent', () => {
+      const systemTime = overrideSystemTime('2020-01-01T00:00:01Z');
+      const ourHlc = makeClock(new Timestamp(systemTime - 1000, 0, 'ourNode'));
+      const theirTimestamp = new Timestamp(systemTime - 2000, 0, 'theirNode');
+
+      const ourNewTimestamp = Timestamp.recv(ourHlc, theirTimestamp);
+
+      expect(ourNewTimestamp.millis()).toEqual(systemTime);
+      expect(ourNewTimestamp.counter()).toEqual(0);
+    });
+
+    it(`re-uses HLC's phys time if that is the most recent, and increments counter`, () => {
+      const systemTime = overrideSystemTime('2020-01-01T00:00:01Z');
+
+      // Set the "external" timestamp to a time in the past.
+      const theirTimestamp = new Timestamp(systemTime - 2000, 0, 'theirNode');
+
+      // Set what will be our local HLC to a time slightly more recent than the system time
+      const ourHlcInitialTime = systemTime + 1000;
+      const ourHlcInitialCounter = 0;
+      const ourHlc = makeClock(new Timestamp(ourHlcInitialTime, ourHlcInitialCounter, 'ourNode'));
+
+      // Ask `recv()` to sync/update our HLC, expecting it to find `ourHlc` as having the most recent physical time, and
+      // re-using that time (which means incrementing the counter).
+      Timestamp.recv(ourHlc, theirTimestamp);
+
+      expect(ourHlc.timestamp.millis()).toEqual(ourHlcInitialTime);
+      expect(ourHlc.timestamp.counter()).toEqual(ourHlcInitialCounter + 1);
+    });
+
+    it(`re-uses passed-in timestamp's phys time if that is the most recent, and increments counter`, () => {
+      const systemTime = overrideSystemTime('2020-01-01T00:00:01Z');
+
+      // Set our HLC to to a time in the past.
+      const ourHlc = makeClock(new Timestamp(systemTime - 2000, 0, 'ourNode'));
+
+      // Set the incoming timestamp to a physical time slightly more recent than the system time
+      const theirInitialPhysTime = systemTime + 1000;
+      const theirInitialCounter = 0;
+      const theirTimestamp = new Timestamp(theirInitialPhysTime, theirInitialCounter, 'theirNode');
+
+      // Ask `recv()` to sync/update our HLC, expecting it to find `theirTimestamp` as having the most recent physical
+      // time, and re-using that time (which means incrementing the counter).
+      Timestamp.recv(ourHlc, theirTimestamp);
+
+      expect(ourHlc.timestamp.millis()).toEqual(theirInitialPhysTime);
+      expect(ourHlc.timestamp.counter()).toEqual(theirInitialCounter + 1);
+    });
+
+    it('increments the greatest counter if system, HLC, and incoming timestamp all have same phys. time', () => {
+      const systemTime = overrideSystemTime('2020-01-01T00:00:01Z');
+
+      const ourHlcCounter = 111;
+      const ourHlc = makeClock(new Timestamp(systemTime, ourHlcCounter, 'ourNode'));
+
+      const theirInitialCounter = 222;
+      const theirTimestamp = new Timestamp(systemTime, theirInitialCounter, 'theirNode');
+
+      Timestamp.recv(ourHlc, theirTimestamp);
+
+      expect(ourHlc.timestamp.millis()).toEqual(systemTime);
+      expect(ourHlc.timestamp.counter()).toEqual(theirInitialCounter + 1);
+    });
+
     it('throws an error if the local clock and passed-in timestamp are associated with the same node', () => {
       // Create a local clock associated with a node ID
       const clock = makeClock(new Timestamp(Date.parse('2020-01-01T00:00:02Z'), 123, 'node1'));
