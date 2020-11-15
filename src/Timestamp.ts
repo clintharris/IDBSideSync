@@ -96,19 +96,18 @@ export class Timestamp {
 
   /**
    * Use this function to advance the time of the passed-in hybrid logical clock (i.e., our local HLC clock singleton),
-   * such that the next time occurs _after_ that of the passed-in HLC timestamp, and return that next HLC time.
+   * such that the next time occurs _after_ both that of the local HLC _and_ the passed-in HLC timestamp.
    *
-   * This function will always update the passed-in HLC (i.e., our local node's HLC) to the most recent physical time
-   * that we know about, meaning: whichever of the local system time, local HLC, and passed-in timestamp has the most
-   * recent physical time.
+   * This function will always update the passed-in HLC to the most recent physical time that we know about (i.e., given
+   * the local system time, local HLC, and passed-in timestamp, pick the the most recent physical time.
    *
-   * If, for some reason, our local HLC or the passed-in timestamp has a physical time more recent than our local system
-   * (CPU) time, one of those physical times will be used as the new "current" HLC physical time. In that case, however,
-   * the physical time hasn't actually changed (i.e., our HLC has the same physical time as an existing event) so we
-   * have to increment the HLC's counter to ensure that the logical time is moved forward.
+   * If our local HLC or the passed-in timestamp has a physical time more recent than our local system (CPU) time, one
+   * of those physical times will be used as the new "current" HLC physical time. In that case, however, the physical
+   * time hasn't actually changed (e.g., if the passed-in timestamp has the most recent phys. time, we'll reuse it) so
+   * we would have to increment the HLC's counter to ensure that the logical time is moved forward.
    *
-   * Normally, this function should only be called when we are processing oplog entries from other nodes. In that
-   * scenario, out goal is to ensure that the local node's HLC is always set to a time that occurs _after_ all HLC event
+   * Normally, this function should only be called when we are receiving oplog entries from other nodes. In that
+   * scenario the goal is to ensure that the local node's HLC is always set to a time that occurs _after_ all HLC event
    * times we have encountered. In other words, we are "syncing" our clock with the other nodes in the distributed
    * system (since, conceptually, they are all trying to "share" an HLC and can advance that clock's time--for
    * everyone--whenever a new event is recorded).
@@ -138,22 +137,40 @@ export class Timestamp {
       throw new Timestamp.DuplicateNodeError(ourClock.timestamp.node());
     }
 
-    // TODO: consider increasing the allowed difference for clock times coming from other systems; only allowing for
-    // a 1-minute difference between any other clock in the distributed system seems like it could be error prone...
+    // Check to see if the physical time associated with another node's event is more recent that our _current_ system
+    // time. If we encounter this, it's a sign that a device's clock is probably set incorrectly (i.e., how could an
+    // event that was already created have happened at a time "in the future"?).
+    //
+    // Similarly, we need to make sure that our own system time hasn't "drifted" to occur _before_ our local HLC's
+    // physical time by too much (i.e., "system now" should normally be more recent than our HLC's last event time).
+    //
+    // Jared Forsyth provides one example of how "event times from the future" could cause problems: "[Imagine] if a
+    // user has two devices, both offline, but device A is somehow an hour ahead of device B. The user makes a change on
+    // device A, then walks over to device B and makes a conflicting change, logically thinking that the change on B
+    // will win, because it is 'last'. Once both devices come online, the change from device A has won, much to the
+    // user's surprise" (from https://jaredforsyth.com/posts/hybrid-logical-clocks/).
     if (theirHlcTime - systemTime > HLC_CONFIG.maxDrift) {
-      throw new Timestamp.ClockDriftError();
+      // One option for handling this scenario might be to prompt the user to verify that their device's time is set
+      // correctly and re-attempt the sync later, or ignore the other node's event (possibly ignoring all events from the
+      // other node that also have "future" timestamps).
+      throw new Timestamp.ClockDriftError(
+        `Encountered an event/message from another node (${theirTimestamp.node()}) with time '${theirTimestamp}' ` +
+          `occuring "in the future" compared to local system time (${new Date(systemTime).toISOString()}).`
+      );
+    } else if (ourHlcTime - systemTime > HLC_CONFIG.maxDrift) {
+      const hlcTimeStr = new Date(ourHlcTime).toISOString();
+      const sysTimeStr = new Date(systemTime).toISOString();
+      throw new Timestamp.ClockDriftError(
+        `Local HLC's physical time (${hlcTimeStr}) is ahead of system time (${sysTimeStr}) by more than ` +
+          `${HLC_CONFIG.maxDrift} msec. Is local system clock set correctly?`
+      );
     }
 
     // Given our HLC time, the incoming timestamp's time, and the current system time, pick whichever is most recent. If
-    // our local system (CPU) time is older than either of these, it means we'll end up _re-using_ a physical time from
-    // either our HLC or the passed-in timestamp (i.e., we didn't move time forward)--so we'll have to make sure to
-    // increment the counter.
+    // our local device time is older than either of these, it means we'll end up _re-using_ a physical time from either
+    // our HLC or the passed-in timestamp (i.e., we didn't move time forward)--so we'll have to make sure to increment
+    // the counter.
     const nextTime = Math.max(Math.max(ourHlcTime, systemTime), theirHlcTime);
-
-    // Check the result for drift and counter overflow
-    if (nextTime - systemTime > HLC_CONFIG.maxDrift) {
-      throw new Timestamp.ClockDriftError();
-    }
 
     // By default, assume the physical time is changing (i.e., that the counter will "reset" to zero).
     let nextCounter = 0;
