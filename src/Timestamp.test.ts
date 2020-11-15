@@ -203,12 +203,28 @@ describe('Timestamp', () => {
     });
   });
 
-  it('parse() works', () => {
-    // TODO
-  });
+  describe('parse()', () => {
+    it('converts string to Timestamp instance when given a valid string', () => {
+      const expectedCounter = 42;
+      const expected = {
+        node: '97bf28e64e4128b0',
+        counter: '00' + expectedCounter.toString(16),
+        time: '2020-02-02T16:29:22.946Z'
+      };
 
-  it('since() works', () => {
-    // TODO
+      const timestamp = Timestamp.parse(`${expected.time}-${expected.counter}-${expected.node}`);
+
+      expect(timestamp).toBeInstanceOf(Timestamp);
+      expect(timestamp?.node()).toEqual(expected.node);
+      expect(timestamp?.counter()).toEqual(expectedCounter);
+    });
+
+    it('returns null when given an invalid string', () => {
+      expect(Timestamp.parse('')).toBeNull();
+      expect(Timestamp.parse('asdfasdf')).toBeNull();
+
+      // TODO: modify Timestamp.parse() to throw if it receives invalid dates (e.g., 2020-32-02), then add test for that
+    })
   });
 });
 

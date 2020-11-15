@@ -189,15 +189,15 @@ export class Timestamp {
   }
 
   /**
-   * Converts a fixed-length string timestamp to the structured value
+   * Converts an HLC timestamp string to a Timestamp instance.
    */
   public static parse(timestamp: string): Timestamp | null {
     if (typeof timestamp === 'string') {
-      var parts = timestamp.split('-');
+      const parts = timestamp.split('-');
       if (parts && parts.length === 5) {
-        var millis = Date.parse(parts.slice(0, 3).join('-')).valueOf();
-        var counter = parseInt(parts[3], 16);
-        var node = parts[4];
+        const millis = Date.parse(parts.slice(0, 3).join('-')).valueOf();
+        const counter = parseInt(parts[3], 16);
+        const node = parts[4];
         if (!isNaN(millis) && !isNaN(counter)) return new Timestamp(millis, counter, node);
       }
     }
