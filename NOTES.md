@@ -523,3 +523,7 @@ Client #1 already knows about the 🍓 message, so this shows that the mechanism
 ### Timestamp class
 
 > TODO
+
+# Helpful Resources
+
+  - [Hybrid Logical Clocks](https://jaredforsyth.com/posts/hybrid-logical-clocks/) by Jared Forsyth

@@ -11,6 +11,10 @@ and (in some cases) modified version of his work.
 
 - [ ] Convert files to TypeScript
 - [ ] Add unit tests (to ensure consistent behavior in next step, refactoring)
+- [ ] Incorporate Jared Forsyth's HLC string formatting improvements that allow for longer timestamp and counter strings:
+    - `physTime.toString().padStart(15, '0')` // 13 digits is enough for the next 100 years, so 15 is plenty
+    - `count.toString(36).padStart(5, '0') // 5 digits base 36 is enough for more than 6 million "out of order" changes
+    - https://jaredforsyth.com/posts/hybrid-logical-clocks/
 - [ ] Set up [TSDX](https://tsdx.io/) to make it easier to publish libraries?
 - [ ] Refactor code (rename functions, classes, restructure code to classes, etc.)
     - Easier/safer to do this after everything is using TypeScript
