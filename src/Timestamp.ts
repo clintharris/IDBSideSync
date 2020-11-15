@@ -221,10 +221,6 @@ export class Timestamp {
     return null;
   }
 
-  public static since(isoString: string) {
-    return isoString + '-0000-0000000000000000';
-  }
-
   static DuplicateNodeError = class extends Error {
     public type: string;
     public message: string;
