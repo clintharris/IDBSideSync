@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals';
+import murmurhash from 'murmurhash';
 import { Timestamp, MutableTimestamp, HLC_CONFIG } from './Timestamp';
 import { makeClock } from './Clock';
 
@@ -226,6 +227,13 @@ describe('Timestamp', () => {
       // TODO: modify Timestamp.parse() to throw if it receives invalid dates (e.g., 2020-32-02), then add test for that
     })
   });
+
+  it('hash() works', () => {
+    const t1 = new Timestamp(Date.now(), 123, 'node1');
+    const t2 = new Timestamp(Date.now() - 12345, 1, 'node2');
+    expect(t1.hash()).toEqual(murmurhash(t1.toString()));
+    expect(t2.hash()).toEqual(murmurhash(t2.toString()));
+  })
 });
 
 describe('MutableTimestamp', () => {
