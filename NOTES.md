@@ -10,7 +10,7 @@ In a nutshell, the UI sits on top of a distributed database that is kept in sync
     - The "when" is a hybrid logical clock timestamp.
   - Each agent maintains its own collection of these messages; in effect, they create an "operation journal / log".
     - An accompanying data structure, a merkle tree, is also maintained that makes it possible to _quickly_ compare different message collections and figure out (roughly) which messages need to be exchanged to sync the collections.
-    - The merkle tree only stores what it needs to answer the question "what is the last time at which the collections had the same messages?": time (as keys) and hashes (as values) made from all known messages at those times.
+    - The merkle tree only stores what it needs to answer the question "at what time did the collections begin to have different messages?": time (as keys) and hashes (as values) made from all known messages at those times.
   - These messages are shared among agents, including a server agent that just acts as a centralized "message buffer" for syncing agents that can't connect directly.
   - When an agent (A₁) syncs with another agent (A₂):
     - A₁ sends its own merkle tree (JSON) to A₂ (which could be a server).
@@ -124,7 +124,9 @@ function receive(message, time_stamp) {
 
 #### Hybrid Logical Clock
 
-An HLC combines both a _physical_ and _logical_ clock. It was designed to provide one-way (as with LC rather than VC) causality detection while maintaining a clock value close to the physical clock, so one can use HLC timestamp as a drop-in replacement for a physical clock timestamp. Rules:
+An HLC combines both a _physical_ and _logical_ clock. It was designed to provide one-way (as with LC rather than VC)
+causality detection while maintaining a clock value close to the physical clock, so one can use HLC timestamp as a
+drop-in replacement for a physical clock timestamp. Rules:
 
   1. Each node maintain its own monotonic counter, `c` (just like with logical clocks)
   1. Each node keeps track of the largest physical time it has encountered so far
@@ -135,7 +137,9 @@ An HLC combines both a _physical_ and _logical_ clock. It was designed to provid
        b. the logical time stored in the message
     - If the logical times are all equal, increment the counter (`c`)
 
-In other words, if the physical clocks on all nodes are in perfect sync, then the counter is the only thing that gets incremented each time a message is received. However, it's more common that a node is always going to reset its logical time and counter each time a message is received.
+In other words, if the physical clocks on all nodes are in perfect sync, then the counter is the only thing that gets
+incremented each time a message is received. However, it's more common that a node is always going to reset its logical
+time and counter each time a message is received.
 
 ### Resources
 
@@ -166,7 +170,9 @@ In other words, if the physical clocks on all nodes are in perfect sync, then th
 
 ## clock.js
 
-This file exposes functions for creating/getting/setting the singleton app "clock" object (a timestamp, really, but we called a "clock" because it will periodically be updated when events occur and continues to move "forward" in time). The "clock" object consists of two things:
+This file exposes functions for creating/getting/setting the singleton app "clock" object (a timestamp, really, but we
+called a "clock" because it will periodically be updated when events occur and continues to move "forward" in time). The
+"clock" object consists of two things:
 
   1. a mutable timestamp
   2. a merkle tree
@@ -252,13 +258,16 @@ Examples:
 ### Important functions
 
 Timestamp.send(clock)
-  - This function is used to create a new timestamp every time a message is sent (i.e., every time a database CRUD operation causes a new message to be created/sent)
+  - This function is used to create a new timestamp every time a message is sent (i.e., every time a database CRUD
+    operation causes a new message to be created/sent)
   - Creates/returns a new `Timestamp` using the `clock` arg.
 
 
 ## db.js
 
-This file exposes functions that resemble a database API. It sets up a couple of global variables that are in-memory data stores for messages and todo objects, and creates global functions for CRUD operations on those stores. In a more realistic app, one might use something like IndexedDB or SQLite as the underlying storage mechanism.
+This file exposes functions that resemble a database API. It sets up a couple of global variables that are in-memory
+data stores for messages and todo objects, and creates global functions for CRUD operations on those stores. In a more
+realistic app, one might use something like IndexedDB or SQLite as the underlying storage mechanism.
 
 Each data store is comparable to a database table:
   - `todo`: an array of `{ name: string, type: string, order: number }` objects
@@ -271,7 +280,8 @@ GET functions all return objects from the various in-memory arrays:
   - `getTodoTypes()` returns `_data.todoTypes` (filters `.tombstone !== true`)
   - etc.
 
-INSERT/UPDATE functions don't modify the in-memory stores; instead, they create and send a message for each property/value pair of the object being inserted/updated/deleted. 
+INSERT/UPDATE functions don't modify the in-memory stores; instead, they create and send a message for each
+property/value pair of the object being inserted/updated/deleted. 
 
 ```javascript
 
@@ -290,9 +300,9 @@ sendMessages([{
   row: id
   column: 'name',
   value: 'Make dinner',
-  // Note that every message we create/send gets its own, globally-unique
-  // timestamp. In effect, there is a 1-1 relationship between the time-
-  // stamp and this specific message.
+  // Timestamp.send() returns a new, "next" time each time it's called, and since each time is unique, this basically
+  // means that every message gets its own, globally-unique timestamp. In other words: there is a 1-1 relationship 
+  // between each message and its HLC timestamp.
   timestamp: Timestamp.send(getClock()).toString()
 },{
   dataset: 'todos',
@@ -355,48 +365,76 @@ Every message includes a timestamp generated via `Timestamp.send(getClock()).toS
     - `getClock()`
 
 
-## merkle.js
+## The merkle tree
 
-This file contains functions used to perform operations on a merkle tree. A merkle tree is really just a bunch of nodes with hashes, where each node's hash is made from the hashes of its children. This makes merkle trees a great data structure for quickly comparing collections to see if they have the same items.
+In a nutshell, the application uses a merkle tree to quickly figure out if two clients have the same collection of
+operation log messages (e.g., a message saying a specific table -> row -> column should be set to some value).
 
-In this case, the application uses a merkle tree to quickly figure out if two clients have the same collection of data operation messages (e.g., a message saying a specific table -> row -> column should be set to some value).
+Each client maintains its own merkle tree. The merkle tree is a hierarchy of nodes, where each node contains a string
+value: a hash made from the hashes of its children (i.e., a "rolling hash" that is derived from all its children). This
+includes the root node, which means the root hash for two merkle trees will be the same only if the same set of messages
+have been inserted into both trees. You can tell if two clients have the same messages just by comparing the root hashes
+of their merkle trees.
 
-Taking a step back, consider that a _really_ simple way to tell if two clients have the same messages would be: each client maintains a "rolling" hash of their messages. Each time a new message is added to the log, the rolling hash would be re-calculated by combining it with a hash of the new message. To tell if the clients have the same messages, you'd just compare their rolling hash values.
+Every time a field in the data store is changed, a message (oplog entry) is created with a corresponding HLC timestamp.
+Whenever a client "applies" a data change message, it needs to also add that message's HLC timestamp to its merkle tree.
+This is how the client maintains a rolling hash of all the messages it has encountered.
 
-However, this only tells you if the clients have encountered the same messages (i.e., if their rolling hashes were derived from the same set of message hashes); _it doesn't help you figure out how the collections differ_. That's why this app uses a merkle tree is used instead of a single rolling hash value.
+When a message is inserted into the merkle tree, its HLC timestamp's physical time (_minutes_ since 1970--see the
+section on "merkle tree keys/paths" to understand why minutes are used instead of seconds or milliseconds) is used as
+the "path" for navigating down the tree and inserting the new "leaf node" with the hash. That new node might be inserted
+several levels down in the tree; the intermediate node at each level (including at the root node) will have its rolling
+hash updated with _new_ hash made from the current value and the new node's hash.
 
-More specifically, the merkle tree used by this app indexes rolling hashes of "known messages" by the _times_ for those messages. _This means you can quickly compare two merkle trees, and if they differ, find the most recent "message time" when they were the same_.
+> Note: the merkle tree depends on hashing being commutative (`hash(C, hash(A, B)) === hash(A, hash(B, C))`) so that the
+> order in which things are inserted doesn't matter. In other words, merkle trees on two different clients will
+> eventually have the same root hash once the same things are inserted into both trees.
 
-Knowing that the difference(s) exist at some point _after_ that time (i.e., one client has messages after that time which the other client lacks), a more efficient sync can be done by exchanging _only_ the messages that occurred after that time.
+Taking a step back, consider that a _really_ simple way to tell if two clients have the same messages would be: each
+client maintains a "rolling" hash of their messages. Each time a new message is added to the log, the rolling hash would
+be re-calculated by combining it with a hash of the new message. To tell if the clients have the same messages, you'd
+just compare their rolling hash values. However, this only tells you if the clients have encountered the same messages
+(i.e., if their rolling hashes were derived from the same set of message hashes).
 
-> Note: the merkle tree doesn't store hashes that are literally made from the messages--they are actually derived from each message's _timestamp_ (`Timestamp.hash()`). But since each message's timestamp is unique (they incorporate time, a counter, and a UUID), _the timestamp becomes a unique identifier for the message_. So it's probably okay--and maybe easier for some people--to just think of them as being "message 
+The merkle tree used by this app indexes rolling hashes of "known messages" by the _times_ for those messages. This
+means you can quickly compare two merkle trees, and if they differ, find the most recent "message time" when they were
+the same.
 
-### The values being stored: message hashes
+Knowing when the collections began to differ (i.e., that one node has messages after that time which the other node
+lacks) makes it possible for a more efficient sync to be done by exchanging _only_ the messages that occurred after that
+time.
 
-In this application, the items are essentially message "identifiers" (i.e., a message's `Timestamp.hash()` value) and the merkle tree is used to quickly tell what messages a client needs to be in sync with another client. In other words, when Client A attempts to sync with another client, we want to minimize the number of messages sent so we need a quick way to figure out how the collections differ.
+> Note: the merkle tree doesn't store hashes of full oplog messages--only the timestamp is used for the hash (i.e.,
+> `Timestamp.hash()`. But since each message's timestamp is unique (they incorporate time, a counter, and a UUID), the
+> timestamp becomes a unique identifier for the message.
 
-Each client maintains its own merkle tree; every time a field in the data store is changed, the client creates a new message with a corresponding, unique timestamp (i.e., it basically identifies the message), and that timestamp's _hash_ is inserted into merkle tree. A "key" (the timestamp's physical time--minutes since 1970) is used as a path to navigate down the tree and insert a new "leaf node" with the hash. That new node might be inserted several levels down in the tree; the hash for each node along that "path" (starting at the root) will be recalculated as a hash of the current value and the new node's hash.
+### The merkle tree keys / "node paths"
 
-In effect, each node maintains a "rolling hash" that is derived from all its children as they are inserted. This includes the root node, which means: the root hash for two merkle trees will be the same only if the same set of messages have been inserted into both trees.
+As previously stated, the keys for the merkle tree are the times for each message in "minutes since 1970." The minutes
+are base-3 encoded, so numbers only consist of digits 0, 1, or 2 (also, note that the base-3 encoded minutes are
+converted to strings). This means that you end up with keys like "1211121022121121".
 
-_This means that you can tell if two clients have the same messages just by comparing the root hash._
+> Note: you could use a more precise unit of time (e.g., milliseconds instead of minutes since 1970). However, a more
+> precise time means a bigger number, which means a longer string, which means more nodes and hashes in the merkle tree.
+> In other words, more precision means a bigger data structure. That may be necessary in an application where the
+> syncing performance is greatly improved if the "time of divergence" can be more precise (e.g., an application that
+> creates many oplog entries per minute/second/msec). But for most applications whose data changes less frequently,
+> being able to find the minute at which collections began to differ is good enough and helps keep the tree smaller and
+> can make the diffing algorithm faster.
 
-This algorithm depends on the hashing being commutative: `hash(C, hash(A, B)) === hash(A, hash(B, C))`. So the order in which messages identifiers are inserted doesn't matter--merkle trees on two different clients will have the same root hash as long as the same items have been inserted.
-
-### The keys
-
-As previously stated, the keys for the merkle tree are the times for each message in "minutes since 1970." The minutes are base-3 encoded, so numbers only consist of digits 0, 1, or 2 (also, note that the base-3 encoded minutes are converted to STRINGS). This means that you end up with keys like "1211121022121121".
-
-Each character in the string is used to access the next child node. In other words, each node in this application's merkle tree is an object with 1-4 things:
+Each character in the string is used to access the next child node. In other words, each node in this application's
+merkle tree is an object with 1-4 things:
 
   1. A `hash` property. This is a hash of the Timestamp (as calculated by `Timestamp.hash()`).
   2. (maybe) a `"0"` property referencing a child node
   3. (maybe) a `"1"` property referencing a child node
   4. (maybe) a `"2"` property referencing a child node
 
-This means that each node can have, at most, 3 children. In other words, this is a _ternary tree_ structure (vs. a binary tree, for example).
+This means that each node can have, at most, 3 children. In other words, this is a _ternary tree_ structure (vs. a
+binary tree, for example).
 
-If you visualize each node's children as being sorted from left-to-right, this means a tree that might look something like this:
+If you visualize each node's children as being sorted from left-to-right, this means a tree that might look something
+like this:
 
 ```
                                      Root
@@ -408,13 +446,23 @@ If you visualize each node's children as being sorted from left-to-right, this m
 0  1  2  0  1  2 0  1  2  0  1  2  0  1  2 0  1  2  0  1  2  0  1  2 0  1  2
 ```
 
-For an over-simplified example, a "time" (in base-3) like 120 becomes "120". So first you'd use '1' to get a node, then '2' to get a node, then '0' to get the last node.
+For an over-simplified example, a "time" (in base-3) like 120 becomes "120". So first you'd use '1' to get the first
+node, then '2' to get the next node, and finally '0' to get the last node.
 
-> Node that that the minutes could use any base (e.g., it could be in hex) as long as the individual characters in the stringified version of a key can be sorted (which is a key part of the `merkle.js:diff()` function). 
+> Note: the minutes could use any base (e.g., it could be in hex) as long as the individual characters in the
+> stringified version of a key can be sorted/ordered (which is a key part of the `merkle.js:diff()` function). 
 
-To state the obvious: as time elapses, this value increases--which is important to note because this is why it's possible to "walk" the nodes of the tree from "further back in time" to "more recent in time." And being able to navigate the tree chronologically like that is necessary if you want to efficiently find the most recent message time when two trees were equal.
+It's important that whatever number system is used for the keys (e.g., base-10, base-16, etc.), the "stringified"
+version of the keys should naturally sort in the same order as the times they represent. In other words, when the keys
+are converted to strings, it should be possible to sort them chronologically.
 
-If time starts at t₀ (000), then the path to the first time is the branch furthest to the right. As the integer for time increases, you're basically moving from left to right. Use the diagram above to walk through each of the paths for the following sequence of time (which is basically counting up in base-3):
+If each "step" (i.e., character) in the tree path uses a characters system where and "smaller" values represent
+older times and "greater" represents more recent times, then the overall merkle tree will be ordered and it's possible
+to more efficiently find the last time when two trees were "equal."
+
+If time starts at t₀ (000), then the path to the first time is the branch furthest to the right. As the integer for time
+increases, you're basically moving from left to right. Use the diagram above to walk through each of the paths for the
+following sequence of time (which is basically counting up in base-3):
 
   - t₀ = 000
   - t₁ = 001
@@ -426,7 +474,8 @@ If time starts at t₀ (000), then the path to the first time is the branch furt
 
 ### Inserting new items into the merkle tree
 
-The `merkle.js:insertKey()` function implements the "insert" operation. Here's and example that shows how it works (where `h(...)` is shorthand for "hash of ..."):
+The `merkle.js:insertKey()` function implements the "insert" operation. Here's an example that shows how it works
+(where `h(...)` is shorthand for "hash of ..."):
 
 1. Two clients #1 and #2 both record a message timestamp: { time: '000', hash: A }
 
@@ -467,7 +516,7 @@ The `merkle.js:insertKey()` function implements the "insert" operation. Here's a
 
 4. New messages:
   - Client #1 records message timestamp: { time: '012', hash: 🍏 }.
-  - Client #2 records message timestamp: { time: '020', hash: 🍊 }
+  - Client #2 records message timestamp: { time: '012', hash: 🍊 }
   - Both clients record message timestamp: { time: '100', hash: 🍓 }
 
 Now they have different merkle trees:
@@ -486,7 +535,8 @@ Now they have different merkle trees:
 
 ### Diffing merkle trees
 
-The `merkle.js:diff()` function implements an algorithm for finding the last known "time of equality" and works like this:
+The `merkle.js:diff()` function implements an algorithm for finding the approximate "time of divergence" which, at a
+high level, works like this:
 
 1. Compare the top-level hashes. A^B^C^🍏^🍓 !== A^B^C^🍊^🍓 so we immediately know the trees are different.
 2. Get get all the keys from the nodes in both trees, at the 1st level: ['0', '1']
@@ -504,7 +554,8 @@ The `merkle.js:diff()` function implements an algorithm for finding the last kno
 
 To sync, Client #1 can ask for all of Client #2's messages with timestamps >= `012`: this means the 🍊 and 🍓 messages.
 
-Client #1 already knows about the 🍓 message, so this shows that the mechanism isn't going to result in _only_ unknown messages being sync'ed; there will be dupes. But the trade-off for complete efficiency is speed. 
+Client #1 already knows about the 🍓 message, so this shows that the mechanism isn't going to result in _only_ unknown
+messages being sync'ed; there will be dupes. But the trade-off for complete efficiency is speed. 
 
 
 ### Pruning

@@ -31,6 +31,12 @@
     // trie. In other words, the logical time becomes the "key" that can be used
     // to get/set a value (the timestamp's hash) in the merkle tree.
     //
+    // You could use a more precise unit of time (e.g., milliseconds instead of
+    // minutes), but a more precise time means a bigger number, which means a
+    // longer string, which means more nodes in the merkle tree; in other words,
+    // a bigger data structure and a slower diffing algorithm (because it has
+    // more nodes to go through).
+    //
     // Since we're using base-3, each char in in the path will either be '0',
     // '1', or '2'. This means that the trie will consist of nodes that have, at
     // most, 3 child nodes.
