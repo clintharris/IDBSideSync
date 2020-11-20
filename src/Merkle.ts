@@ -10,7 +10,7 @@ export interface BaseThreeMerkleTree extends BaseMerkle {
   '2'?: BaseThreeMerkleTree;
 }
 
-type BaseThreeNumber = Exclude<keyof BaseThreeMerkleTree, 'hash'>;
+export type BaseThreeNumber = Exclude<keyof BaseThreeMerkleTree, 'hash'>;
 
 export function build(timestamps: Timestamp[]): BaseThreeMerkleTree {
   const trie = { hash: 0 };
@@ -53,17 +53,16 @@ export function insert(tree: BaseThreeMerkleTree, timestamp: Timestamp): BaseThr
   // where each bit is the result of combining the corresponding pair of bits (i.e., bits in the same position) from the
   // operands. It returns a 1 in each bit position for which the corresponding bits of either but not both operands are
   // 1s.
-  tree = Object.assign({}, tree, { hash: tree.hash ^ hash });
-
   return insertKey(tree, key, hash);
 }
 
 /**
- * The overall goal of this function is to insert a given timestamp's hash into a merkle tree, where the key/path is
- * based on a base-3 encoding of the timestamp's physical time (minutes since 1970).
+ * Use this function to insert an HLC timestamp's hash into a merkle tree, updating the hashes of all intermediate tree
+ * nodes along the way, using the specified "tree path" to determine where in the tree a node should be created or
+ * updated.
  *
- * In other words, we are building a data structure where time can be used to retrieve a timestamp's hash--or the hash
- * of all timestamps that occurred relative to that timestamp.
+ * The specified path should be the "physical clock time" portion of an HLC timestamp (i.e., the time at which an oplog
+ * entry was created) as MINUTES since 1970, and converted to base-3.
  *
  * For example, a (oversimplified) base-3 key "012" would result in this:
  *
@@ -83,19 +82,16 @@ export function insert(tree: BaseThreeMerkleTree, timestamp: Timestamp): BaseThr
  * @returns an object like: { hash: 1234567; '0': object; '1': object; '2': object }
  */
 export function insertKey(
-  currentTree: BaseThreeMerkleTree,
-  path: BaseThreeNumber[],
+  currentNode: BaseThreeMerkleTree,
+  childNodeKeys: BaseThreeNumber[],
   timestampHash: number
 ): BaseThreeMerkleTree {
-  if (path.length === 0) {
-    return currentTree;
+  if (childNodeKeys.length === 0) {
+    return currentNode;
   }
 
-  // Only grab the first char from the base-3 number (e.g., "20" -> "2")
-  const childKey = path[0];
-
-  // Get ref to existing child node (or create a new one if none exists)
-  const currChild: BaseThreeMerkleTree = currentTree[childKey] || { hash: 0 };
+  const childNodeKey = childNodeKeys[0];
+  const childNode: BaseThreeMerkleTree = currentNode[childNodeKey] || { hash: 0 };
 
   // Create/rebuild the child node with a (possibly) new hash that incorporates the passed-in hash, and new new/rebuilt
   // children (via a recursive call to `insertKey()`). In other words, since `key.length > 0` we have more "branches" of
@@ -104,28 +100,23 @@ export function insertKey(
   // The first time the child node is built, it will have hash A. If another timestamp hash (B) is inserted, and this
   // node is a "step" in the insertion path (i.e., it is the target node or a parent of the target node), then the has
   // will be updated to be hash(A, B).
-  const newChild: BaseThreeMerkleTree = Object.assign(
+  const updatedChildNode: BaseThreeMerkleTree = Object.assign(
     {},
-    currChild,
+    childNode,
 
     // Note that we're using key.slice(1) to make sure that, for the next recursive call, we are moving on to the next
     // "step" in the "path" (i.e., the next character in the key string). If `key.slice() === ''` then `insertKey()`
     // will return `currChild`--in which case all we are doing here is setting the `hash` property.
-    insertKey(currChild, path.slice(1), timestampHash),
+    insertKey(childNode, childNodeKeys.slice(1), timestampHash),
 
     // Update the current node's hash. If we don't have a hash (i.e., we just created `currChild` and it is an empty
     // object) then this will just be the value of the passed-in hash from our "parent" node. In effect, an "only child"
     // node will have the same hash as its parent; only when a a 2nd (or later)
-    { hash: currChild.hash ^ timestampHash }
+    { hash: childNode.hash ^ timestampHash }
   );
 
-  // Create a new sub-tree object, copying in the existing true, but...
-  return Object.assign(
-    {},
-    currentTree,
-    // ...set a new node value for the current key path char (e.g., { 0: ..., 1: ..., 2: ... }).
-    { [childKey]: newChild }
-  );
+  // Return a NEW tree that has an updated hash and the updated child node
+  return { ...currentNode, hash: currentNode.hash ^ timestampHash, [childNodeKey]: updatedChildNode };
 }
 
 /**
@@ -227,8 +218,8 @@ export function prune(tree: BaseThreeMerkleTree, n = 2): BaseThreeMerkleTree {
 /**
  * Returns a nicely-indented, stringified version of the tree.
  */
-export function format(tree: BaseThreeMerkleTree, k = '', indent = 0): string {
-  const str = ' '.repeat(indent) + (k !== '' ? `k: ${k} ` : '') + `hash: ${tree.hash || '(empty)'}\n`;
+export function stringify(tree: BaseThreeMerkleTree, k = '', indent = 0): string {
+  const str = ' '.repeat(indent) + (k !== '' ? `${k}: ` : '') + `${tree.hash || '(empty)'}\n`;
 
   return (
     str +
@@ -236,7 +227,7 @@ export function format(tree: BaseThreeMerkleTree, k = '', indent = 0): string {
       .map((childNodeKey) => {
         const childTree = tree[childNodeKey];
         if (childTree) {
-          return format(childTree, childNodeKey, indent + 2);
+          return stringify(childTree, childNodeKey, indent + 2);
         }
         return '';
       })
