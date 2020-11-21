@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { BaseThreeMerkleTree, insertKey } from './Merkle';
+import { BaseThreeMerkleTree, insertKey, msecEpochToBaseThreeMinutes } from './Merkle';
 
 describe('Merkle', () => {
   describe('insertKey()', () => {
@@ -52,6 +52,16 @@ describe('Merkle', () => {
 
     it('returns a tree with correctly-inserted hash', () => {
       expect(actualTree).toEqual(expectedTree);
+    });
+  });
+
+  describe('msecEpochToBaseThreeMinutes()', () => {
+    it('works with a ridiculously small time', () => {
+      expect(msecEpochToBaseThreeMinutes(1)).toEqual(['0']);
+    });
+    
+    it('works with a normal time', () => {
+      expect(msecEpochToBaseThreeMinutes(1581859883747)).toEqual('1211121110001201'.split(''));
     });
   });
 });

@@ -13,11 +13,11 @@ export interface BaseThreeMerkleTree extends BaseMerkle {
 export type BaseThreeNumber = Exclude<keyof BaseThreeMerkleTree, 'hash'>;
 
 export function build(timestamps: Timestamp[]): BaseThreeMerkleTree {
-  const trie = { hash: 0 };
+  const tree = { hash: 0 };
   for (let timestamp of timestamps) {
-    insert(trie, timestamp);
+    insert(tree, timestamp);
   }
-  return trie;
+  return tree;
 }
 
 /**
@@ -30,23 +30,14 @@ export function insert(tree: BaseThreeMerkleTree, timestamp: Timestamp): BaseThr
   // base-3 STRING. Base 3 meaning: 0 => '0', 1 => '1', 2 => '2', 3 => '10', 2938 => '11000211'.
   //
   // This string will be used as a path to navigate the merkle tree: each character is a step in the path used to
-  // navigate to the next node in the trie. In other words, the logical time becomes the "key" that can be used to
-  // get/set a value (the timestamp's hash) in the merkle tree.
+  // navigate to the next node in the tree. In other words, the logical time becomes the "key" that can be used to
+  // get/set a value (the timestamp's hash) in the merkle tree. This means that the tree will
+  // consist of nodes that have, at most, 3 child nodes (aka, a "trie").
   //
   // You could use a more precise unit of time (e.g., milliseconds instead of minutes), but a more precise time means a
-  // bigger number, which means a longer string, which means more nodes in the merkle tree; in other words, a bigger
+  // bigger number, which would result in a longer string and more nodes in the merkle tree; in other words, a bigger
   // data structure and a slower diffing algorithm (because it has more nodes to go through).
-  //
-  // Since we're using base-3, each char in in the path will either be '0', '1', or '2'. This means that the trie will
-  // consist of nodes that have, at most, 3 child nodes.
-  //
-  // Note the use of the bitwise OR operator (`... | 0`). This is a quick way of converting the floating-point value to
-  // an integer (in a nutshell: the bitwise operators only work on 32-bit integers, so it causes the 64-bit float to be
-  // converted to an integer).) For example, this causes: "1211121022121110.11221000121012222" to become
-  // "1211121022121110".
-  let key = Number((timestamp.millis() / 1000 / 60) | 0)
-    .toString(3)
-    .split('') as BaseThreeNumber[];
+  let key = msecEpochToBaseThreeMinutes(timestamp.millis());
 
   // Create a new object that has the same tree and a NEW root hash. Note that "bitwise hashing" is being used here to
   // make a new hash. Bitwise XOR treats both operands as a sequence of 32 bits. It returns a new sequence of 32 bits
@@ -95,7 +86,7 @@ export function insertKey(
 
   // Create/rebuild the child node with a (possibly) new hash that incorporates the passed-in hash, and new new/rebuilt
   // children (via a recursive call to `insertKey()`). In other words, since `key.length > 0` we have more "branches" of
-  // the trie hierarchy to extend before we reach a leaf node and can begin returning.
+  // the tree hierarchy to extend before we reach a leaf node and can begin returning.
   //
   // The first time the child node is built, it will have hash A. If another timestamp hash (B) is inserted, and this
   // node is a "step" in the insertion path (i.e., it is the target node or a parent of the target node), then the has
@@ -175,8 +166,26 @@ export function diff(tree1: BaseThreeMerkleTree, tree2: BaseThreeMerkleTree): nu
   }
 }
 
-export function getKeysToChildNodes(tree: BaseThreeMerkleTree): BaseThreeNumber[] {
-  return Object.keys(tree).filter((key) => key !== 'hash') as BaseThreeNumber[];
+/**
+ * Convert milliseconds to minutes, then return those minutes as an array of base-3 numbers.
+ */
+export function msecEpochToBaseThreeMinutes(msec: number): BaseThreeNumber[] {
+  // Converting the milliseconds to minutes can result in a floating-point number.
+  const minutesFloat = msec / 1000 / 60;
+
+  // Since we only care about minutes and don't need the extra precision, we need to convert the floating-point value
+  // to an integer (i.e., truncate the sub-minute part of the time value). The bitwise OR operator can be used to do
+  // this "float to int" conversion. This works because the bitwise operatators only work on 32-bit integers; so before
+  // a bitwise expression can be evaluated (e.g., "a | b"), each operand needs to be converted to a 32-bit int. As long
+  // as one operand is 0, the expression will always evaluate to the _other_ operand--in this case, our "minutes"
+  // value--and that operand will have been converted to an integer (e.g., "36816480.016666666 | 0" becomes "36816480").
+  const minutesInt = minutesFloat | 0;
+
+  // Use .toString(radix) to convert the number to base-3 characters
+  const baseThreeMinutes = Number(minutesInt).toString(3);
+
+  // Split the string into an array
+  return baseThreeMinutes.split('') as BaseThreeNumber[];
 }
 
 /**
@@ -190,6 +199,11 @@ export function base3EncodedMinutesToMsec(base3EncodedMinutes: string): number {
   // Parse the base 3 representation back into base 10 "msecs since 1970" that can be easily passed to Date()
   return parseInt(fullkey, 3) * 1000 * 60;
 }
+
+export function getKeysToChildNodes(tree: BaseThreeMerkleTree): BaseThreeNumber[] {
+  return Object.keys(tree).filter((key) => key !== 'hash') as BaseThreeNumber[];
+}
+
 
 /**
  * Use this function to "prune" a Merkle tree by removing branches. By default, the first branch from each child node
