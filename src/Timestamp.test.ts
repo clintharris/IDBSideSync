@@ -33,6 +33,31 @@ describe('Timestamp', () => {
     }
   });
 
+  describe('hash()', () => {
+    it('returns the same value every time', () => {
+      const expectedHash = 4019442025;
+      const timestamp = new Timestamp(111, 222, 'foo');
+      expect(timestamp.hash()).toEqual(expectedHash);
+      expect(timestamp.hash()).toEqual(expectedHash);
+      expect(timestamp.hash()).toEqual(expectedHash);
+    });
+
+    it('returns different value for different timestamp node IDs', () => {
+      expect(new Timestamp(111, 222, 'foo').hash()).toEqual(4019442025);
+      expect(new Timestamp(111, 222, 'foo2').hash()).toEqual(1253188043);
+    });
+
+    it('returns different value for different timestamp counters', () => {
+      expect(new Timestamp(111, 222, 'foo').hash()).toEqual(4019442025);
+      expect(new Timestamp(111, 229, 'foo').hash()).toEqual(3056981850);
+    });
+
+    it('returns different value for different timestamp physical times', () => {
+      expect(new Timestamp(111, 222, 'foo').hash()).toEqual(4019442025);
+      expect(new Timestamp(119, 222, 'foo').hash()).toEqual(256289245);
+    });
+  })
+
   describe('send()', () => {
     it('advances clock time to "now" if its physical time occurs before "now"', () => {
       const mockNowTime = overrideSystemTime('2020-01-01T00:00:01Z');
@@ -210,7 +235,7 @@ describe('Timestamp', () => {
       const expected = {
         node: '97bf28e64e4128b0',
         counter: '00' + expectedCounter.toString(16),
-        time: '2020-02-02T16:29:22.946Z'
+        time: '2020-02-02T16:29:22.946Z',
       };
 
       const timestamp = Timestamp.parse(`${expected.time}-${expected.counter}-${expected.node}`);
@@ -225,7 +250,7 @@ describe('Timestamp', () => {
       expect(Timestamp.parse('asdfasdf')).toBeNull();
 
       // TODO: modify Timestamp.parse() to throw if it receives invalid dates (e.g., 2020-32-02), then add test for that
-    })
+    });
   });
 
   it('hash() works', () => {
@@ -233,7 +258,7 @@ describe('Timestamp', () => {
     const t2 = new Timestamp(Date.now() - 12345, 1, 'node2');
     expect(t1.hash()).toEqual(murmurhash(t1.toString()));
     expect(t2.hash()).toEqual(murmurhash(t2.toString()));
-  })
+  });
 });
 
 describe('MutableTimestamp', () => {

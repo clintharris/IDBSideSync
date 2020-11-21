@@ -49,7 +49,7 @@ export class Timestamp {
 
   /**
    * Use this function to advance the time of the passed-in hybrid logical clock (i.e., our local HLC clock singleton),
-   * and return that time as a new HLC timestamp.
+   * and return the next time as a new HLC timestamp.
    *
    * For context, this function should normally be called in cases when we are creating a new oplog entry as part of
    * local data changes (i.e., not in response to processing oplog entries received from another node). In other words,
