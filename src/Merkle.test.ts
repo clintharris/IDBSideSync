@@ -1,8 +1,8 @@
 import { jest } from '@jest/globals';
-import { BaseThreeMerkleTree, insertKey, msecEpochToBaseThreeMinutes } from './Merkle';
+import { BaseThreeMerkleTree, insertHash, convertTimeToTreePath } from './Merkle';
 
 describe('Merkle', () => {
-  describe('insertKey()', () => {
+  describe('insertHash()', () => {
     const originalChild2Hash = 123;
     const originalChild1Hash = originalChild2Hash;
     const originalRootHash = originalChild2Hash;
@@ -38,7 +38,7 @@ describe('Merkle', () => {
       },
     };
 
-    const actualTree = insertKey(originalTree, ['0', '0', '1'], newChildHash);
+    const actualTree = insertHash(originalTree, ['0', '0', '1'], newChildHash);
 
     it('returns a new object', () => {
       expect(actualTree !== originalTree).toBeTruthy();
@@ -55,13 +55,15 @@ describe('Merkle', () => {
     });
   });
 
-  describe('msecEpochToBaseThreeMinutes()', () => {
+  describe('convertTimeToTreePath()', () => {
     it('works with a ridiculously small time', () => {
-      expect(msecEpochToBaseThreeMinutes(1)).toEqual(['0']);
+      expect(convertTimeToTreePath(1)).toEqual(['0']);
     });
-    
+
     it('works with a normal time', () => {
-      expect(msecEpochToBaseThreeMinutes(1581859883747)).toEqual('1211121110001201'.split(''));
+      expect(convertTimeToTreePath(1581859883747)).toEqual('1211121110001201'.split(''));
     });
   });
+
+  it('base3MinutesToMsec() works', () => {});
 });
