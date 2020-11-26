@@ -343,6 +343,9 @@ export function stringify(tree: BaseThreeMerkleTree, k = '', indent = 0): string
   );
 }
 
+/**
+ * TypeScript type guard for safely asserting that something is a BaseThreeTreePath.
+ */
 export function isBaseThreeTreePath(thing: unknown): thing is BaseThreeTreePath {
   if (Array.isArray(thing) && thing.length <= MAX_TREEPATH_LENGTH) {
     const invalidCharIndex = thing.findIndex((item) => item !== '0' && item !== '1' && item !== '2');
@@ -351,6 +354,9 @@ export function isBaseThreeTreePath(thing: unknown): thing is BaseThreeTreePath 
   return false;
 }
 
+/**
+ * TypeScript type guard for safely asserting that something is a BaseThreeMerkleTree.
+ */
 export function isBaseThreeMerkleTree(thing: unknown): thing is BaseThreeMerkleTree {
   if (!thing || typeof thing !== 'object') {
     return false;
