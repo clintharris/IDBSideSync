@@ -9,10 +9,11 @@ import {
   convertTreePathToTime,
   isBaseThreeTreePath,
   getKeysToChildTrees,
+  stringify,
+  pathToFirstDiff,
 } from './Merkle';
 
 describe('Merkle', () => {
-
   describe('getKeysToChildTrees()', () => {
     it.each([
       [{ hash: 0, '0': undefined }, ['0']],
@@ -74,6 +75,66 @@ describe('Merkle', () => {
       expect(() => {
         convertTreePathToTime([]);
       }).toThrow(MerkleTree.MinPathLengthError);
+    });
+  });
+
+  describe('pathToFirstDiff()', () => {
+    const defaultLeafNode: BaseThreeMerkleTree = { hash: 1 };
+    const diffLeafNode: BaseThreeMerkleTree = { hash: 2 };
+    const tree1: BaseThreeMerkleTree = {
+      hash: 0,
+      '0': {
+        hash: 0,
+        '0': defaultLeafNode,
+        '1': defaultLeafNode,
+        '2': defaultLeafNode,
+      },
+      '2': {
+        hash: 0,
+        '1': defaultLeafNode,
+        '2': defaultLeafNode,
+      },
+    };
+
+    it('finds diff when two nodes have a different hash', () => {
+      const tree2: BaseThreeMerkleTree = JSON.parse(JSON.stringify(tree1));
+      tree2.hash = tree1.hash + 1;
+      if (tree2[2]) {
+        tree2[2].hash = tree2[2].hash + 1;
+        tree2[2][1] = diffLeafNode;
+      }
+      expect(pathToFirstDiff(tree1, tree2)).toEqual(['2', '1']);
+    });
+
+    it('finds diff when a one tree has an extra node', () => {
+      const tree2: BaseThreeMerkleTree = JSON.parse(JSON.stringify(tree1));
+      tree2.hash = tree1.hash + 1;
+      if (tree2[2]) {
+        tree2[2].hash = tree2[2].hash + 1;
+        tree2[2][0] = diffLeafNode;
+      }
+      expect(pathToFirstDiff(tree1, tree2)).toEqual(['2', '0']);
+    });
+
+    it('finds diff when a one tree lacks a node', () => {
+      const tree2: BaseThreeMerkleTree = JSON.parse(JSON.stringify(tree1));
+      tree2.hash = tree1.hash + 1;
+      if (tree2[2]) {
+        tree2[2].hash = tree2[2].hash + 1;
+        delete tree2[2][1];
+      }
+      expect(pathToFirstDiff(tree1, tree2)).toEqual(['2', '1']);
+    });
+
+    it('finds the FIRST diff when more than one node has a different hash', () => {
+      const tree2: BaseThreeMerkleTree = JSON.parse(JSON.stringify(tree1));
+      tree2.hash = tree1.hash + 1;
+      if (tree2[2]) {
+        tree2[2].hash = tree2[2].hash + 1;
+        tree2[2][1] = diffLeafNode;
+        tree2[2][2] = diffLeafNode;
+      }
+      expect(pathToFirstDiff(tree1, tree2)).toEqual(['2', '1']);
     });
   });
 

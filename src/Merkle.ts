@@ -159,27 +159,21 @@ export function insertHash(
 }
 
 /**
- * Returns a path to first node where two trees differ: an array, where each element can be used as a key to retrieve
- * the next child node in the tree. The elements in the array can be concatenated to form a base-3 encoded string that
- * represents minutes since 1970 (this can then be converted to back to a base-10 "milliseconds since 1970" value that
- * then represents an HLC physical clock time when two trees began to have different values).
+ * Returns a path to first node where two trees have different hash values, or null if both trees have the same hash.
  */
 export function pathToFirstDiff(tree1: BaseThreeMerkleTree, tree2: BaseThreeMerkleTree): BaseThreeTreePath | null {
+  // If the hash values match at the root of each tree, there's no need to go through the child nodes...
   if (tree1.hash === tree2.hash) {
     return null;
   }
 
-  let node1 = tree1;
-  let node2 = tree2;
+  let tree1Iter = tree1;
+  let tree2Iter = tree2;
   const pathToDiff: BaseThreeTreePath = [];
 
   while (true) {
-    // At this point we have two node objects. Each of those objects will have some properties like '0', '1', '2', or
-    // 'hash'. The numeric props (note that they are strings) are what we care about--they are the keys we can use to
-    // access child nodes, and we will use them to compare the two nodes.
-    //
     // Get all the keys to child nodes from both trees, using a Set() to remove duplicates.
-    let childTreeKeySet = new Set([...getKeysToChildTrees(node1), ...getKeysToChildTrees(node2)]);
+    let childTreeKeySet = new Set([...getKeysToChildTrees(tree1Iter), ...getKeysToChildTrees(tree2Iter)]);
     let childTreeKeys = [...childTreeKeySet.values()]; // Convert the set to an array
 
     // Before we start to compare the two nodes we want to sort the keys so that, in effect, we are "moving" from older
@@ -189,7 +183,7 @@ export function pathToFirstDiff(tree1: BaseThreeMerkleTree, tree2: BaseThreeMerk
 
     // Compare the hash for each of the child nodes, returning the key of the first child node for which hashes differ.
     let diffkey = childTreeKeys.find((key) => {
-      return node1[key]?.hash !== node2[key]?.hash;
+      return tree1Iter[key]?.hash !== tree2Iter[key]?.hash;
     });
 
     // If we didn't find anything, it means the child nodes have the same hashes (i.e., this is a "point in time" when
@@ -215,8 +209,8 @@ export function pathToFirstDiff(tree1: BaseThreeMerkleTree, tree2: BaseThreeMerk
 
     // Now update the references to the nodes (from each tree) so that, in the next loop, we are comparing the child
     // nodes (i.e., this is how we recurse the trees).
-    node1 = node1[diffkey] || { hash: 0 };
-    node2 = node2[diffkey] || { hash: 0 };
+    tree1Iter = tree1Iter[diffkey] || { hash: 0 };
+    tree2Iter = tree2Iter[diffkey] || { hash: 0 };
   }
 }
 
@@ -327,7 +321,8 @@ export function prune(tree: BaseThreeMerkleTree, n = 2): BaseThreeMerkleTree {
  * Returns a nicely-indented, stringified version of the tree.
  */
 export function stringify(tree: BaseThreeMerkleTree, k = '', indent = 0): string {
-  const str = ' '.repeat(indent) + (k !== '' ? `${k}: ` : '') + `${tree.hash || '(empty)'}\n`;
+  const str =
+    ' '.repeat(indent) + (k !== '' ? `'${k}': ` : '') + `${typeof tree.hash === 'number' ? tree.hash : '(empty)'}\n`;
 
   return (
     str +
