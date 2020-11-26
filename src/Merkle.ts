@@ -179,16 +179,16 @@ export function pathToFirstDiff(tree1: BaseThreeMerkleTree, tree2: BaseThreeMerk
     // access child nodes, and we will use them to compare the two nodes.
     //
     // Get all the keys to child nodes from both trees, using a Set() to remove duplicates.
-    let childNodeKeySet = new Set([...getKeysToChildNodes(node1), ...getKeysToChildNodes(node2)]);
-    let childNodeKeys = [...childNodeKeySet.values()]; // Convert the set to an array
+    let childTreeKeySet = new Set([...getKeysToChildTrees(node1), ...getKeysToChildTrees(node2)]);
+    let childTreeKeys = [...childTreeKeySet.values()]; // Convert the set to an array
 
     // Before we start to compare the two nodes we want to sort the keys so that, in effect, we are "moving" from older
     // times to more recent times when doing the diff. This way, if there is a difference, we will have found the oldest
     // time at which the trees began to differ.
-    childNodeKeys.sort();
+    childTreeKeys.sort();
 
     // Compare the hash for each of the child nodes, returning the key of the first child node for which hashes differ.
-    let diffkey = childNodeKeys.find((key) => {
+    let diffkey = childTreeKeys.find((key) => {
       return node1[key]?.hash !== node2[key]?.hash;
     });
 
@@ -295,7 +295,7 @@ export function convertTreePathToTime(treePath: BaseThreeTreePath): number {
   return timeMsec;
 }
 
-export function getKeysToChildNodes(tree: BaseThreeMerkleTree): BaseThreeNumber[] {
+export function getKeysToChildTrees(tree: BaseThreeMerkleTree): BaseThreeNumber[] {
   return Object.keys(tree).filter((key) => ['0', '1', '2'].includes(key)) as BaseThreeNumber[];
 }
 
@@ -311,7 +311,7 @@ export function prune(tree: BaseThreeMerkleTree, n = 2): BaseThreeMerkleTree {
 
   let prunedTree: BaseThreeMerkleTree = { hash: tree.hash };
 
-  getKeysToChildNodes(tree)
+  getKeysToChildTrees(tree)
     .sort()
     .forEach((childNodeKey) => {
       const childTree = tree[childNodeKey];
@@ -331,7 +331,7 @@ export function stringify(tree: BaseThreeMerkleTree, k = '', indent = 0): string
 
   return (
     str +
-    getKeysToChildNodes(tree)
+    getKeysToChildTrees(tree)
       .map((childNodeKey) => {
         const childTree = tree[childNodeKey];
         if (childTree) {
