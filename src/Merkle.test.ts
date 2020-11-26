@@ -9,6 +9,7 @@ import {
   convertTreePathToTime,
   isBaseThreeTreePath,
   BaseThreeTreePath,
+  getKeysToChildNodes,
 } from './Merkle';
 
 describe('Merkle', () => {
@@ -115,6 +116,17 @@ describe('Merkle', () => {
       expect(() => {
         convertTreePathToTime([]);
       }).toThrow(MerkleTree.MinPathLengthError);
+    });
+  });
+
+  describe('getKeysToChildNodes()', () => {
+    it.each([
+      [{ hash: 0, '0': undefined }, ['0']],
+      [{ hash: 0, '0': undefined, '1': undefined }, ['0', '1']],
+      [{ hash: 0, '0': undefined, '1': undefined, '2': undefined }, ['0', '1', '2']],
+      [{ hash: 0, '0': undefined, foo: 'bar' }, ['0']],
+    ])('gets from "%s" keys "%s"', (merkleTree, expectedKeys) => {
+      expect(getKeysToChildNodes(merkleTree)).toEqual(expectedKeys);
     });
   });
 });

@@ -296,7 +296,7 @@ export function convertTreePathToTime(treePath: BaseThreeTreePath): number {
 }
 
 export function getKeysToChildNodes(tree: BaseThreeMerkleTree): BaseThreeNumber[] {
-  return Object.keys(tree).filter((key) => key !== 'hash') as BaseThreeNumber[];
+  return Object.keys(tree).filter((key) => ['0', '1', '2'].includes(key)) as BaseThreeNumber[];
 }
 
 /**
@@ -349,4 +349,23 @@ export function isBaseThreeTreePath(thing: unknown): thing is BaseThreeTreePath 
     return invalidCharIndex === -1;
   }
   return false;
+}
+
+export function isBaseThreeMerkleTree(thing: unknown): thing is BaseThreeMerkleTree {
+  if (!thing || typeof thing !== 'object') {
+    return false;
+  }
+
+  if (typeof (thing as BaseThreeMerkleTree).hash !== 'number') {
+    return false;
+  }
+
+  for (const baseThreeKey of ['0', '1', '2'] as BaseThreeNumber[]) {
+    const childTree = (thing as BaseThreeMerkleTree)[baseThreeKey];
+    if (childTree !== undefined && !isBaseThreeMerkleTree(childTree)) {
+      return false;
+    }
+  }
+
+  return true;
 }
