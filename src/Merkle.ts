@@ -1,6 +1,5 @@
 import { Timestamp } from './Timestamp';
 
-
 export interface BaseMerkle {
   hash: number;
 }
@@ -33,6 +32,17 @@ export type BaseThreeTreePath = BaseThreeNumber[];
 export const MAX_TIME_MSEC = parseInt('2'.repeat(MAX_TREEPATH_LENGTH), 3) * 60 * 1000;
 
 export class MerkleTree {
+  static MinTimeError = class extends Error {
+    public type: string;
+    public message: string;
+
+    constructor(timeMsec: number) {
+      super();
+      this.type = 'MinTimeError';
+      this.message = `Time '${timeMsec}' is <= 0.`;
+    }
+  };
+
   static MaxTimeError = class extends Error {
     public type: string;
     public message: string;
@@ -40,7 +50,18 @@ export class MerkleTree {
     constructor(timeMsec: number) {
       super();
       this.type = 'MaxTimeError';
-      this.message = `'${timeMsec}' is greater than ${MAX_TIME_MSEC}msec limit`;
+      this.message = `Time '${timeMsec}' is greater than limit ('${MAX_TIME_MSEC}').`;
+    }
+  };
+
+  static MinPathLengthError = class extends Error {
+    public type: string;
+    public message: string;
+
+    constructor() {
+      super();
+      this.type = 'MinPathLengthError';
+      this.message = `Tree paths must have at least one element.`;
     }
   };
 
@@ -216,6 +237,8 @@ export function pathToFirstDiff(tree1: BaseThreeMerkleTree, tree2: BaseThreeMerk
 export function convertTimeToTreePath(msecTime: number): BaseThreeTreePath {
   if (msecTime > MAX_TIME_MSEC) {
     throw new MerkleTree.MaxTimeError(msecTime);
+  } else if (msecTime < 0) {
+    throw new MerkleTree.MinTimeError(msecTime);
   }
 
   const minutesFloat = msecTime / 1000 / 60;
@@ -251,12 +274,16 @@ export function convertTimeToTreePath(msecTime: number): BaseThreeTreePath {
  * the goal is to just establish a time _after which_ messages should be re-synced.
  */
 export function convertTreePathToTime(treePath: BaseThreeTreePath): number {
+  if (treePath.length === 0) {
+    throw new MerkleTree.MinPathLengthError();
+  }
+
   // Only full tree paths (i.e., paths long enough to navigate to a leaf node) have enough digits to safely be converted
   // back to a "minutes since 1970" value as-is. But we can also receive short/partial paths (e.g., maybe a diff is found
   // at the very first node, resulting in a path with only a single character). In other words, we may be getting only
   // the first few digits of a full "minutes since 1970" value. We need to pad that value, ensuring that it has enough
   // base-3 digits to amount to a full "minutes" value.
-  let baseThreeMinutesStr = treePath + '0'.repeat(MAX_TREEPATH_LENGTH - treePath.length);
+  let baseThreeMinutesStr = treePath.join('') + '0'.repeat(MAX_TREEPATH_LENGTH - treePath.length);
 
   // Parse the base 3 representation back into base 10 "msecs since 1970" that can be easily passed to Date()
   const timeMsec = parseInt(baseThreeMinutesStr, 3) * 1000 * 60;
@@ -314,4 +341,12 @@ export function stringify(tree: BaseThreeMerkleTree, k = '', indent = 0): string
       })
       .join('')
   );
+}
+
+export function isBaseThreeTreePath(thing: unknown): thing is BaseThreeTreePath {
+  if (Array.isArray(thing) && thing.length <= MAX_TREEPATH_LENGTH) {
+    const invalidCharIndex = thing.findIndex((item) => item !== '0' && item !== '1' && item !== '2');
+    return invalidCharIndex === -1;
+  }
+  return false;
 }
