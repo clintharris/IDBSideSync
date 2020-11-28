@@ -33,8 +33,11 @@ const BASE_THREE_SET: BaseThreeNumber[] = ['0', '1', '2'];
 export const MAX_TIME_MSEC = parseInt('2'.repeat(MAX_TREEPATH_LENGTH), 3) * 60 * 1000;
 
 export class MerkleTree {
-  hash: number = 0;
-  branches: {
+  // Initialize the hash to 0 so that if it updated to be the result of `0 ^ x`, x will always be used as the new hash
+  // value (i.e., the first time a "real" hash value is assigned, that value should be used).
+  public hash: number = 0;
+
+  public branches: {
     '0'?: MerkleTree;
     '1'?: MerkleTree;
     '2'?: MerkleTree;
@@ -66,6 +69,29 @@ export class MerkleTree {
     }
   }
 
+  get(treePath: BaseThreeTreePath): MerkleTree | null {
+    if (!treePath || treePath.length === 0) {
+      return null;
+    }
+
+    let branches = this.branches;
+    let tree = null;
+
+    for (const branchKey of treePath) {
+      tree = branches[branchKey];
+      if (!tree) {
+        return null;
+      }
+      branches = tree.branches;
+    }
+
+    return tree;
+  }
+
+  /**
+   * Compares two trees, node by node, and returns path to first node that has a different hash value (or an empty
+   * array if no difference is found).
+   */
   findDiff(otherTree: MerkleTree): BaseThreeTreePath {
     // If the hash values match at the root of each tree, there's no need to go through the child nodes...
     if (this.hash === otherTree.hash) {
@@ -142,7 +168,7 @@ export class MerkleTree {
     }
   }
 
-  pathToFirstLeaf(): BaseThreeTreePath {
+  pathToOldesttLeaf(): BaseThreeTreePath {
     const path: BaseThreeTreePath = [];
 
     let node: MerkleTree = this;

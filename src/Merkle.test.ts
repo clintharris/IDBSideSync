@@ -55,6 +55,28 @@ describe('MerkleTree', () => {
     });
   });
 
+  describe('get(path)', () => {
+    const tree = MerkleTree.fromObj(plainObjTree);
+
+    it('finds path to leaf node', () => {
+      const found = tree.get(['0', '2']);
+      expect(found).toEqual({ hash: 222, branches: {} });
+    });
+
+    it('finds path to non-leaf node', () => {
+      const found = tree.get(['0']);
+      expect(found).toEqual(plainObjTree.branches[0]);
+    });
+
+    it('returns null if path is empty', () => {
+      expect(tree.get([])).toBeNull();
+    });
+
+    it(`returns null if path doesn't exist in tree`, () => {
+      expect(tree.get(['0', '2', '1'])).toBeNull();
+    });
+  });
+
   describe('set(path, hash)', () => {
     const expected: MerkleTreeCompatible = {
       hash: 111,
@@ -161,14 +183,14 @@ describe('MerkleTree', () => {
     it('single call works', () => {
       const tree1 = MerkleTree.fromObj(plainObjTree);
       tree1.pruneOldestLeaf();
-      expect(tree1.pathToFirstLeaf()).toEqual(['0', '2']);
+      expect(tree1.pathToOldesttLeaf()).toEqual(['0', '2']);
     });
 
     it('consecutive calls work', () => {
       const tree1 = MerkleTree.fromObj(plainObjTree);
       tree1.pruneOldestLeaf();
       tree1.pruneOldestLeaf();
-      expect(tree1.pathToFirstLeaf()).toEqual(['0']);
+      expect(tree1.pathToOldesttLeaf()).toEqual(['0']);
     });
   });
 
