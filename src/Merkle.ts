@@ -49,12 +49,25 @@ export class MerkleTree {
    *
    * The specified path should be the "physical clock time" portion of an HLC timestamp (i.e., the time at which an
    * oplog entry was created) as MINUTES since 1970, and converted to base-3.
+   *
+   * TODO: Consider only allowing inserts to proceed for "full" 17-digit paths. This would prevent the possibility of
+   * setting the hash value for a non-leaf node (which would result in a node whose hash is, technically, not derived
+   * from the hashes of all its children).
    */
   set(treePath: BaseThreeTreePath, hash: number): void {
     if (!treePath || treePath.length === 0) {
       return;
     } else if (treePath.length > MAX_TREEPATH_LENGTH) {
       throw new MerkleTree.MaxPathLengthError(treePath);
+    }
+
+    // If the specified hash value already exists at the specified path, it means this tree has already encountered an
+    // oplog message; don't continue. We don't want to allow the same oplog message to be ingested more than once; that
+    // would result in mutating the hash values, which means two trees would only be equal if _both_ of them had
+    // processed the same oplog message twice.
+    const existingNode = this.get(treePath);
+    if (existingNode && existingNode.hash === hash) {
+      return;
     }
 
     this.hash = this.hash ^ hash;

@@ -127,6 +127,25 @@ describe('MerkleTree', () => {
         },
       });
     });
+
+    it(`doesn't mutate the tree on repeated attempts to set a path/hash that already exists`, () => {
+      const tree = new MerkleTree();
+      const originalHash = 111;
+      const anotherHash = 222;
+      
+      tree.set(['0', '1', '2'], originalHash);
+      expect(tree.hash).toEqual(originalHash);
+
+      tree.set(['0', '1', '2'], originalHash);
+      expect(tree.hash).toEqual(originalHash);
+
+      tree.set(['0', '2'], anotherHash);
+      expect(tree.hash).toEqual(originalHash ^ anotherHash);
+
+      tree.set(['0', '2'], anotherHash);
+      expect(tree.hash).toEqual(originalHash ^ anotherHash);
+    });
+
   });
 
   describe('findDiff(otherTree)', () => {
