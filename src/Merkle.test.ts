@@ -1,28 +1,179 @@
-import { jest } from '@jest/globals';
 import {
-  BaseThreeMerkleTree,
-  insertHash,
   convertTimeToTreePath,
   MAX_TIME_MSEC,
   MerkleTree,
   MAX_TREEPATH_LENGTH,
   convertTreePathToTime,
   isBaseThreeTreePath,
-  getKeysToChildTrees,
-  stringify,
-  pathToFirstDiff,
+  MerkleTreeCompatible,
+  BaseThreeTreePath,
 } from './Merkle';
 
-describe('Merkle', () => {
-  describe('getKeysToChildTrees()', () => {
-    it.each([
-      [{ hash: 0, '0': undefined }, ['0']],
-      [{ hash: 0, '0': undefined, '1': undefined }, ['0', '1']],
-      [{ hash: 0, '0': undefined, '1': undefined, '2': undefined }, ['0', '1', '2']],
-      [{ hash: 0, '0': undefined, foo: 'bar' }, ['0']],
-    ])('gets from "%s" keys "%s"', (merkleTree, expectedKeys) => {
-      expect(getKeysToChildTrees(merkleTree)).toEqual(expectedKeys);
+describe('MerkleTree', () => {
+  const plainObjTree: MerkleTreeCompatible = {
+    hash: 111 ^ 222 ^ 333,
+    branches: {
+      '0': {
+        hash: 111 ^ 222,
+        branches: {
+          '0': {
+            hash: 111,
+            branches: {},
+          },
+          '2': {
+            hash: 222,
+            branches: {},
+          },
+        },
+      },
+      '2': {
+        hash: 333,
+        branches: {},
+      },
+    },
+  };
+
+  describe('from(object)', () => {
+    it('converts valid object to instance', () => {
+      const tree = MerkleTree.fromObj(plainObjTree);
+      expect(tree).toEqual(plainObjTree);
     });
+
+    it.each([
+      [{}],
+      [{ hash: 0 }],
+      [{ hash: {} }],
+      [{ hash: 0, branches: null }],
+      [{ hash: 0, branches: false }],
+      [{ hash: 0, branches: 1 }],
+      [{ hash: 0, branches: 'foo' }],
+      [{ hash: 0, branches: { foo: 'bar' } }],
+    ])(`won't convert %s to a tree`, (obj) => {
+      expect(() => {
+        MerkleTree.fromObj(obj);
+      }).toThrow(MerkleTree.InvalidSourceObjectError);
+    });
+  });
+
+  describe('set(path, hash)', () => {
+    const expected: MerkleTreeCompatible = {
+      hash: 111,
+      branches: {
+        '0': {
+          hash: 111,
+          branches: {
+            '1': {
+              hash: 111,
+              branches: {
+                '2': { hash: 111, branches: {} },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    it('works on a new/empty tree', () => {
+      const tree = new MerkleTree();
+      tree.set(['0', '1', '2'], 111);
+      expect(tree).toEqual(expected);
+    });
+
+    it('works on a non-empty tree', () => {
+      const tree = MerkleTree.fromObj(expected);
+      expect(tree).toEqual(expected);
+
+      tree.set(['0', '2'], 222);
+      expect(tree).toEqual({
+        hash: 111 ^ 222,
+        branches: {
+          '0': {
+            hash: 111 ^ 222,
+            branches: {
+              '1': {
+                hash: 111,
+                branches: {
+                  '2': { hash: 111, branches: {} },
+                },
+              },
+              '2': {
+                hash: 222,
+                branches: {},
+              },
+            },
+          },
+        },
+      });
+    });
+  });
+
+  describe('findDiff(otherTree)', () => {
+    it('works when two nodes have a different hash at the same path', () => {
+      const tree1 = MerkleTree.fromObj(plainObjTree);
+      const tree2 = MerkleTree.fromObj(plainObjTree);
+
+      const diffPath: BaseThreeTreePath = ['0', '1'];
+      tree1.set(diffPath, 333);
+
+      expect(tree1.findDiff(tree2)).toEqual(diffPath);
+      expect(tree2.findDiff(tree1)).toEqual(diffPath);
+    });
+
+    it('works when a one tree has a node the other lacks', () => {
+      const tree1 = MerkleTree.fromObj(plainObjTree);
+      const tree2 = MerkleTree.fromObj(plainObjTree);
+
+      const diffPath: BaseThreeTreePath = ['0', '0', '1'];
+      tree1.set(diffPath, 333);
+
+      expect(tree1.findDiff(tree2)).toEqual(diffPath);
+      expect(tree2.findDiff(tree1)).toEqual(diffPath);
+    });
+
+    it('finds the FIRST diff when more than one node has a different hash', () => {
+      const tree1 = MerkleTree.fromObj(plainObjTree);
+      const tree2 = MerkleTree.fromObj(plainObjTree);
+
+      const earlierPath: BaseThreeTreePath = ['0', '2'];
+      const laterPath: BaseThreeTreePath = ['2', '1'];
+      tree1.set(earlierPath, 333);
+      tree1.set(laterPath, 444);
+
+      expect(tree1.findDiff(tree2)).toEqual(earlierPath);
+      expect(tree2.findDiff(tree1)).toEqual(earlierPath);
+    });
+
+    it('returns empty path when both trees are the same', () => {
+      const tree1 = MerkleTree.fromObj(plainObjTree);
+      const tree2 = MerkleTree.fromObj(plainObjTree);
+
+      tree1.set(['2', '1'], 333);
+      tree2.set(['2', '1'], 333);
+      tree1.set(['2', '1', '0'], 4444);
+      tree2.set(['2', '1', '0'], 4444);
+
+      expect(tree1.findDiff(tree2)).toEqual([]);
+      expect(tree2.findDiff(tree1)).toEqual([]);
+    });
+  });
+
+  describe('prune()', () => {
+    it('single call works', () => {
+      const tree1 = MerkleTree.fromObj(plainObjTree);
+      tree1.pruneOldestLeaf();
+      expect(tree1.pathToFirstLeaf()).toEqual(['0', '2']);
+    });
+
+    it('consecutive calls work', () => {
+      const tree1 = MerkleTree.fromObj(plainObjTree);
+      tree1.pruneOldestLeaf();
+      tree1.pruneOldestLeaf();
+      expect(tree1.pathToFirstLeaf()).toEqual(['0']);
+    });
+  });
+
+  describe('fromTimestamps()', () => {
+    //TODO
   });
 
   describe('convertTimeToTreePath()', () => {
@@ -75,119 +226,6 @@ describe('Merkle', () => {
       expect(() => {
         convertTreePathToTime([]);
       }).toThrow(MerkleTree.MinPathLengthError);
-    });
-  });
-
-  describe('pathToFirstDiff()', () => {
-    const defaultLeafNode: BaseThreeMerkleTree = { hash: 1 };
-    const diffLeafNode: BaseThreeMerkleTree = { hash: 2 };
-    const tree1: BaseThreeMerkleTree = {
-      hash: 0,
-      '0': {
-        hash: 0,
-        '0': defaultLeafNode,
-        '1': defaultLeafNode,
-        '2': defaultLeafNode,
-      },
-      '2': {
-        hash: 0,
-        '1': defaultLeafNode,
-        '2': defaultLeafNode,
-      },
-    };
-
-    it('finds diff when two nodes have a different hash', () => {
-      const tree2: BaseThreeMerkleTree = JSON.parse(JSON.stringify(tree1));
-      tree2.hash = tree1.hash + 1;
-      if (tree2[2]) {
-        tree2[2].hash = tree2[2].hash + 1;
-        tree2[2][1] = diffLeafNode;
-      }
-      expect(pathToFirstDiff(tree1, tree2)).toEqual(['2', '1']);
-    });
-
-    it('finds diff when a one tree has an extra node', () => {
-      const tree2: BaseThreeMerkleTree = JSON.parse(JSON.stringify(tree1));
-      tree2.hash = tree1.hash + 1;
-      if (tree2[2]) {
-        tree2[2].hash = tree2[2].hash + 1;
-        tree2[2][0] = diffLeafNode;
-      }
-      expect(pathToFirstDiff(tree1, tree2)).toEqual(['2', '0']);
-    });
-
-    it('finds diff when a one tree lacks a node', () => {
-      const tree2: BaseThreeMerkleTree = JSON.parse(JSON.stringify(tree1));
-      tree2.hash = tree1.hash + 1;
-      if (tree2[2]) {
-        tree2[2].hash = tree2[2].hash + 1;
-        delete tree2[2][1];
-      }
-      expect(pathToFirstDiff(tree1, tree2)).toEqual(['2', '1']);
-    });
-
-    it('finds the FIRST diff when more than one node has a different hash', () => {
-      const tree2: BaseThreeMerkleTree = JSON.parse(JSON.stringify(tree1));
-      tree2.hash = tree1.hash + 1;
-      if (tree2[2]) {
-        tree2[2].hash = tree2[2].hash + 1;
-        tree2[2][1] = diffLeafNode;
-        tree2[2][2] = diffLeafNode;
-      }
-      expect(pathToFirstDiff(tree1, tree2)).toEqual(['2', '1']);
-    });
-  });
-
-  describe('insertHash()', () => {
-    const originalChild2Hash = 123;
-    const originalChild1Hash = originalChild2Hash;
-    const originalRootHash = originalChild2Hash;
-
-    const originalTree: BaseThreeMerkleTree = {
-      hash: originalRootHash,
-      '0': {
-        hash: originalChild1Hash,
-        '0': {
-          hash: originalChild2Hash,
-        },
-        '2': {
-          hash: 555,
-        },
-      },
-    };
-
-    const newChildHash = 333;
-
-    const expectedTree: BaseThreeMerkleTree = {
-      hash: originalRootHash ^ newChildHash,
-      '0': {
-        hash: originalChild1Hash ^ newChildHash,
-        '0': {
-          hash: originalChild2Hash ^ newChildHash,
-          '1': {
-            hash: newChildHash,
-          },
-        },
-        '2': {
-          hash: 555,
-        },
-      },
-    };
-
-    const actualTree = insertHash(originalTree, ['0', '0', '1'], newChildHash);
-
-    it('returns a new object', () => {
-      expect(actualTree !== originalTree).toBeTruthy();
-    });
-
-    it('does not mutate the passed-in tree', () => {
-      expect(JSON.stringify(originalTree)).toEqual(
-        `{"0":{"0":{"hash":${originalChild2Hash}},"2":{"hash":555},"hash":${originalChild1Hash}},"hash":${originalRootHash}}`
-      );
-    });
-
-    it('returns a tree with correctly-inserted hash', () => {
-      expect(actualTree).toEqual(expectedTree);
     });
   });
 });

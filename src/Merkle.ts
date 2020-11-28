@@ -1,16 +1,15 @@
 import { Timestamp } from './Timestamp';
 
-export interface BaseMerkle {
+export type BaseThreeNumber = '0' | '1' | '2';
+
+export interface MerkleTreeCompatible {
   hash: number;
+  branches: {
+    '0'?: unknown;
+    '1'?: unknown;
+    '2'?: unknown;
+  };
 }
-
-export interface BaseThreeMerkleTree extends BaseMerkle {
-  '0'?: BaseThreeMerkleTree;
-  '1'?: BaseThreeMerkleTree;
-  '2'?: BaseThreeMerkleTree;
-}
-
-export type BaseThreeNumber = Exclude<keyof BaseThreeMerkleTree, 'hash'>;
 
 // A tree path is an array of characters, where each character can be used to access the next child node in the tree.
 // The path to a node is actually a time: each character in the path is part of a base-3 encoded "minutes since 1970"
@@ -23,8 +22,10 @@ export type BaseThreeNumber = Exclude<keyof BaseThreeMerkleTree, 'hash'>;
 // incorrect time of "1970-01-01T04:27:00". We have to pad the value with zeroes to get a more accurate date: `new
 // Date(26700000 * 60 * 1000)` => "2020-10-06T16:00:00".
 export type MaxTreePathLength = 17;
-export const MAX_TREEPATH_LENGTH: MaxTreePathLength = 17;
 export type BaseThreeTreePath = BaseThreeNumber[];
+
+export const MAX_TREEPATH_LENGTH: MaxTreePathLength = 17;
+const BASE_THREE_SET: BaseThreeNumber[] = ['0', '1', '2'];
 
 // A "path" to a leaf node should consist of no more than 17 keys. Each key can be a single base-3 digit (0, 1, or 2);
 // the largest base-3 number consisting of 17 digits is 22222222222222222, or 129140162 in base 10. (Note that this
@@ -32,6 +33,251 @@ export type BaseThreeTreePath = BaseThreeNumber[];
 export const MAX_TIME_MSEC = parseInt('2'.repeat(MAX_TREEPATH_LENGTH), 3) * 60 * 1000;
 
 export class MerkleTree {
+  hash: number = 0;
+  branches: {
+    '0'?: MerkleTree;
+    '1'?: MerkleTree;
+    '2'?: MerkleTree;
+  } = {};
+
+  /**
+   * Use this function to insert a hash into the merkle tree, updating the hashes of all intermediate tree nodes along
+   * the way, using the specified "tree path" to determine where in the tree a node should be created or updated.
+   *
+   * The specified path should be the "physical clock time" portion of an HLC timestamp (i.e., the time at which an
+   * oplog entry was created) as MINUTES since 1970, and converted to base-3.
+   */
+  set(treePath: BaseThreeTreePath, hash: number): void {
+    if (!treePath || treePath.length === 0) {
+      return;
+    } else if (treePath.length > MAX_TREEPATH_LENGTH) {
+      throw new MerkleTree.MaxPathLengthError(treePath);
+    }
+
+    this.hash = this.hash ^ hash;
+    let branches = this.branches;
+    for (const branchKey of treePath) {
+      let branch = branches[branchKey] || new MerkleTree();
+      if (!branches[branchKey]) {
+        branches[branchKey] = branch;
+      }
+      branch.hash = branch.hash ^ hash;
+      branches = branch.branches;
+    }
+  }
+
+  findDiff(otherTree: MerkleTree): BaseThreeTreePath {
+    // If the hash values match at the root of each tree, there's no need to go through the child nodes...
+    if (this.hash === otherTree.hash) {
+      return [];
+    }
+
+    let tree1Iter: MerkleTree = this;
+    let tree2Iter: MerkleTree = otherTree;
+    const pathToDiff: BaseThreeTreePath = [];
+
+    while (true) {
+      // Get all the keys to child nodes from both trees, using a Set() to remove duplicates.
+      let childTreeKeySet = new Set([...tree1Iter.branchKeys(), ...tree2Iter.branchKeys()]);
+      let childTreeKeys = [...childTreeKeySet.values()]; // Convert the set to an array
+
+      // Before we start to compare the two nodes we want to sort the keys so that, in effect, we are "moving" from older
+      // times to more recent times when doing the diff. This way, if there is a difference, we will have found the oldest
+      // time at which the trees began to differ.
+      childTreeKeys.sort();
+
+      // Compare the hash for each of the child nodes, returning the key of the first child node for which hashes differ.
+      let diffkey = childTreeKeys.find((key) => {
+        return tree1Iter.branches[key]?.hash !== tree2Iter.branches[key]?.hash;
+      });
+
+      // If we didn't find anything, it means the child nodes have the same hashes (i.e., this is a "point in time" when
+      // both trees are the same).
+      if (!diffkey) {
+        return pathToDiff;
+      }
+
+      // If we got this far, it means we found a location where the two trees differ (i.e., each tree has a child node at
+      // this position, but they have different hashes--meaning they are the result of different messages). We want to
+      // continue down this path and keep comparing nodes until we can find a position where the hashes equal.
+      //
+      // Note that as we continue to recurse the tree, we are appending the keys. This string of digits will be parsed
+      // back intoa time eventually, so as we keep appending characters we are basically building a more and more precise
+      // Date/time. For example:
+      //  - Less precise: `new Date(1581859880000)` == 2020-02-16T13:31:20.000Z
+      //  - More precise: `new Date(1581859883747)` == 2020-02-16T13:31:23.747Z
+      pathToDiff.push(diffkey);
+
+      if (pathToDiff.length > MAX_TREEPATH_LENGTH) {
+        throw new MerkleTree.MaxPathLengthError(pathToDiff);
+      }
+
+      // Now update the references to the nodes (from each tree) so that, in the next loop, we are comparing the child
+      // nodes (i.e., this is how we recurse the trees).
+      tree1Iter = tree1Iter.branches[diffkey] || new MerkleTree();
+      tree2Iter = tree2Iter.branches[diffkey] || new MerkleTree();
+    }
+  }
+
+  /**
+   * Use this to delete the oldest leaf node. This can be useful if the tree has become unnecessarily large with
+   * nodes/hashes for oplog messages too old to still be relevant.
+   *
+   * IMPORTANT: this does not recalculate/update hash values (i.e., it can leave some nodes with hash values that,
+   * technically, are not the derived from the hashes of all children). This is ok. If two clients have encountered the
+   * same oplog messages (i.e., have the same trees), and one client prunes its tree, the trees should still be
+   * considered equal.
+   */
+  pruneOldestLeaf(): void {
+    if (!this.hasBranches()) {
+      return;
+    }
+
+    for (let [key, childBranch] of this.branchEntries().slice(0, 1)) {
+      if (childBranch.hasBranches()) {
+        childBranch.pruneOldestLeaf();
+      } else {
+        delete this.branches[key];
+      }
+    }
+  }
+
+  pathToFirstLeaf(): BaseThreeTreePath {
+    const path: BaseThreeTreePath = [];
+
+    let node: MerkleTree = this;
+
+    while (true) {
+      let keys = node.branchKeys();
+
+      if (keys.length === 0) {
+        return path;
+      }
+
+      path.push(keys[0]);
+      node = node.branches[keys[0]] as MerkleTree;
+    }
+  }
+
+  branchKeys(): BaseThreeNumber[] {
+    return Object.keys(this.branches)
+      .filter((key) => isBaseThreeNumber(key))
+      .sort() as BaseThreeNumber[];
+  }
+
+  branchEntries(): [BaseThreeNumber, MerkleTree][] {
+    const entries: [BaseThreeNumber, MerkleTree][] = [];
+    for (let key of this.branchKeys()) {
+      let branch = this.branches[key];
+      if (branch) {
+        entries.push([key, branch]);
+      }
+    }
+    return entries;
+  }
+
+  hasBranches(): boolean {
+    return this.branchKeys().length > 0;
+  }
+
+  /**
+   * Add an ES6 standard iterator implementation to make `for (let branch in tree)` expressions possible, etc.
+   */
+  [Symbol.iterator]() {
+    const branchKeys = this.branchKeys();
+    return {
+      next: () => {
+        const key = branchKeys.shift();
+        return key ? { value: this.branches[key], done: false } : { done: true };
+      },
+    };
+  }
+
+  toJSON(): object {
+    const obj: MerkleTreeCompatible = { hash: this.hash, branches: {} };
+    for (const [key, branch] of this.branchEntries()) {
+      obj.branches[key as BaseThreeNumber] = branch.toJSON();
+    }
+    return obj;
+  }
+
+  toString(): string {
+    return MerkleTree.stringify(this);
+  }
+
+  static fromObj(obj: unknown): MerkleTree {
+    if (!MerkleTree.canBeCreatedFrom(obj)) {
+      throw new MerkleTree.InvalidSourceObjectError(obj);
+    }
+
+    const tree = new MerkleTree();
+    tree.hash = obj.hash;
+    tree.branches = {};
+
+    for (let branchKey of BASE_THREE_SET) {
+      if (obj.branches[branchKey]) {
+        tree.branches[branchKey] = MerkleTree.fromObj(obj.branches[branchKey]);
+      }
+    }
+
+    return tree;
+  }
+
+  static fromTimestamps(timestamps: Timestamp[]): MerkleTree {
+    const tree = new MerkleTree();
+    for (let timestamp of timestamps) {
+      tree.set(convertTimeToTreePath(timestamp.millis()), timestamp.hash());
+    }
+    return tree;
+  }
+
+  /**
+   * Returns a nicely-indented, stringified version of the tree.
+   */
+  static stringify(tree: MerkleTree, key = '', indent = 0): string {
+    let str = ' '.repeat(indent) + `[${key === '' ? '-' : key}]: ${tree.hash}\n`;
+
+    for (const [key, branch] of Object.entries(tree.branches)) {
+      str += branch ? MerkleTree.stringify(branch, key, indent + 4) : '';
+    }
+
+    return str;
+  }
+
+  static canBeCreatedFrom(obj: unknown): obj is MerkleTreeCompatible {
+    if (!obj || typeof obj !== 'object') {
+      return false;
+    }
+
+    const test = obj as MerkleTree;
+
+    if (typeof test.hash !== 'number' || test.hash < 0) {
+      return false;
+    }
+
+    if (!test.branches || typeof test.branches !== 'object') {
+      return false;
+    }
+
+    const invalidBranchKey = Object.keys(test.branches).find((key) => !isBaseThreeNumber(key));
+    if (invalidBranchKey) {
+      return false;
+    }
+
+    return true;
+  }
+
+  static InvalidSourceObjectError = class extends Error {
+    public type: string;
+    public message: string;
+
+    constructor(object: unknown) {
+      super();
+      this.type = 'InvalidSourceObjectError';
+      this.message = `Can't create tree from: ${object}`;
+    }
+  };
+
   static MinTimeError = class extends Error {
     public type: string;
     public message: string;
@@ -75,143 +321,6 @@ export class MerkleTree {
       this.message = `Tree path cannot have more than ${MAX_TREEPATH_LENGTH} elements: ${treePath}`;
     }
   };
-}
-
-export function build(timestamps: Timestamp[]): BaseThreeMerkleTree {
-  const tree = { hash: 0 };
-  for (let timestamp of timestamps) {
-    insertTimestamp(tree, timestamp);
-  }
-  return tree;
-}
-
-/**
- * Adds a new node (a timestamp) to a merkle tree.
- */
-export function insertTimestamp(tree: BaseThreeMerkleTree, timestamp: Timestamp): BaseThreeMerkleTree {
-  let treePath = convertTimeToTreePath(timestamp.millis());
-  return insertHash(tree, treePath, timestamp.hash());
-}
-
-/**
- * Use this function to insert an HLC timestamp's hash into a merkle tree, updating the hashes of all intermediate tree
- * nodes along the way, using the specified "tree path" to determine where in the tree a node should be created or
- * updated.
- *
- * The specified path should be the "physical clock time" portion of an HLC timestamp (i.e., the time at which an oplog
- * entry was created) as MINUTES since 1970, and converted to base-3.
- *
- * For example, a (oversimplified) base-3 key "012" would result in this:
- *
- * {
- *   "hash": 1704467157,
- *   "0": {
- *     "hash": 1704467157,
- *     "1": {
- *       "hash": 1704467157,
- *       "0": { ... }
- *       "1": { ... }
- *       "2": { ... }
- *     }
- *   }
- * }
- *
- * @returns an object like: { hash: 1234567; '0': object; '1': object; '2': object }
- */
-export function insertHash(
-  currentNode: BaseThreeMerkleTree,
-  treePath: BaseThreeTreePath,
-  timestampHash: number
-): BaseThreeMerkleTree {
-  if (treePath.length === 0) {
-    return currentNode;
-  } else if (treePath.length > MAX_TREEPATH_LENGTH) {
-    throw new MerkleTree.MaxPathLengthError(treePath);
-  }
-
-  const childNodeKey = treePath[0];
-  const childNode: BaseThreeMerkleTree = currentNode[childNodeKey] || { hash: 0 };
-
-  // Create/rebuild the child node with a (possibly) new hash that incorporates the passed-in hash, and new new/rebuilt
-  // children (via a recursive call to `insertKey()`). In other words, since `key.length > 0` we have more "branches" of
-  // the tree hierarchy to extend before we reach a leaf node and can begin returning.
-  //
-  // The first time the child node is built, it will have hash A. If another timestamp hash (B) is inserted, and this
-  // node is a "step" in the insertion path (i.e., it is the target node or a parent of the target node), then the has
-  // will be updated to be hash(A, B).
-  const updatedChildNode: BaseThreeMerkleTree = Object.assign(
-    {},
-    childNode,
-
-    // Note that we're using key.slice(1) to make sure that, for the next recursive call, we are moving on to the next
-    // "step" in the "path" (i.e., the next character in the key string). If `key.slice() === ''` then `insertKey()`
-    // will return `currChild`--in which case all we are doing here is setting the `hash` property.
-    insertHash(childNode, treePath.slice(1), timestampHash),
-
-    // Update the current node's hash. If we don't have a hash (i.e., we just created `currChild` and it is an empty
-    // object) then this will just be the value of the passed-in hash from our "parent" node. In effect, an "only child"
-    // node will have the same hash as its parent; only when a a 2nd (or later)
-    { hash: childNode.hash ^ timestampHash }
-  );
-
-  // Return a NEW tree that has an updated hash and the updated child node
-  return { ...currentNode, hash: currentNode.hash ^ timestampHash, [childNodeKey]: updatedChildNode };
-}
-
-/**
- * Returns a path to first node where two trees have different hash values, or null if both trees have the same hash.
- */
-export function pathToFirstDiff(tree1: BaseThreeMerkleTree, tree2: BaseThreeMerkleTree): BaseThreeTreePath | null {
-  // If the hash values match at the root of each tree, there's no need to go through the child nodes...
-  if (tree1.hash === tree2.hash) {
-    return null;
-  }
-
-  let tree1Iter = tree1;
-  let tree2Iter = tree2;
-  const pathToDiff: BaseThreeTreePath = [];
-
-  while (true) {
-    // Get all the keys to child nodes from both trees, using a Set() to remove duplicates.
-    let childTreeKeySet = new Set([...getKeysToChildTrees(tree1Iter), ...getKeysToChildTrees(tree2Iter)]);
-    let childTreeKeys = [...childTreeKeySet.values()]; // Convert the set to an array
-
-    // Before we start to compare the two nodes we want to sort the keys so that, in effect, we are "moving" from older
-    // times to more recent times when doing the diff. This way, if there is a difference, we will have found the oldest
-    // time at which the trees began to differ.
-    childTreeKeys.sort();
-
-    // Compare the hash for each of the child nodes, returning the key of the first child node for which hashes differ.
-    let diffkey = childTreeKeys.find((key) => {
-      return tree1Iter[key]?.hash !== tree2Iter[key]?.hash;
-    });
-
-    // If we didn't find anything, it means the child nodes have the same hashes (i.e., this is a "point in time" when
-    // both trees are the same).
-    if (!diffkey) {
-      return pathToDiff;
-    }
-
-    // If we got this far, it means we found a location where the two trees differ (i.e., each tree has a child node at
-    // this position, but they have different hashes--meaning they are the result of different messages). We want to
-    // continue down this path and keep comparing nodes until we can find a position where the hashes equal.
-    //
-    // Note that as we continue to recurse the tree, we are appending the keys. This string of digits will be parsed
-    // back intoa time eventually, so as we keep appending characters we are basically building a more and more precise
-    // Date/time. For example:
-    //  - Less precise: `new Date(1581859880000)` == 2020-02-16T13:31:20.000Z
-    //  - More precise: `new Date(1581859883747)` == 2020-02-16T13:31:23.747Z
-    pathToDiff.push(diffkey);
-
-    if (pathToDiff.length > MAX_TREEPATH_LENGTH) {
-      throw new MerkleTree.MaxPathLengthError(pathToDiff);
-    }
-
-    // Now update the references to the nodes (from each tree) so that, in the next loop, we are comparing the child
-    // nodes (i.e., this is how we recurse the trees).
-    tree1Iter = tree1Iter[diffkey] || { hash: 0 };
-    tree2Iter = tree2Iter[diffkey] || { hash: 0 };
-  }
 }
 
 /**
@@ -289,53 +398,11 @@ export function convertTreePathToTime(treePath: BaseThreeTreePath): number {
   return timeMsec;
 }
 
-export function getKeysToChildTrees(tree: BaseThreeMerkleTree): BaseThreeNumber[] {
-  return Object.keys(tree).filter((key) => ['0', '1', '2'].includes(key)) as BaseThreeNumber[];
-}
-
 /**
- * Use this function to "prune" a Merkle tree by removing branches. By default, the first branch from each child node
- * is removed.
+ * TypeScript type guard for safely asserting that something is a BaseThreeNumber.
  */
-export function prune(tree: BaseThreeMerkleTree, n = 2): BaseThreeMerkleTree {
-  // Do nothing if empty
-  if (!tree.hash) {
-    return tree;
-  }
-
-  let prunedTree: BaseThreeMerkleTree = { hash: tree.hash };
-
-  getKeysToChildTrees(tree)
-    .sort()
-    .forEach((childNodeKey) => {
-      const childTree = tree[childNodeKey];
-      if (childTree) {
-        prunedTree[childNodeKey] = prune(childTree, n);
-      }
-    });
-
-  return prunedTree;
-}
-
-/**
- * Returns a nicely-indented, stringified version of the tree.
- */
-export function stringify(tree: BaseThreeMerkleTree, k = '', indent = 0): string {
-  const str =
-    ' '.repeat(indent) + (k !== '' ? `'${k}': ` : '') + `${typeof tree.hash === 'number' ? tree.hash : '(empty)'}\n`;
-
-  return (
-    str +
-    getKeysToChildTrees(tree)
-      .map((childNodeKey) => {
-        const childTree = tree[childNodeKey];
-        if (childTree) {
-          return stringify(childTree, childNodeKey, indent + 2);
-        }
-        return '';
-      })
-      .join('')
-  );
+export function isBaseThreeNumber(thing: unknown): thing is BaseThreeNumber {
+  return thing === '0' || thing === '1' || thing === '2';
 }
 
 /**
@@ -347,26 +414,4 @@ export function isBaseThreeTreePath(thing: unknown): thing is BaseThreeTreePath 
     return invalidCharIndex === -1;
   }
   return false;
-}
-
-/**
- * TypeScript type guard for safely asserting that something is a BaseThreeMerkleTree.
- */
-export function isBaseThreeMerkleTree(thing: unknown): thing is BaseThreeMerkleTree {
-  if (!thing || typeof thing !== 'object') {
-    return false;
-  }
-
-  if (typeof (thing as BaseThreeMerkleTree).hash !== 'number') {
-    return false;
-  }
-
-  for (const baseThreeKey of ['0', '1', '2'] as BaseThreeNumber[]) {
-    const childTree = (thing as BaseThreeMerkleTree)[baseThreeKey];
-    if (childTree !== undefined && !isBaseThreeMerkleTree(childTree)) {
-      return false;
-    }
-  }
-
-  return true;
 }
