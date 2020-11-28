@@ -10,6 +10,7 @@ and (in some cases) modified version of his work.
 # Roadmap
 
 - [ ] Convert files to TypeScript
+- [ ] Move types to a type def file that can be easily referenced by other apps if being imported as a library
 - [ ] Add unit tests (to ensure consistent behavior in next step, refactoring)
 - [ ] Incorporate Jared Forsyth's HLC string formatting improvements that allow for longer timestamp and counter strings:
     - `physTime.toString().padStart(15, '0')` // 13 digits is enough for the next 100 years, so 15 is plenty
@@ -36,6 +37,12 @@ and (in some cases) modified version of his work.
     - Timestamp.send() is only being used to increment the local clock singleton anyways (i.e., it's only ever called as `Timestamp.send(getClock())`); `Clock.next()` makes it more obvious that the local clock is being updated/advanced to the next hybrid logical time.
 - [ ] Consider increasing the allowed difference for clock times coming from other systems; only allowing for a 1-minute difference between any other clock in the distributed system seems like it could be error prone...
 - [ ] Modify Timestamp.parse() to do a better job of checking for issues with the passed-in string and throwing errors if necessary (e.g., throwing if an invalid month is specified)
+- [ ] Merkle tree:
+    - [-] build(): seems like it should be re-assigning a single `tree` variable to the result of `insert()` each time `insert()` is called with a timestamp... Should def test current behavior.
+    - [-] insert(): stop re-assigning `tree` param pointer
+    - [x] move all keys for accessing child nodes under a new "children" key
+    - [x] insertKey(): is it really necessary to create new objects instead of just mutating the existing properties when rebuilding the tree/nodes?
+    - [ ] consider only allowing inserts to proceed for "full" 17-digit paths. This would prevent the possibility of setting hash value for non-leaf nodes (which would result in a node whose hash is, technically, not derived from the hashes of all its children). The downside of this is that it would make unit testing harder to easily understand (since you can't use "simple" testing trees with only a few nodes).
 
 ## New features
 
@@ -76,7 +83,10 @@ and (in some cases) modified version of his work.
         - this could be done by "searching" for files using a filename pattern that will exclude oplog entries before some time (see https://stackoverflow.com/a/11011934/62694)
         - OR (maybe simpler but much less efficient), download all file _names_ (i.e., list dir), iterate over them (parsing each filename to an actual HLC time that can be compared to the reference HLC time), and download each one that occurs on/after the reference time.
 
-## Questions
+## FAQ
 
-- What happens if the same message is added to merkle tree more than once?
+### Q: What happens if the same oplog/change message is "ingested" more than once?
 
+It will have no effect on the data store. Message values are only applied to the data store if the message's HLC time is more recent than the current value.
+
+However, it would "corrupt" the Merkle tree (if the tree weren't set up to prevent it) since the hash values would still change when the message's hash is inserted a second time.
