@@ -30,19 +30,24 @@ and (in some cases) modified version of his work.
 
 ## Refactoring
 
-- [ ] `Clock`: Create a Clock class, make `_clock` and the non-class-based functions "var static" members.
-- [ ] Rename Timestamp to `HybridLogicalTimestamp` (or `HybridLogicalTime`)
-- [ ] Rename Clock to HybridLogicalClock
-- [ ] Move Timestamp.send() into `Clock` and rename/refactor it to work as `Clock.next()`. This makes sense because:
-    - Timestamp.send() is only being used to increment the local clock singleton anyways (i.e., it's only ever called as `Timestamp.send(getClock())`); `Clock.next()` makes it more obvious that the local clock is being updated/advanced to the next hybrid logical time.
+- [x] `Clock`: Create a Clock class, make `_clock` and the non-class-based functions "static" members.
+- [x] Rename Timestamp to `HLTime`
+- [x] Rename Clock to `HLClock`
+- [x] Move Timestamp.send() into `HLClock` and rename/refactor it to work as `Clock.tick()`. This makes sense because:
+    - Timestamp.send() is only being used to increment the local clock singleton anyways (i.e., it's only ever called as `Timestamp.send(getClock())`); `Clock.tick()` makes it more obvious that the local clock is being updated/advanced to the next hybrid logical time.
 - [ ] Consider increasing the allowed difference for clock times coming from other systems; only allowing for a 1-minute difference between any other clock in the distributed system seems like it could be error prone...
-- [ ] Modify Timestamp.parse() to do a better job of checking for issues with the passed-in string and throwing errors if necessary (e.g., throwing if an invalid month is specified)
+- [ ] Modify HLTime.parse() to do a better job of checking for issues with the passed-in string and throwing errors if necessary (e.g., throwing if an invalid month is specified)
 - [ ] Merkle tree:
     - [-] build(): seems like it should be re-assigning a single `tree` variable to the result of `insert()` each time `insert()` is called with a timestamp... Should def test current behavior.
     - [-] insert(): stop re-assigning `tree` param pointer
     - [x] move all keys for accessing child nodes under a new "children" key
     - [x] insertKey(): is it really necessary to create new objects instead of just mutating the existing properties when rebuilding the tree/nodes?
     - [ ] consider only allowing inserts to proceed for "full" 17-digit paths. This would prevent the possibility of setting hash value for non-leaf nodes (which would result in a node whose hash is, technically, not derived from the hashes of all its children). The downside of this is that it would make unit testing harder to easily understand (since you can't use "simple" testing trees with only a few nodes).
+- [ ] db/sync
+    - system needs access to full collection of oplog messages (and needs to be able to sort them)
+        - this means _all_ messages would need to be loaded into memory if persistent storage is unavailable
+
+
 
 ## New features
 
