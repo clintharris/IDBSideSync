@@ -7,7 +7,7 @@ import {
   isBaseThreeTreePath,
   MerkleTreeCompatible,
   BaseThreeTreePath,
-} from './Merkle';
+} from './MerkleTree';
 
 describe('MerkleTree', () => {
   const plainObjTree: MerkleTreeCompatible = {
@@ -132,7 +132,7 @@ describe('MerkleTree', () => {
       const tree = new MerkleTree();
       const originalHash = 111;
       const anotherHash = 222;
-      
+
       tree.set(['0', '1', '2'], originalHash);
       expect(tree.hash).toEqual(originalHash);
 
@@ -145,7 +145,6 @@ describe('MerkleTree', () => {
       tree.set(['0', '2'], anotherHash);
       expect(tree.hash).toEqual(originalHash ^ anotherHash);
     });
-
   });
 
   describe('findDiff(otherTree)', () => {
