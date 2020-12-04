@@ -1,5 +1,5 @@
-import { HLClock } from './Clock';
-import { HLTime } from './Timestamp';
+import { HLClock } from './HLClock';
+import { HLTime } from './HLTime';
 
 describe('HLClock', () => {
   it('time() and set() work.', () => {

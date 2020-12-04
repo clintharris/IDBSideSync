@@ -1,4 +1,4 @@
-import { HLTime } from './Timestamp';
+import { HLTime } from './HLTime';
 
 export class HLClock {
   private static _time: HLTime | null = null;
