@@ -98,11 +98,11 @@ export class HLTime {
 /**
  * Used to manage _mutable_ instances of HLC time.
  */
-export class MutableTimestamp extends HLTime {
-  public static from(timestamp: HLTime): MutableTimestamp {
+export class HLMutableTime extends HLTime {
+  public static from(timestamp: HLTime): HLMutableTime {
     // Invoking the `MutableTimestamp` constructor function, which we haven't actually defined anywhere, will result in
     // the parent class constructor being called instead (i.e., this is the same as calling `Timestamp(...)`).
-    return new MutableTimestamp(timestamp.millis(), timestamp.counter(), timestamp.node());
+    return new HLMutableTime(timestamp.millis(), timestamp.counter(), timestamp.node());
   }
 
   setMillis(n: number) {

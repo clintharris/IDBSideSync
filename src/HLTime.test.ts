@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import murmurhash from 'murmurhash';
-import { HLTime, MutableTimestamp } from './HLTime';
+import { HLTime, HLMutableTime } from './HLTime';
 
 afterEach(() => {
   jest.useRealTimers();
@@ -89,10 +89,10 @@ describe('HLTime', () => {
   });
 });
 
-describe('MutableTimestamp', () => {
+describe('HLMutableTime', () => {
   it('constructor works', () => {
     const expected = { millis: 111, counter: 222, node: 'foo' };
-    const actualTimestamp = new MutableTimestamp(expected.millis, expected.counter, expected.node);
+    const actualTimestamp = new HLMutableTime(expected.millis, expected.counter, expected.node);
     expect(actualTimestamp.millis()).toEqual(expected.millis);
     expect(actualTimestamp.counter()).toEqual(expected.counter);
     expect(actualTimestamp.node()).toEqual(expected.node);
@@ -100,7 +100,7 @@ describe('MutableTimestamp', () => {
 
   it('setters works', () => {
     const initial = { millis: 111, counter: 222, node: 'foo' };
-    const actualTimestamp = new MutableTimestamp(initial.millis, initial.counter, initial.node);
+    const actualTimestamp = new HLMutableTime(initial.millis, initial.counter, initial.node);
 
     const expected = { millis: 333, counter: 444, node: 'bar' };
     actualTimestamp.setMillis(expected.millis);

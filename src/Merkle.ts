@@ -1,4 +1,4 @@
-import { Timestamp } from './Timestamp';
+import { HLTime } from './HLTime';
 
 export type BaseThreeNumber = '0' | '1' | '2';
 
@@ -262,7 +262,7 @@ export class MerkleTree {
     return tree;
   }
 
-  static fromTimestamps(timestamps: Timestamp[]): MerkleTree {
+  static fromTimestamps(timestamps: HLTime[]): MerkleTree {
     const tree = new MerkleTree();
     for (let timestamp of timestamps) {
       tree.set(convertTimeToTreePath(timestamp.millis()), timestamp.hash());
