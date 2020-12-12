@@ -27,6 +27,12 @@ and (in some cases) modified version of his work.
     - Safer to do this after unit tests exist
 - [ ] Move to oploggy monorepo with `core` subdir (future: `store-indexeddb`, etc., subdirs/packages).
 - [ ] Add support for new features
+- [ ] Create Proxy trap/handlers so that oplog can be maintain transparently as developer uses IndexedDB
+    - Should be implemented to work with the standard IndexedDB API and _not_ depend on a convenience wrapper (such as idb).
+    - Should create its own IndexedDB database so that oploggy-specific CRUD won't involve locking the developer's application database.
+    - When db conn is opened (indexedDB.open()), the resulting db should cached as a singleton so that it can be reused.
+        - Note: Jake Archibald uses the same "cached singleton db conn" approach in his svgomg PWA: https://github.com/jakearchibald/svgomg/blob/master/src/js/utils/storage.js#L5
+    
 
 ## Refactoring
 

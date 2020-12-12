@@ -4,7 +4,7 @@
     "module": "umd", // UMD because we want the output to run in browser and node.
     "moduleResolution": "node", // TypeScript only resolves 'uuidv4' if moduleResolution=node
     "esModuleInterop": true,
-    "lib": ["es2015"],
+    "lib": ["es2015", "DOM"],
     "strict": true,
     "declaration": true,
     "outDir": "dist",
