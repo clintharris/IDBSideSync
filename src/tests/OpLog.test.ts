@@ -5,8 +5,8 @@ import 'fake-indexeddb/auto';
 import FDBFactory from 'fake-indexeddb/lib/FDBFactory';
 import { IDBPDatabase, openDB, deleteDB, wrap, unwrap } from 'idb';
 
-import { IDBFactoryProxy } from '../OpLog';
 import { HLTime } from '../HLTime';
+import { proxyStore } from '../IDBObjectStoreProxy';
 
 jest.setTimeout(10000);
 
@@ -18,6 +18,11 @@ describe('OpLog', () => {
 
   describe('Proxy', () => {
     it('intercepts calls to store.add()', (onTestDone) => {
+      const spongebObj = { id: 1, name: 'spongebob' };
+      const patrickObj = { id: 2, name: 'patrick' };
+      const onSpongebobAddSuccessFcn = jest.fn();
+      const onPatrickAddSuccessFcn = jest.fn();
+
       const handleUpgradeNeeded: IDBOpenDBRequest['onupgradeneeded'] = jest.fn(function (
         // The 'this' parameter is "fake" and only here for the benefit of the TypeScript compiler. We are using it to
         // tell tsc what type 'this' is inside our function. We only need to do this because we are wrapping the
@@ -27,94 +32,89 @@ describe('OpLog', () => {
       ) {
         const db = this.result;
         const objectStore = db.createObjectStore('customers', { keyPath: 'id' });
+        // const objectStore = new IDBObjectStoreProxy(db.createObjectStore('customers', { keyPath: 'id' }));
 
         objectStore.createIndex('name', 'name', { unique: false });
 
         // Use transaction oncomplete to make sure the objectStore creation is finished before adding data into it.
         objectStore.transaction.oncomplete = function (event) {
-          // Store values in the newly created objectStore.
-          var customerObjectStore = db.transaction('customers', 'readwrite').objectStore('customers');
+          var customerObjectStore = proxyStore(db.transaction('customers', 'readwrite').objectStore('customers'));
 
-          //TODO: intercept .add() to record operations.
-          customerObjectStore.add({ id: 1, name: 'patrick' });
-          customerObjectStore.add({ id: 2, name: 'patrick' });
-
-          customerObjectStore.transaction.oncomplete = () => {
-            finishTest();
-          };
+          customerObjectStore.add(spongebObj).onsuccess = onSpongebobAddSuccessFcn;
+          customerObjectStore.put(patrickObj).onsuccess = onPatrickAddSuccessFcn;
+          customerObjectStore.transaction.oncomplete = finishTest;
         };
       });
 
-      const factoryProxy = new IDBFactoryProxy();
-      const factoryProxyOpenFcnSpy = jest.spyOn(factoryProxy, 'open');
-
-      const oploggedIdb = new Proxy(window.indexedDB, factoryProxy);
-
-      // Remember: this is actually an instance of OpLoggy.IDBOpenDBRequestProxy
-      const openDbRequest = oploggedIdb.open('mydatabase', 1);
+      const openDbRequest = window.indexedDB.open('mydatabase', 1);
 
       openDbRequest.onupgradeneeded = handleUpgradeNeeded;
 
       function finishTest() {
-        console.log('Finishing test...');
-        // expect(handleUpgradeNeeded).toHaveBeenCalledTimes(1);
-        // expect(factoryProxyOpenFcnSpy).toHaveBeenCalledTimes(1);
-
-        // Verify that OpLoggy created its own object stores
         // @ts-ignore
         const stores: Map = window.indexedDB._databases.get('mydatabase').rawObjectStores;
-        expect(stores.has('oplog')).toBeTruthy();
         expect(stores.has('customers')).toBeTruthy();
 
-        // Verify that
-        console.log(stores.get('customers').records);
+        // @ts-ignore
+        const records = stores.get('customers').records.records;
+
+        // @ts-ignore
+        const patrickRecord = records.find((record) => record.key === patrickObj.id);
+        expect(patrickRecord).toEqual({ key: patrickObj.id, value: patrickObj });
+
+        // @ts-ignore
+        const spongebobRecord = records.find((record) => record.key === spongebObj.id);
+        expect(spongebobRecord).toEqual({ key: spongebObj.id, value: spongebObj });
+
+        expect(onSpongebobAddSuccessFcn).toHaveBeenCalledTimes(1);
+        expect(onPatrickAddSuccessFcn).toHaveBeenCalledTimes(1);
         onTestDone();
       }
     });
   });
 
-  describe('IDB tests', () => {
-    const name = { db: 'testDb', table1: 'table1' };
+  // describe('IDB tests', () => {
+  //   const name = { db: 'testDb', table1: 'table1' };
 
-    it('test 1', async () => {
-      const upgradeFcn = jest.fn((db: IDBPDatabase) => {
-        expect(db.objectStoreNames.contains(name.table1)).toBeFalsy();
-        db.createObjectStore(name.table1, { autoIncrement: true });
-      });
+  //   it('test 1', async () => {
+  //     const upgradeFcn = jest.fn((db: IDBPDatabase) => {
+  //       expect(db.objectStoreNames.contains(name.table1)).toBeFalsy();
+  //       db.createObjectStore(name.table1, { autoIncrement: true });
+  //     });
 
-      // const openReq = window.indexedDB.open('mydatabase', 1);
-      // const wrappedOpenReq = wrap(openReq);
+  //     const db = await openDB(name.db, 1, {
+  //       upgrade: upgradeFcn,
+  //     });
 
-      const db = await openDB(name.db, 1, {
-        upgrade: upgradeFcn,
-      });
+  //     // TODO: Create a separate Proxy for the idb library? Or maybe figure out how to use idb's wrap() function to
+  //     // wrap some "real" IndexedDB objec that has an OpLoggy proxy around it. Will need to look at idb's code to see
+  //     // how to access the actual, underlying IDBObjectStore instance.
+  //     const tx = db.transaction(name.table1, 'readwrite');
+  //     const store = tx.objectStore(name.table1);
+  //     await store.put({ name: 'patrick' });
+  //     await store.put({ name: 'spongebob' });
+  //     await store.put({ name: 'squidward' });
 
-      const tx = db.transaction(name.table1, 'readwrite');
-      const store = tx.objectStore(name.table1);
-      await store.put({ name: 'patrick' });
-      await store.put({ name: 'spongebob' });
-      await store.put({ name: 'squidward' });
+  //     const result = await store.getAll();
+  //     console.log(result);
 
-      const result = await store.getAll();
-      console.log(result);
+  //     expect(upgradeFcn).toBeCalled();
+  //   });
 
-      expect(upgradeFcn).toBeCalled();
-    });
+  //   it('test 2', async () => {
+  //     const upgradeFcn = jest.fn((db: IDBPDatabase) => {
+  //       expect(db.objectStoreNames.contains(name.table1)).toBeFalsy();
+  //       db.createObjectStore(name.table1, { autoIncrement: true });
+  //     });
 
-    it('test 2', async () => {
-      const upgradeFcn = jest.fn((db: IDBPDatabase) => {
-        expect(db.objectStoreNames.contains(name.table1)).toBeFalsy();
-        db.createObjectStore(name.table1, { autoIncrement: true });
-      });
+  //     // const fakeIdb = wrap(window.indexedDB)
+  //     const db = await openDB(name.db, 1, {
+  //       upgrade: upgradeFcn,
+  //     });
 
-      // const fakeIdb = wrap(window.indexedDB)
-      const db = await openDB(name.db, 1, {
-        upgrade: upgradeFcn,
-      });
-
-      expect(upgradeFcn).toBeCalled();
-    });
-  });
+  //     expect(upgradeFcn).toBeCalled();
+  //   });
+  // });
 
   // const sampleTimestamps = [
   //   new HLTime(1604855747036, Number(123), 'spongebob'),
