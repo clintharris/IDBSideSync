@@ -213,6 +213,9 @@ export class HLClock {
       super();
       this.type = 'ClockDeserializationError';
       this.message = message;
+      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
+      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, Error);
     }
   };
 
@@ -223,6 +226,9 @@ export class HLClock {
       super();
       this.type = 'TimeNotSetError';
       this.message = 'Clock time has not been set.';
+      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
+      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, Error);
     }
   };
 
@@ -233,6 +239,9 @@ export class HLClock {
       super();
       this.type = 'ClockDriftError';
       this.message = ['maximum clock drift exceeded'].concat(args).join(' ');
+      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
+      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, Error);
     }
   };
 
@@ -242,6 +251,9 @@ export class HLClock {
       super();
       this.type = 'OverflowError';
       this.message = 'timestamp counter overflow';
+      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
+      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, Error);
     }
   };
 
@@ -253,6 +265,9 @@ export class HLClock {
       super();
       this.type = 'DuplicateNodeError';
       this.message = 'duplicate node identifier ' + node;
+      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
+      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, Error);
     }
   };
 }

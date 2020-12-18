@@ -174,15 +174,18 @@ class OpLoggyProxyError extends Error {
 //     return null;
 //   }
 
-//   static InvalidEntryError = class extends Error {
-//     public type: string;
+// static InvalidEntryError = class extends Error {
+//   public type: string;
 
-//     constructor(entry: unknown) {
-//       super();
-//       this.type = 'InvalidEntryError';
-//       this.message = 'Not a valid oplog entry object: ' + JSON.stringify(entry);
-//     }
-//   };
+//   constructor(entry: unknown) {
+//     super();
+//     this.type = 'InvalidEntryError';
+//     this.message = 'Not a valid oplog entry object: ' + JSON.stringify(entry);
+//     // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
+//     // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
+//     Object.setPrototypeOf(this, Error);
+//   }
+// };
 // }
 
 /**

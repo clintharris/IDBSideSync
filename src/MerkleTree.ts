@@ -314,6 +314,9 @@ export class MerkleTree {
       super();
       this.type = 'InvalidSourceObjectError';
       this.message = `Can't create tree from: ${object}`;
+      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
+      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, Error);
     }
   };
 
@@ -325,6 +328,9 @@ export class MerkleTree {
       super();
       this.type = 'MinTimeError';
       this.message = `Time '${timeMsec}' is <= 0.`;
+      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
+      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, Error);
     }
   };
 
@@ -336,6 +342,9 @@ export class MerkleTree {
       super();
       this.type = 'MaxTimeError';
       this.message = `Time '${timeMsec}' is greater than limit ('${MAX_TIME_MSEC}').`;
+      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
+      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, Error);
     }
   };
 
@@ -347,6 +356,9 @@ export class MerkleTree {
       super();
       this.type = 'MinPathLengthError';
       this.message = `Tree paths must have at least one element.`;
+      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
+      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, Error);
     }
   };
 
@@ -358,6 +370,9 @@ export class MerkleTree {
       super();
       this.type = 'MaxPathLengthError';
       this.message = `Tree path cannot have more than ${MAX_TREEPATH_LENGTH} elements: ${treePath}`;
+      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
+      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, Error);
     }
   };
 }
