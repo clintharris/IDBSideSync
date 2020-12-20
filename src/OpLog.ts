@@ -1,16 +1,6 @@
 import { HLTime } from './HLTime';
 
-interface SetOperation {
-  set: Record<string, unknown>;
-}
 
-export interface OpLogEntry {
-  hlcTime: string;
-  store: string;
-  idPath: string;
-  idValue: string;
-  operation: SetOperation;
-}
 
 /**
  * Instances of this class can intercept and modify calls to the IndexedDB API if used as a Proxy handler, wrapping
@@ -118,6 +108,9 @@ class OpLoggyProxyError extends Error {
     super();
     this.type = 'OpLoggyProxyError';
     this.message = message;
+    // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
+    // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
+    Object.setPrototypeOf(this, Error);
   }
 }
 
