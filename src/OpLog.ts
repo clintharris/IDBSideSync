@@ -1,7 +1,5 @@
 import { HLTime } from './HLTime';
 
-
-
 /**
  * Instances of this class can intercept and modify calls to the IndexedDB API if used as a Proxy handler, wrapping
  * window.indexedDB.
@@ -182,7 +180,7 @@ class OpLoggyProxyError extends Error {
 // }
 
 /**
- * TypeScript type guard for safely asserting that something is a BaseThreeTreePath.
+ * Type guard for safely asserting that something is an OpLogEntry.
  */
 export function isValidOplogEntry(thing: unknown): thing is OpLogEntry {
   if (!thing) {
@@ -194,16 +192,10 @@ export function isValidOplogEntry(thing: unknown): thing is OpLogEntry {
   if (
     typeof candidate.hlcTime !== 'string' ||
     typeof candidate.store !== 'string' ||
-    typeof candidate.idPath !== 'string' ||
-    !('idValue' in candidate) ||
-    //TODO: isValidOplogOperation(candidate.operation)
-    typeof candidate.operation === 'object'
+    typeof candidate.objectId !== 'string' ||
+    (typeof candidate.field !== 'string' && candidate.field !== null) ||
+    !('value' in candidate)
   ) {
-    return false;
-  }
-
-  const obj = thing as Object;
-  if (!obj.hasOwnProperty || !obj.hasOwnProperty('value')) {
     return false;
   }
 

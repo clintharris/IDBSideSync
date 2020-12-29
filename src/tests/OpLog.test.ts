@@ -18,8 +18,8 @@ describe('OpLog', () => {
 
   describe('Proxy', () => {
     it('intercepts calls to store.add()', (onTestDone) => {
-      const spongebObj = { id: 1, name: 'spongebob' };
-      const patrickObj = { id: 2, name: 'patrick' };
+      const spongebObj = { id: 1, name: 'spongebob', species: 'sponge' };
+      const patrickObj = { id: 2, name: 'patrick', species: 'starfish' };
       const onSpongebobAddSuccessFcn = jest.fn();
       const onPatrickAddSuccessFcn = jest.fn();
 
@@ -38,10 +38,32 @@ describe('OpLog', () => {
 
         // Use transaction oncomplete to make sure the objectStore creation is finished before adding data into it.
         objectStore.transaction.oncomplete = function (event) {
-          var customerObjectStore = proxyStore(db.transaction('customers', 'readwrite').objectStore('customers'));
+          const customersTransaction = db.transaction('customers', 'readwrite');
+          const customerObjectStore = proxyStore(customersTransaction.objectStore('customers'));
 
+          // Add a new object via add()
           customerObjectStore.add(spongebObj).onsuccess = onSpongebobAddSuccessFcn;
-          customerObjectStore.put(patrickObj).onsuccess = onPatrickAddSuccessFcn;
+
+          // Now update only _one_ field in that existing object (i.e., partial update).
+          const updateSBobReq = customerObjectStore.put({ id: 1, name: 'Robert Squarepants' });
+          updateSBobReq.onsuccess = () => {
+            // Verify that `updateSBobReq.result` has the correct key.
+            console.log(updateSBobReq.result);
+            console.log(updateSBobReq.error);
+          };
+
+          // Use put() to add another new object
+          const updatePatrickReq = customerObjectStore.put(patrickObj);
+          updatePatrickReq.onsuccess = () => {
+            // Verify that `updatePatrickReq.result` has the correct key.
+            console.log(updatePatrickReq.result);
+            console.log(updatePatrickReq.error);
+
+          };
+
+          // Now test that oplog entries exist for everything that happened and that the main store looks like this:
+          // 1. { id: 1, name: 'S. Bob Squarepants', species: 'sponge' }
+          // 2. { id: 2, name: 'patrick', species: 'starfish' }
           customerObjectStore.transaction.oncomplete = finishTest;
         };
       });

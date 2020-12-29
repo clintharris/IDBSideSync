@@ -3,7 +3,10 @@ export interface IDBUpsertRequestProxyOptions {
   onError?: (event: Event) => void;
 }
 
-export function proxyPutRequest(target: IDBRequest<IDBValidKey>, options: IDBUpsertRequestProxyOptions): IDBRequest<IDBValidKey> {
+export function proxyPutRequest(
+  target: Partial<IDBRequest<IDBValidKey>>,
+  options: IDBUpsertRequestProxyOptions
+): Partial<IDBRequest<IDBValidKey>> {
   const proxy = new IDBUpsertRequestProxy(target, options);
   return new Proxy(target, proxy);
 }
@@ -12,10 +15,10 @@ export function proxyPutRequest(target: IDBRequest<IDBValidKey>, options: IDBUps
  * Use this class as a proxy/wrapper for IDBRequest objects resulting from object store calls to `put()` and `add()`.
  */
 export class IDBUpsertRequestProxy {
-  target: IDBRequest<IDBValidKey>;
+  target: Partial<IDBRequest<IDBValidKey>>;
   options: IDBUpsertRequestProxyOptions;
 
-  constructor(target: IDBRequest<IDBValidKey>, options: IDBUpsertRequestProxyOptions = {}) {
+  constructor(target: Partial<IDBRequest<IDBValidKey>>, options: IDBUpsertRequestProxyOptions = {}) {
     this.target = target;
     this.options = options;
   }
@@ -27,13 +30,15 @@ export class IDBUpsertRequestProxy {
       // Instead of allowing the user to assign _their_ function to 'onupgradeneeded', assign _our_ function.
       target.onsuccess = (event) => {
         if (typeof value === 'function') {
-          // Allow their code to run first, while ensuring that our own onSuccess handler also gets a chance to run
-          // regardless of whether or not theirs barfs.
-          try {
-            value(event);
-          } finally {
-            this.options.onSuccess?.(event);
-          }
+          this.options.onSuccess?.(event);
+          // // Run our success handler first, ensuring that we are able to successfully record the operation
+          // try {
+          //   this.options.onSuccess?.(event);
+          //   value(event);
+          // } catch (error) {
+          //   //TODO: find a way to ensure that both transactions are rolled back
+          //   this.target.transaction?.abort();
+          // }
         }
       };
 
@@ -43,11 +48,12 @@ export class IDBUpsertRequestProxy {
     } else if (prop === 'onerror') {
       target.onerror = (event) => {
         if (typeof value === 'function') {
-          try {
-            value(event);
-          } finally {
-            this.options.onError?.(event);
-          }
+          this.options.onError?.(event);
+          // try {
+          //   value(event);
+          // } finally {
+          //   this.options.onError?.(event);
+          // }
         }
       };
       return true;

@@ -24,6 +24,7 @@ export function getOpLoggyDb() {
         oplogStore.createIndex('store', 'store', { unique: false });
         oplogStore.createIndex('idPath', 'idPath', { unique: false });
         oplogStore.createIndex('idValue', 'idValue', { unique: false });
+
       };
 
       openreq.onsuccess = () => {
@@ -34,7 +35,7 @@ export function getOpLoggyDb() {
   return dbSingleton;
 }
 
-async function getStore(db: IDBDatabase, storeName: string, type: IDBTransactionMode): Promise<IDBObjectStore> {
+export async function getStore(db: IDBDatabase, storeName: string, type: IDBTransactionMode): Promise<IDBObjectStore> {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(storeName, type);
     transaction.oncomplete = () => {
