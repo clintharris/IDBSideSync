@@ -64,9 +64,10 @@ function mapIncomingToLocalMessagesForField(incomingMessages) {
   });
 
   incomingMessages.forEach(incomingMsg => {
-    // Attempt to find the most recent local message for the same field as the
-    // current incoming message (note that find() can return `undefined` if no
-    // match is found).
+    // Attempt to find the SINGLE, most recent (because the array of messages is
+    // sorted by timestamp), local message for the same field as the current
+    // incoming message (note that find() can return `undefined` if no match is
+    // found).
     let mostRecentLocalMsg = sortedLocalMessages.find(
       localMsg =>
         incomingMsg.dataset === localMsg.dataset &&
@@ -106,7 +107,7 @@ function applyMessages(incomingMessages) {
     // unknown incoming message), OR the incoming message is "newer" than the
     // one we have, apply the incoming message to our local data store.
     //
-    // Note that althought `.timestamp` references an object (i.e., an instance
+    // Note that although `.timestamp` references an object (i.e., an instance
     // of Timestamp), the JS engine is going to implicitly call the instance's
     // `.valueOf()` method when doing these comparisons. The Timestamp class has
     // a custom implementation of valueOf() that retuns a string. So, in effect,
