@@ -1,11 +1,24 @@
-`oploggy-core` is a JavaScript library that manages the creation, indexing, and syncing of CRDT _messages_ across peers.
-Each peer can apply these messages to a local data store, in effect, creating a _distributed_ data store that is kept in
-sync without conflict--a CRDT. `simple-crdt` allows you to choose/implement whatever mechanism you want to use for the
-actual underlying storage (e.g., in-memory objects, SQLite, IndexedDB, etc.).
+`idb-sidesync` is a JavaScript library that makes it possible to sync IndexedDB object stores using CRDT concepts. It works by intercepting the CRUD calls to an IndexedDB object store and automatically maintaing a record of all the operations "on the side". This operation log/journal is a collection of simple JSON objects that can be serialized and uploaded somewhere, then downloaded and "replayed" somewhere else--in effect, synchronizing one object store with another without conflict (thanks to how [CRDTs](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type) work).
 
-`oploggy-core` was forked from [James Long](https://twitter.com/jlongster)'s
-[crdt-example-app](https://github.com/jlongster/crdt-example-app); most of the code should be considered a re-organized
-and (in some cases) modified version of his work.
+The idea for the library came from studying [James Long](https://twitter.com/jlongster)'s
+[crdt-example-app](https://github.com/jlongster/crdt-example-app), which offers a fantastic demonstration of how to apply CRDT, hybrid logical clock, and merkle tree concepts. `idb-sidesync` is an attempt at applying those concepts to work with IndexedDB, specifically, and aims to support using simple, file transfer services that users already have (e.g., Google Drive, iCloud, email--anything with an HTTP-accessible API) as the means for syncing data instead of custom servers. Although they're different, `idb-sidesync` was deliberately forked from `crdt-example-app` to make that "heritage" literally part of this project's own history.
+
+# API
+
+## What types of object stores does it work with?
+
+`idb-sidesync` does not support object stores that use `autoIncrement`. If IndexedDB is auto-assigning the object IDs, then it's possible for two separate clients to create an object with the same key/ID. In that scenario, there's no safe way to share and apply oplog entries (i.e., CRDT messages) since they might describe mutations that _appear_ to be relevant to the same object but actually could refer to different objects that have the same key/ID.
+
+Also, `idb-sidesync` currently doesn't support `add(value, key)` or `put(value, key)` calls when `key` is of type `ArrayBuffer` or `DataView`.
+
+# Contributing
+
+Want to submit a PR for adding a new feature or bugfix? Or maybe you just want to create a new fork that demonstrates an issue? Do all this and more with just a few clicks using the amazing Contrib-o-matic™️ process (_actual clicks and results may vary_):
+
+1. [Click here](https://codesandbox.io) to create a fully working, forked, project dev environment.
+2. Modify the project.
+3. Submit a PR.
+4. CodeSandbox CE will automatically build an installable version of the library from your PR and create a new Sandbox in which your fix/improvement can be tested.
 
 # Roadmap
 
@@ -25,14 +38,15 @@ and (in some cases) modified version of his work.
 - [ ] Refactor code (rename functions, classes, restructure code to classes, etc.)
     - Easier/safer to do this after everything is using TypeScript
     - Safer to do this after unit tests exist
-- [ ] Move to oploggy monorepo with `core` subdir (future: `store-indexeddb`, etc., subdirs/packages).
+- [ ] Move to sidesync monorepo with `core` subdir (future: `store-indexeddb`, etc., subdirs/packages).
 - [ ] Add support for new features
 - [ ] Create Proxy trap/handlers so that oplog can be maintain transparently as developer uses IndexedDB
     - Should be implemented to work with the standard IndexedDB API and _not_ depend on a convenience wrapper (such as idb).
-    - Should create its own IndexedDB database so that oploggy-specific CRUD won't involve locking the developer's application database.
+    - Should create its own IndexedDB database so that sidesync-specific CRUD won't involve locking the developer's application database.
     - When db conn is opened (indexedDB.open()), the resulting db should cached as a singleton so that it can be reused.
         - Note: Jake Archibald uses the same "cached singleton db conn" approach in his svgomg PWA: https://github.com/jakearchibald/svgomg/blob/master/src/js/utils/storage.js#L5
-    
+- [ ] Set up the project to work with [CodeSandbox CI](https://codesandbox.io/docs/ci).
+- [ ] Set up a simple sandbox app in a sub-directory that can be use to demo/test the library (from relative imports)
 
 ## Refactoring
 
@@ -64,12 +78,12 @@ and (in some cases) modified version of his work.
     - Example:
         - `sync.js:mapIncomingToLocalMessagesForField()` needs to find the "most recent" message for specific fields. Currently it does this by sorting the big array of `_messages` and searching for the first element with a matching set of field identifier criteria, which clearly becomes less efficient as the array of `_messages` grows over time.
         - Ideally, the data store API would have a `findMostRecentMessageForField()` method that, under the hood, would use pre-built indices for searching messages.
-    - `oploggy-store-indexeddb`
-    - `oploggy-store-inmemory`
+    - `sidesync-store-indexeddb`
+    - `sidesync-store-inmemory`
 
 - [ ] Support _syncing_ with remote file storage services
     - Once a standard API exists for the _local_ data store (which can be implemented with different adapters), modify the sync code so that it uses a standard API, which would allow for different remote storage providers to be plugged in.
-    - `oploggy-sync-gdrive`, `oploggy-sync-icloud`, etc.
+    - `sidesync-gdrive`, `sidesync-icloud`, etc.
     - each node (e.g., user-owned device) uploads every oplog entry to the server
     - each entry has a filename: the timestamp.toString() value
         - since every timestamp is unique, there shouldn't be any filename collisions
@@ -101,3 +115,7 @@ and (in some cases) modified version of his work.
 It will have no effect on the data store. Message values are only applied to the data store if the message's HLC time is more recent than the current value.
 
 However, it would "corrupt" the Merkle tree (if the tree weren't set up to prevent it) since the hash values would still change when the message's hash is inserted a second time.
+
+### Q: Does it work with Jake Archibald's [idb](https://github.com/jakearchibald/idb) library?
+
+Yes. You can pass a sidesync'ed object store to idb's `wrap()` function. Since `idb-sidesync` works as an invisible Proxy, idb won't know the difference.
