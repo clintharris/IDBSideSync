@@ -18,10 +18,10 @@ function sanitize(string) {
     '>': '&gt;',
     '"': '&quot;',
     "'": '&#x27;',
-    '/': '&#x2F;'
+    '/': '&#x2F;',
   };
   const reg = /[&<>"'/]/gi;
-  return string.replace(reg, match => map[match]);
+  return string.replace(reg, (match) => map[match]);
 }
 
 function getColor(name) {
@@ -50,7 +50,7 @@ let uiState = {
   offline: false,
   editingTodo: null,
   isAddingType: false,
-  isDeletingType: false
+  isDeletingType: false,
 };
 
 let _syncTimer = null;
@@ -117,19 +117,17 @@ function restoreActiveElement() {
   }
 }
 
-function renderTodoTypes({ className = '', showBlank } = {}) {
+async function renderTodoTypes({ className = '', showBlank } = {}) {
   return `
     <select class="${className} mr-2 bg-transparent shadow border border-gray-300">
       ${showBlank ? '<option value=""></option>' : ''}
-      ${getTodoTypes().map(
-        type => `<option value="${type.id}">${type.name}</option>`
-      )}
+      ${(await getTodoTypes()).map((type) => `<option value="${type.id}">${type.name}</option>`)}
     </select>
   `;
 }
 
 function renderTodos({ root, todos, isDeleted = false }) {
-  todos.forEach(todo => {
+  todos.forEach((todo) => {
     append(
       // prettier-ignore
       `
@@ -148,7 +146,7 @@ function renderTodos({ root, todos, isDeleted = false }) {
   });
 }
 
-function render() {
+async function render() {
   document.documentElement.style.height = '100%';
   document.body.style.height = '100%';
 
@@ -170,7 +168,7 @@ function render() {
         <div style="width: 100%; max-width: 600px">
           <form id="add-form" class="flex">
             <input placeholder="Add todo..." class="shadow border border-gray-300 mr-2 flex-grow p-2 rounded" />
-            ${renderTodoTypes()}
+            ${await renderTodoTypes()}
             <button id="btn-add-todo" class="bg-green-600 text-white rounded p-2">Add</button>
           </form>
 
@@ -208,11 +206,11 @@ function render() {
     </div>
   `);
 
-  renderTodos({ root: qs('#todos'), todos: getTodos() });
+  renderTodos({ root: qs('#todos'), todos: await getAllTodos() });
   renderTodos({
     root: qs('#deleted-todos'),
-    todos: getDeletedTodos(),
-    isDeleted: true
+    todos: await getDeletedTodos(),
+    isDeleted: true,
   });
 
   if (editingTodo) {
@@ -228,11 +226,7 @@ function render() {
             <button id="btn-edit-cancel" class="rounded p-2 bg-gray-200">Cancel</button>
           </div>
 
-          ${
-            editingTodo.tombstone === 1
-              ? '<button id="btn-edit-undelete" class="pt-4 text-sm">Undelete</button>'
-              : ''
-          }
+          ${editingTodo.tombstone === 1 ? '<button id="btn-edit-undelete" class="pt-4 text-sm">Undelete</button>' : ''}
         </div>
       <div>
     `);
@@ -262,7 +256,7 @@ function render() {
             Delete ${renderTodoTypes({ className: 'selected' })} and
             merge into ${renderTodoTypes({
               className: 'merge',
-              showBlank: true
+              showBlank: true,
             })}
           </div>
 
@@ -281,7 +275,7 @@ function render() {
 }
 
 function addEventHandlers() {
-  qs('#add-form').addEventListener('submit', async e => {
+  qs('#add-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     let [nameNode, typeNode] = e.target.elements;
     let name = nameNode.value;
@@ -295,10 +289,10 @@ function addEventHandlers() {
       return;
     }
 
-    insert('todos', { name, type, order: getNumTodos() });
+    await addTodo({ name, type, order: await getNumTodos() });
   });
 
-  qs('#btn-sync').addEventListener('click', async e => {
+  qs('#btn-sync').addEventListener('click', async (e) => {
     sync();
   });
 
@@ -323,72 +317,56 @@ function addEventHandlers() {
   });
 
   for (let todoNode of qsa('.todo-item')) {
-    todoNode.addEventListener('click', e => {
-      let todo = getTodos().find(t => t.id === todoNode.dataset.id);
-      if (!todo) {
-        // Search the deleted todos (this could be large, so only
-        // searching the existing todos first which is the common case
-        // is faster
-        todo = getAllTodos().find(t => t.id === todoNode.dataset.id);
-      }
-
+    todoNode.addEventListener('click', (e) => {
+      let todo = getTodo(todoNode.dataset.id);
       uiState.editingTodo = todo;
       render();
     });
   }
 
   for (let btn of qsa('.btn-delete')) {
-    btn.addEventListener('click', e => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      delete_('todos', e.target.dataset.id);
+      deleteTodo(e.target.dataset.id);
     });
   }
 
   if (uiState.editingTodo) {
-    qs('#btn-edit-save').addEventListener('click', e => {
+    qs('#btn-edit-save').addEventListener('click', (e) => {
       let input = e.target.parentNode.querySelector('input');
       let value = input.value;
 
-      update('todos', { id: uiState.editingTodo.id, name: value });
+      updateTodo({ name: value }, uiState.editingTodo.id);
       uiState.editingTodo = null;
       render();
     });
 
     if (qs('#btn-edit-undelete')) {
-      qs('#btn-edit-undelete').addEventListener('click', e => {
+      qs('#btn-edit-undelete').addEventListener('click', (e) => {
         let input = e.target.parentNode.querySelector('input');
         let value = input.value;
 
-        update('todos', { id: uiState.editingTodo.id, tombstone: 0 });
+        undeleteTodo(uiState.editingTodo.id);
         uiState.editingTodo = null;
         render();
       });
     }
   } else if (uiState.isAddingType) {
-    qs('#btn-edit-save').addEventListener('click', e => {
+    qs('#btn-edit-save').addEventListener('click', (e) => {
       let input = e.target.parentNode.querySelector('input');
       let value = input.value;
 
-      let colors = [
-        'green',
-        'blue',
-        'red',
-        'orange',
-        'yellow',
-        'teal',
-        'purple',
-        'pink'
-      ];
+      let colors = ['green', 'blue', 'red', 'orange', 'yellow', 'teal', 'purple', 'pink'];
 
-      insertTodoType({
+      addTodoType({
         name: value,
-        color: colors[(Math.random() * colors.length) | 0]
+        color: colors[(Math.random() * colors.length) | 0],
       });
       uiState.isAddingType = false;
       render();
     });
   } else if (uiState.isDeletingType) {
-    qs('#btn-edit-delete').addEventListener('click', e => {
+    qs('#btn-edit-delete').addEventListener('click', (e) => {
       let modal = e.target.parentNode;
       let selected = qs('select.selected').selectedOptions[0].value;
       let merge = qs('select.merge').selectedOptions[0].value;
@@ -420,25 +398,25 @@ render();
 
 let _syncMessageTimer = null;
 
-onSync(hasChanged => {
-  render();
+// onSync(hasChanged => {
+//   render();
 
-  let message = qs('#up-to-date');
-  message.style.transition = 'none';
-  message.style.opacity = 1;
+//   let message = qs('#up-to-date');
+//   message.style.transition = 'none';
+//   message.style.opacity = 1;
 
-  clearTimeout(_syncMessageTimer);
-  _syncMessageTimer = setTimeout(() => {
-    message.style.transition = 'opacity .7s';
-    message.style.opacity = 0;
-  }, 1000);
-});
+//   clearTimeout(_syncMessageTimer);
+//   _syncMessageTimer = setTimeout(() => {
+//     message.style.transition = 'opacity .7s';
+//     message.style.opacity = 0;
+//   }, 1000);
+// });
 
-sync().then(() => {
-  if (getTodoTypes().length === 0) {
-    // Insert some default types
-    insertTodoType({ name: 'Personal', color: 'green' });
-    insertTodoType({ name: 'Work', color: 'blue' });
-  }
-});
-backgroundSync();
+// sync().then(() => {
+//   if (getTodoTypes().length === 0) {
+//     // Insert some default types
+//     insertTodoType({ name: 'Personal', color: 'green' });
+//     insertTodoType({ name: 'Work', color: 'blue' });
+//   }
+// });
+// backgroundSync();

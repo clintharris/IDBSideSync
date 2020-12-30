@@ -17,8 +17,8 @@
     "node": ">=10"
   },
   "scripts": {
-    "start": "tsdx watch",
-    "build": "tsdx build",
+    "build": "tsdx build --format cjs,esm,umd --name sidesync",
+    "build:watch": "tsdx watch",
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "tsdx lint src test",

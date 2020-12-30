@@ -6,7 +6,7 @@ import FDBFactory from 'fake-indexeddb/lib/FDBFactory';
 import { beforeEach, expect, jest, describe, it } from '@jest/globals';
 
 import { proxyStore } from '../src/IDBObjectStoreProxy';
-import { IDB_SIDESYNC_OPLOG_STORE, setupSideSyncStores } from '../src/OpLogDb';
+import { IDB_SIDESYNC_OPLOG_STORE, setupStores } from '../src/db';
 
 jest.setTimeout(10000);
 
@@ -32,7 +32,7 @@ describe('OpLog', () => {
         event: IDBVersionChangeEvent
       ) {
         const db = this.result;
-        setupSideSyncStores(db);
+        setupStores(db);
         const objectStore = db.createObjectStore('customers', { keyPath: 'id' });
 
         objectStore.createIndex('name', 'name', { unique: false });

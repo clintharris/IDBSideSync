@@ -1,9 +1,9 @@
-export const IDB_SIDESYNC_META_STORE = 'idb-sidesync_non-synced-meta';
-export const IDB_SIDESYNC_OPLOG_STORE = 'idb-sidesync_oplog';
+export const IDB_SIDESYNC_META_STORE = 'sidesync_non-synced-meta';
+export const IDB_SIDESYNC_OPLOG_STORE = 'sidesync_oplog';
 
 let dbSingleton: IDBDatabase;
 
-export function setupSideSyncStores(db: IDBDatabase) {
+export function setupStores(db: IDBDatabase) {
   dbSingleton = db;
 
   // Create an object store where we can put random administrata that won't be synced like the oplog entries (e.g., the
