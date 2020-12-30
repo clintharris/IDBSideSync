@@ -1,6 +1,7 @@
-import { jest } from '@jest/globals';
+import { afterEach, expect, jest, describe, it } from '@jest/globals';
+
 import murmurhash from 'murmurhash';
-import { HLTime, HLMutableTime } from './HLTime';
+import { HLTime, HLMutableTime } from '../src/HLTime';
 
 afterEach(() => {
   jest.useRealTimers();

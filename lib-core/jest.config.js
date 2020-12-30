@@ -2,11 +2,10 @@
 process.env.TZ = 'GMT';
 
 module.exports = {
-  roots: ['<rootDir>/src'],
+  injectGlobals: false,
   transform: {
     '^.+\\.tsx?$': 'ts-jest',
   },
-  testRegex: '(/__tests__/.*|(\\.|/)(test|spec))\\.tsx?$',
-
+  testRegex: '(/test/.*|(\\.|/)(test|spec))\\.tsx?$',
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
 };

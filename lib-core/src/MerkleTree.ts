@@ -120,12 +120,14 @@ export class MerkleTree {
       let childTreeKeySet = new Set([...tree1Iter.branchKeys(), ...tree2Iter.branchKeys()]);
       let childTreeKeys = [...childTreeKeySet.values()]; // Convert the set to an array
 
-      // Before we start to compare the two nodes we want to sort the keys so that, in effect, we are "moving" from older
-      // times to more recent times when doing the diff. This way, if there is a difference, we will have found the oldest
-      // time at which the trees began to differ.
+      // Before we start to compare the two nodes we want to sort the keys so that, in effect, we are "moving" from
+      // older times to more recent times when doing the diff. This way, if there is a difference, we will have found
+      // the oldest time at which the trees began to differ.
       childTreeKeys.sort();
 
-      // Compare the hash for each of the child nodes, returning the key of the first child node for which hashes differ.
+      // Compare the hash for each of the child nodes, returning the key of the first child node for which hashes
+      // differ.
+      /* eslint-disable no-loop-func */
       let diffkey = childTreeKeys.find((key) => {
         return tree1Iter.branches[key]?.hash !== tree2Iter.branches[key]?.hash;
       });
@@ -136,13 +138,13 @@ export class MerkleTree {
         return pathToDiff;
       }
 
-      // If we got this far, it means we found a location where the two trees differ (i.e., each tree has a child node at
-      // this position, but they have different hashes--meaning they are the result of different messages). We want to
-      // continue down this path and keep comparing nodes until we can find a position where the hashes equal.
+      // If we got this far, it means we found a location where the two trees differ (i.e., each tree has a child node
+      // at this position, but they have different hashes--meaning they are the result of different messages). We want
+      // to continue down this path and keep comparing nodes until we can find a position where the hashes equal.
       //
       // Note that as we continue to recurse the tree, we are appending the keys. This string of digits will be parsed
-      // back intoa time eventually, so as we keep appending characters we are basically building a more and more precise
-      // Date/time. For example:
+      // back intoa time eventually, so as we keep appending characters we are basically building a more and more
+      // precise Date/time. For example:
       //  - Less precise: `new Date(1581859880000)` == 2020-02-16T13:31:20.000Z
       //  - More precise: `new Date(1581859883747)` == 2020-02-16T13:31:23.747Z
       pathToDiff.push(diffkey);
@@ -306,73 +308,38 @@ export class MerkleTree {
     return true;
   }
 
-  static InvalidSourceObjectError = class extends Error {
-    public type: string;
-    public message: string;
-
-    constructor(object: unknown) {
-      super();
-      this.type = 'InvalidSourceObjectError';
-      this.message = `Can't create tree from: ${object}`;
-      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
-      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
-      Object.setPrototypeOf(this, Error);
+  static MinTimeError = class MinTimeError extends Error {
+    constructor(timeMsec: unknown) {
+      super(`Time '${timeMsec}' is <= 0.`);
+      Object.setPrototypeOf(this, MinTimeError.prototype); // https://preview.tinyurl.com/y4jhzjgs
     }
   };
 
-  static MinTimeError = class extends Error {
-    public type: string;
-    public message: string;
-
-    constructor(timeMsec: number) {
-      super();
-      this.type = 'MinTimeError';
-      this.message = `Time '${timeMsec}' is <= 0.`;
-      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
-      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
-      Object.setPrototypeOf(this, Error);
-    }
-  };
-
-  static MaxTimeError = class extends Error {
-    public type: string;
-    public message: string;
-
-    constructor(timeMsec: number) {
-      super();
-      this.type = 'MaxTimeError';
-      this.message = `Time '${timeMsec}' is greater than limit ('${MAX_TIME_MSEC}').`;
-      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
-      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
-      Object.setPrototypeOf(this, Error);
-    }
-  };
-
-  static MinPathLengthError = class extends Error {
-    public type: string;
-    public message: string;
-
+  static MinPathLengthError = class MinPathLengthError extends Error {
     constructor() {
-      super();
-      this.type = 'MinPathLengthError';
-      this.message = `Tree paths must have at least one element.`;
-      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
-      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
-      Object.setPrototypeOf(this, Error);
+      super(`Tree paths must have at least one element.`);
+      Object.setPrototypeOf(this, MinPathLengthError.prototype); // https://preview.tinyurl.com/y4jhzjgs
     }
   };
 
-  static MaxPathLengthError = class extends Error {
-    public type: string;
-    public message: string;
+  static MaxTimeError = class MaxTimeError extends Error {
+    constructor(timeMsec: unknown) {
+      super(`Time '${timeMsec}' is greater than limit ('${MAX_TIME_MSEC}').`);
+      Object.setPrototypeOf(this, MaxTimeError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+    }
+  };
 
+  static InvalidSourceObjectError = class InvalidSourceObjectError extends Error {
+    constructor(object: unknown) {
+      super(`Can't create tree from object: ` + JSON.stringify(object));
+      Object.setPrototypeOf(this, InvalidSourceObjectError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+    }
+  };
+
+  static MaxPathLengthError = class MaxPathLengthError extends Error {
     constructor(treePath: BaseThreeTreePath) {
-      super();
-      this.type = 'MaxPathLengthError';
-      this.message = `Tree path cannot have more than ${MAX_TREEPATH_LENGTH} elements: ${treePath}`;
-      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
-      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
-      Object.setPrototypeOf(this, Error);
+      super(`Tree path cannot have more than ${MAX_TREEPATH_LENGTH} elements: ${treePath}`);
+      Object.setPrototypeOf(this, MaxPathLengthError.prototype); // https://preview.tinyurl.com/y4jhzjgs
     }
   };
 }
@@ -436,10 +403,10 @@ export function convertTreePathToTime(treePath: BaseThreeTreePath): number {
   }
 
   // Only full tree paths (i.e., paths long enough to navigate to a leaf node) have enough digits to safely be converted
-  // back to a "minutes since 1970" value as-is. But we can also receive short/partial paths (e.g., maybe a diff is found
-  // at the very first node, resulting in a path with only a single character). In other words, we may be getting only
-  // the first few digits of a full "minutes since 1970" value. We need to pad that value, ensuring that it has enough
-  // base-3 digits to amount to a full "minutes" value.
+  // back to a "minutes since 1970" value as-is. But we can also receive short/partial paths (e.g., maybe a diff is
+  // found at the very first node, resulting in a path with only a single character). In other words, we may be getting
+  // only the first few digits of a full "minutes since 1970" value. We need to pad that value, ensuring that it has
+  // enough base-3 digits to amount to a full "minutes" value.
   let baseThreeMinutesStr = treePath.join('') + '0'.repeat(MAX_TREEPATH_LENGTH - treePath.length);
 
   // Parse the base 3 representation back into base 10 "msecs since 1970" that can be easily passed to Date()

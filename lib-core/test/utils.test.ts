@@ -1,4 +1,5 @@
-import { makeClientId } from './utils';
+import { expect, describe, it } from '@jest/globals';
+import { makeClientId } from '../src/utils';
 
 describe('utils', () => {
   describe('makeClientId()', () => {

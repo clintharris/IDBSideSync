@@ -1,5 +1,4 @@
-import { oplogStoreName } from './OpLogDb';
-import { HLClock } from './HLClock';
+import { IDB_SIDESYNC_OPLOG_STORE } from './OpLogDb';
 
 export function proxyStore(target: IDBObjectStore): IDBObjectStore {
   const proxy = new IDBObjectStoreProxy(target);
@@ -68,7 +67,7 @@ export class IDBObjectStoreProxy {
     if (key instanceof ArrayBuffer || key instanceof DataView) {
       throw new TypeError(`Keys of type ArrayBuffer or DataView aren't currently supported.`);
     } else if (Array.isArray(key)) {
-      const foundArrBuffItem = key.find((item) => key instanceof ArrayBuffer || key instanceof DataView);
+      const foundArrBuffItem = key.find(() => key instanceof ArrayBuffer || key instanceof DataView);
       if (foundArrBuffItem) {
         throw new TypeError(`Keys of type ArrayBuffer or DataView aren't currently supported.`);
       }
@@ -82,6 +81,7 @@ export class IDBObjectStoreProxy {
     // 3. If existing entry has a different timestamp than the one we just created, or none exists, add the OpLogEntry
     //    we just created to the entries store.
 
+    /* eslint-disable @typescript-eslint/no-unused-vars */
     let objectIdentifier;
 
     if (key) {
@@ -98,37 +98,37 @@ export class IDBObjectStoreProxy {
     objectIdentifier = JSON.stringify(objectIdentifier);
     let entries: OpLogEntry[] = [];
 
-    if (typeof newValue === 'object') {
-      // Convert the `value` to 1+ OpLogEntry objects
-      for (const property in newValue) {
-        entries.push({
-          hlcTime: HLClock.tick().toString(),
-          store: this.target.name,
-          objectId: objectIdentifier,
-          field: property,
-          value: newValue[property],
-        });
-      }
-    } else {
-      entries.push({
-        hlcTime: HLClock.tick().toString(),
-        store: this.target.name,
-        objectId: objectIdentifier,
-        field: null,
-        value: newValue,
-      });
-    }
+    // if (typeof newValue === 'object') {
+    //   // Convert the `value` to 1+ OpLogEntry objects
+    //   for (const property in newValue) {
+    //     entries.push({
+    //       hlcTime: HLClock.tick().toString(),
+    //       store: this.target.name,
+    //       objectId: objectIdentifier,
+    //       field: property,
+    //       value: newValue[property],
+    //     });
+    //   }
+    // } else {
+    //   entries.push({
+    //     hlcTime: HLClock.tick().toString(),
+    //     store: this.target.name,
+    //     objectId: objectIdentifier,
+    //     field: null,
+    //     value: newValue,
+    //   });
+    // }
 
     let oplogStore;
     try {
       // When getting a reference to our own object store where the operation will be recorded, it's important that we
       // reuse the existing transaction. By doing so, both recording the operation and performing the operation are part
       // of the same transaction; we can ensure that if anything fails for some reason, nothing will be persisted.
-      oplogStore = this.target.transaction.objectStore(oplogStoreName);
+      oplogStore = this.target.transaction.objectStore(IDB_SIDESYNC_OPLOG_STORE);
     } catch (error) {
       const errorMsg =
-        `Error ocurred when attepmting to get reference to the "${oplogStoreName}" store (this may have happened ` +
-        `because "${oplogStoreName}" wasn't included when the transaction was created): ${error.toString()}`;
+        `Error ocurred when attepmting to get reference to the "${IDB_SIDESYNC_OPLOG_STORE}" store (this may have happened ` +
+        `because "${IDB_SIDESYNC_OPLOG_STORE}" wasn't included when the transaction was created): ${error.toString()}`;
       throw new Error(errorMsg);
     }
 

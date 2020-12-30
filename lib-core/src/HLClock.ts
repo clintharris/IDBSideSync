@@ -206,68 +206,38 @@ export class HLClock {
     return HLClock._time;
   }
 
-  static DeserializationError = class extends Error {
-    public type: string;
-
+  static DeserializationError = class DeserializationError extends Error {
     constructor(message: string) {
-      super();
-      this.type = 'ClockDeserializationError';
-      this.message = message;
-      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
-      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
-      Object.setPrototypeOf(this, Error);
+      super(message);
+      Object.setPrototypeOf(this, DeserializationError.prototype); // https://preview.tinyurl.com/y4jhzjgs
     }
   };
 
-  static TimeNotSetError = class extends Error {
-    public type: string;
-
+  static TimeNotSetError = class TimeNotSetError extends Error {
     constructor() {
-      super();
-      this.type = 'TimeNotSetError';
-      this.message = 'Clock time has not been set.';
-      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
-      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
-      Object.setPrototypeOf(this, Error);
+      super('Clock time has not been set.');
+      Object.setPrototypeOf(this, TimeNotSetError.prototype); // https://preview.tinyurl.com/y4jhzjgs
     }
   };
 
-  static ClockDriftError = class extends Error {
-    public type: string;
-
-    constructor(...args: string[]) {
-      super();
-      this.type = 'ClockDriftError';
-      this.message = ['maximum clock drift exceeded'].concat(args).join(' ');
-      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
-      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
-      Object.setPrototypeOf(this, Error);
+  static ClockDriftError = class ClockDriftError extends Error {
+    constructor(message: unknown) {
+      super(JSON.stringify(message));
+      Object.setPrototypeOf(this, ClockDriftError.prototype); // https://preview.tinyurl.com/y4jhzjgs
     }
   };
 
-  static OverflowError = class extends Error {
-    public type: string;
+  static OverflowError = class OverflowError extends Error {
     constructor() {
-      super();
-      this.type = 'OverflowError';
-      this.message = 'timestamp counter overflow';
-      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
-      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
-      Object.setPrototypeOf(this, Error);
+      super('timestamp counter overflow');
+      Object.setPrototypeOf(this, OverflowError.prototype); // https://preview.tinyurl.com/y4jhzjgs
     }
   };
 
-  static DuplicateNodeError = class extends Error {
-    public type: string;
-    public message: string;
-
-    constructor(node: string) {
-      super();
-      this.type = 'DuplicateNodeError';
-      this.message = 'duplicate node identifier ' + node;
-      // TypeScript team recommends also calling Object.setPrototypeOf() when extending built-in classes such as Error
-      // (but notes it might not work in IE <= 10): https://preview.tinyurl.com/y4jhzjgs
-      Object.setPrototypeOf(this, Error);
+  static DuplicateNodeError = class DuplicateNodeError extends Error {
+    constructor(node: unknown) {
+      super('duplicate node identifier ' + JSON.stringify(node));
+      Object.setPrototypeOf(this, DuplicateNodeError.prototype); // https://preview.tinyurl.com/y4jhzjgs
     }
   };
 }

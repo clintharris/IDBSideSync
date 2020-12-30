@@ -1,3 +1,6 @@
+import { describe, expect, it } from '@jest/globals';
+import { fail } from 'assert';
+
 import {
   convertTimeToTreePath,
   MAX_TIME_MSEC,
@@ -7,7 +10,7 @@ import {
   isBaseThreeTreePath,
   MerkleTreeCompatible,
   BaseThreeTreePath,
-} from './MerkleTree';
+} from '../src/MerkleTree';
 
 describe('MerkleTree', () => {
   const plainObjTree: MerkleTreeCompatible = {

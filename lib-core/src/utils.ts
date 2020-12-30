@@ -7,6 +7,7 @@ import { v4 as uuid } from 'uuid';
  * @returns {string} a 16-char, presumably unique string.
  */
 export function makeClientId(): string {
-  return uuid().replace(/-/g, '').slice(-16); // TODO: Figure out if there's a reason for using last 16 chars, specifically.
+  return uuid()
+    .replace(/-/g, '')
+    .slice(-16); // TODO: Figure out if there's a reason for using last 16 chars, specifically.
 }
-

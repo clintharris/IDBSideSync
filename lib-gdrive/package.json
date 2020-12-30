@@ -1,8 +1,14 @@
 {
+  "name": "@clintharris/idb-sidesync-gdrive",
   "version": "0.1.0",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/clintharris/idb-sidesync.git"
+  },
   "main": "dist/index.js",
   "typings": "dist/index.d.ts",
+  "module": "dist/lib-gdrive.esm.js",
   "files": [
     "dist",
     "src"
@@ -19,21 +25,11 @@
     "size": "size-limit",
     "analyze": "size-limit --why"
   },
-  "peerDependencies": {},
   "husky": {
     "hooks": {
       "pre-commit": "tsdx lint"
     }
   },
-  "prettier": {
-    "printWidth": 80,
-    "semi": true,
-    "singleQuote": true,
-    "trailingComma": "es5"
-  },
-  "name": "lib-gdrive",
-  "author": "Clint Harris",
-  "module": "dist/lib-gdrive.esm.js",
   "size-limit": [
     {
       "path": "dist/lib-gdrive.cjs.production.min.js",
@@ -44,6 +40,7 @@
       "limit": "10 KB"
     }
   ],
+  "peerDependencies": {},
   "devDependencies": {
     "@size-limit/preset-small-lib": "^4.9.1",
     "husky": "^4.3.6",

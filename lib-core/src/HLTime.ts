@@ -73,7 +73,12 @@ export class HLTime {
     // Convert msec timestamp to GMT string
     return [
       new Date(this.millis()).toISOString(),
-      ('0000' + this.counter().toString(16).toUpperCase()).slice(-4),
+      (
+        '0000' +
+        this.counter()
+          .toString(16)
+          .toUpperCase()
+      ).slice(-4),
       ('0000000000000000' + this.node()).slice(-16),
     ].join('-');
   }
