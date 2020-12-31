@@ -1,5 +1,7 @@
-export const IDB_SIDESYNC_META_STORE = 'sidesync_non-synced-meta';
-export const IDB_SIDESYNC_OPLOG_STORE = 'sidesync_oplog';
+export const STORE_NAMES = {
+  SETTINGS: 'sidesync_settings',
+  OPLOG: 'sidesync_oplog',
+};
 
 let dbSingleton: IDBDatabase;
 
@@ -11,11 +13,11 @@ export function setupStores(db: IDBDatabase) {
   //
   // Note that we're creating the store without a keypath. This means that we'll need to always pass a "key" arg when
   // calling any of the CRUD methods on the store. Example: `store.put("1234", "agent_id"); store.get("agent_id")`.
-  db.createObjectStore(IDB_SIDESYNC_META_STORE);
+  db.createObjectStore(STORE_NAMES.SETTINGS);
 
   // Use `keyof OpLogEntry` type in case OpLogEntry props are ever renamed.
   const keyPath: Array<keyof OpLogEntry> = ['hlcTime', 'store', 'objectId', 'field'];
-  db.createObjectStore(IDB_SIDESYNC_OPLOG_STORE, { keyPath });
+  db.createObjectStore(STORE_NAMES.OPLOG, { keyPath });
 }
 
 export async function getStore(storeName: string, type: IDBTransactionMode): Promise<IDBObjectStore> {

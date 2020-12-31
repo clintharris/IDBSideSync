@@ -6,17 +6,17 @@ import FDBFactory from 'fake-indexeddb/lib/FDBFactory';
 import { beforeEach, expect, jest, describe, it } from '@jest/globals';
 
 import { proxyStore } from '../src/IDBObjectStoreProxy';
-import { IDB_SIDESYNC_OPLOG_STORE, setupStores } from '../src/db';
+import { STORE_NAMES, setupStores } from '../src/db';
 
 jest.setTimeout(10000);
 
-describe('OpLog', () => {
+describe('IDBObjectStoreProxy', () => {
   beforeEach(() => {
     // @ts-ignore (since window.indexedDB is readonly and a different type)
     window.indexedDB = new FDBFactory(); // Reset the state of the fake IndexedDB API
   });
 
-  describe('Proxy', () => {
+  describe('proxyStore', () => {
     it('intercepts calls to store.add()', (onTestDone) => {
       const spongebObj = { id: 1, name: 'spongebob', species: 'sponge' };
       const patrickObj = { id: 2, name: 'patrick', species: 'starfish' };
@@ -39,7 +39,7 @@ describe('OpLog', () => {
 
         // Use transaction oncomplete to make sure the objectStore creation is finished before adding data into it.
         objectStore.transaction.oncomplete = () => {
-          const customersTransaction = db.transaction(['customers', IDB_SIDESYNC_OPLOG_STORE], 'readwrite');
+          const customersTransaction = db.transaction(['customers', STORE_NAMES.OPLOG], 'readwrite');
           const customerObjectStore = proxyStore(customersTransaction.objectStore('customers'));
 
           // Add a new object via add()

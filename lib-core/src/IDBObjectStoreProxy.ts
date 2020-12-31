@@ -1,4 +1,4 @@
-import { IDB_SIDESYNC_OPLOG_STORE } from './OpLogDb';
+import { STORE_NAMES } from './db';
 
 export function proxyStore(target: IDBObjectStore): IDBObjectStore {
   const proxy = new IDBObjectStoreProxy(target);
@@ -124,11 +124,11 @@ export class IDBObjectStoreProxy {
       // When getting a reference to our own object store where the operation will be recorded, it's important that we
       // reuse the existing transaction. By doing so, both recording the operation and performing the operation are part
       // of the same transaction; we can ensure that if anything fails for some reason, nothing will be persisted.
-      oplogStore = this.target.transaction.objectStore(IDB_SIDESYNC_OPLOG_STORE);
+      oplogStore = this.target.transaction.objectStore(STORE_NAMES.OPLOG);
     } catch (error) {
       const errorMsg =
-        `Error ocurred when attepmting to get reference to the "${IDB_SIDESYNC_OPLOG_STORE}" store (this may have happened ` +
-        `because "${IDB_SIDESYNC_OPLOG_STORE}" wasn't included when the transaction was created): ${error.toString()}`;
+        `Error ocurred when attepmting to get reference to the "${STORE_NAMES.OPLOG}" store (this may have happened ` +
+        `because "${STORE_NAMES.OPLOG}" wasn't included when the transaction was created): ${error.toString()}`;
       throw new Error(errorMsg);
     }
 
