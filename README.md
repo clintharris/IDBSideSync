@@ -1,19 +1,19 @@
 # Overview
 
-`IdbSideSync` is a JavaScript library that makes it possible to sync IndexedDB object stores using CRDT concepts. It works by intercepting the CRUD calls to IndexedDB objects and automatically logging all the operations "on the side" in a separate store. The objects in the operation log can be uploaded somewhere, then downloaded and "replayed" somewhere else--in effect, synchronizing one object store with another without conflict.
+`IDBSideSync` is a JavaScript library that makes it possible to sync IndexedDB object stores using CRDT concepts. It works by intercepting the CRUD calls to IndexedDB objects and automatically logging all the operations "on the side" in a separate store--the operation log. The objects in the operation log can be uploaded somewhere, then downloaded and "replayed" somewhere else, in effect, synchronizing IndexedDB stores across devices without conflict.
 
 You can use this library to, for example, build a "[local first](https://www.inkandswitch.com/local-first.html)" [PWA](https://developer.mozilla.org/en-US/docs/Web/Apps/Progressive/) that also supports syncing across difference devices without having to run a custom backend server. Once a user enables a remote storage service of their choosing via OAuth (e.g., Google Drive, Dropbox, iCloud), the application can use that to backup/sync data. The user owns their own data and decides where to store it, and the application developer never sees that data.
 
 The idea for the library came from studying [James Long](https://twitter.com/jlongster)'s
-[crdt-example-app](https://github.com/jlongster/crdt-example-app), which offers a fantastic demonstration of how to apply [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type), [hybrid logical clock](https://jaredforsyth.com/posts/hybrid-logical-clocks/), and merkle tree concepts. `IdbSideSync` is an attempt at applying those concepts to work with IndexedDB, specifically, and aims to support using simple, HTTP-accessible file transfer services that users already have as the means for sharing CRDT messages instead of custom servers. `IdbSideSync` was deliberately forked from `crdt-example-app` to make that "heritage" literally part of this project's own history.
+[crdt-example-app](https://github.com/jlongster/crdt-example-app), which offers a fantastic demonstration of how to apply [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type), [hybrid logical clock](https://jaredforsyth.com/posts/hybrid-logical-clocks/), and merkle tree concepts. `IDBSideSync` is an attempt at applying those concepts to work with IndexedDB, specifically, and aims to support using simple, HTTP-accessible file transfer services that users already have as the means for sharing CRDT messages instead of custom servers. `IDBSideSync` was deliberately forked from `crdt-example-app` to make that "heritage" literally part of this project's own history.
 
 # API
 
 ## What types of object stores does it work with?
 
-`IdbSideSync` does not support object stores that use `autoIncrement`. If IndexedDB is auto-assigning the object IDs, then it's possible for two separate clients to create an object with the same key/ID. In that scenario, there's no safe way to share and apply oplog entries (i.e., CRDT messages) since they might describe mutations that _appear_ to be relevant to the same object but actually could refer to different objects that have the same key/ID.
+`IDBSideSync` does not support object stores that use `autoIncrement`. If IndexedDB is auto-assigning the object IDs, then it's possible for two separate clients to create an object with the same key/ID. In that scenario, there's no safe way to share and apply oplog entries (i.e., CRDT messages) since they might describe mutations that _appear_ to be relevant to the same object but actually could refer to different objects that have the same key/ID.
 
-Also, `IdbSideSync` currently doesn't support `add(value, key)` or `put(value, key)` calls when `key` is of type `ArrayBuffer` or `DataView`.
+Also, `IDBSideSync` currently doesn't support `add(value, key)` or `put(value, key)` calls when `key` is of type `ArrayBuffer` or `DataView`.
 
 ## FAQ
 
@@ -25,7 +25,7 @@ However, it would "corrupt" the Merkle tree (if the tree weren't set up to preve
 
 ### Q: Does it work with Jake Archibald's [idb](https://github.com/jakearchibald/idb) library?
 
-Yes. You can pass a sidesync'ed object store to idb's `wrap()` function. Since `IdbSideSync` works as an invisible Proxy, idb won't know the difference.
+Yes. You can pass a sidesync'ed object store to idb's `wrap()` function. Since `IDBSideSync` works as an invisible Proxy, idb won't know the difference.
 
 # Contributing
 
