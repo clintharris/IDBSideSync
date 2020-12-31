@@ -17,8 +17,8 @@
     "node": ">=10"
   },
   "scripts": {
-    "build": "tsdx build --format cjs,esm,umd --name sidesync",
-    "build:watch": "tsdx watch --format cjs,esm,umd --name sidesync",
+    "build": "tsdx build --format cjs,esm,umd --name IDBSideSync",
+    "build:watch": "tsdx watch --format cjs,esm,umd --name IDBSideSync",
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "tsdx lint src test",
@@ -43,7 +43,7 @@
   ],
   "peerDependencies": {},
   "dependencies": {
-    "murmurhash": "^0.0.2",
+    "murmurhash": "0.0.2",
     "uuid": "^7.0.2"
   },
   "devDependencies": {
