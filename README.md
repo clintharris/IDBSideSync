@@ -2,12 +2,67 @@
 
 `IDBSideSync` is a JavaScript library that makes it possible to sync IndexedDB object stores using CRDT concepts. It works by intercepting the CRUD calls to IndexedDB objects and automatically logging all the operations "on the side" in a separate store--the operation log. The objects in the operation log can be uploaded somewhere, then downloaded and "replayed" somewhere else, in effect, synchronizing IndexedDB stores across devices without conflict.
 
-You can use this library to, for example, build a "[local first](https://www.inkandswitch.com/local-first.html)" [PWA](https://developer.mozilla.org/en-US/docs/Web/Apps/Progressive/) that also supports syncing across difference devices without having to run a custom backend server. Once a user enables a remote storage service of their choosing via OAuth (e.g., Google Drive, Dropbox, iCloud), the application can use that to backup/sync data. The user owns their own data and decides where to store it, and the application developer never sees that data.
+You can use this library to, for example, build a "[local first](https://www.inkandswitch.com/local-first.html)" [PWA](https://developer.mozilla.org/en-US/docs/Web/Apps/Progressive/) that also supports syncing across differenct devices without having to run a custom backend server. Once a user enables a remote storage service of their choosing via OAuth (e.g., Google Drive, Dropbox, iCloud), the application can use that to backup/sync data. The user owns their own data and decides where to store it, and the application developer never sees that data.
 
 The idea for the library came from studying [James Long](https://twitter.com/jlongster)'s
-[crdt-example-app](https://github.com/jlongster/crdt-example-app), which offers a fantastic demonstration of how to apply [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type), [hybrid logical clock](https://jaredforsyth.com/posts/hybrid-logical-clocks/), and merkle tree concepts. `IDBSideSync` is an attempt at applying those concepts to work with IndexedDB, specifically, and aims to support using simple, HTTP-accessible file transfer services that users already have as the means for sharing CRDT messages instead of custom servers. `IDBSideSync` was deliberately forked from `crdt-example-app` to make that "heritage" literally part of this project's own history.
+[crdt-example-app](https://github.com/jlongster/crdt-example-app), which offers a fantastic demonstration of how to use [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type), [hybrid logical clock](https://jaredforsyth.com/posts/hybrid-logical-clocks/), and merkle tree concepts to build a simple, ephemeral/in-memory data store (that relies on a custom server for synchronization across instances of the application). `IDBSideSync` is an attempt at applying those concepts (and in some cases, modified versions of James' code) to work with [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API), specifically. It also adds the ability for HTTP-accessible data storage APIs that users already have (or host themselves) as the means for syncing data instead of relying on a single, developer-owned, server application. `IDBSideSync` was deliberately forked from `crdt-example-app` to make that "heritage" literally part of this project's own history.
+
+# Usage
+
+```
+npm install --save @clintharris/IDBSideSync
+```
+
+First, you'll need to add a few lines to your existing IndexedDB setup code for initializing `IDBSideSync`:
+
+```javascript
+const openreq = indexedDB.open('todo-app', 1);
+
+openreq.onupgradeneeded = (event) => {
+  const db = event.target.result;
+
+  // 👉 Note that IDBSideSync does NOT support object stores with the autoIncrement option. This
+  //  is because if IndexedDB were allowed to auto-assign the "keys" for objects, there would be
+  // no guarantee of uniqueness.
+  const todosStore = db.createObjectStore('todos', { keyPath: 'id' });
+
+  // Give IDBSideSync a chance to create its own object stores and indices.
+  IDBSideSync.onupgradeneeded(event);
+};
+
+openreq.onsuccess = () => {
+  // Now that the object stores exist, allow IDBSideSync to initiailize itself before using it.
+  IDBSideSync.init(openreq.result);
+}
+```
+
+Now just make sure to use an "IDBSideSync wrapped" version of the IndexedDB object store so that data mutations can be intercepted and recorded in the background as you perform CRUD operations on your data:
+
+```javascript
+// Make sure to include IDBSideSync's OPLOG_STORE in the transaction (otherwise it won't be able
+// to commit/rollback its own operation log changes as part of the same transaction).
+const txRequest = db.transaction(['todos', IDBSideSync.OPLOG_STORE], 'readwrite');
+const todoStore = IDBSideSync.proxyStore(txRequest.objectStore('todos'));
+
+// You need to ensure that object keys are unqiue. One option is to use  IDBSideSync's `uuid()`
+// convenience function.
+const todoId = IDBSideSync.uuid(); // 123
+todoStore.add({ id: todoId, title: "Buy milk" }); // { id: 123, title: "Buy milk" }
+
+// 👉 Note that IDBSideSync modifies `put()` so that it only updates the specific properties that
+// you pass in instead of completely replacing objects (i.e., it now supports "partial" updates).
+// This is out of necessity and can't be changed, (but you can always pass in a complete copy of
+// an object to update all of its properties in the store).
+todoStore.put({ title: "Buy cookies" }, todoId);
+todoStore.put({ priority: "high" }, todoId); 
+todoStore.get(todoId).onsuccess = (event) => {
+  console.log(event.target.result); // { id: 123, title: "Buy cookies", priority: "high" }
+}
+```
 
 # API
+
+todo
 
 ## What types of object stores does it work with?
 
