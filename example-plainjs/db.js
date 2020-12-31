@@ -20,14 +20,17 @@ function getDB() {
 
       openreq.onupgradeneeded = (event) => {
         const db = event.target.result;
-        sidesync.setupStores(db);
+        IDBSideSync.onupgradeneeded(event);
         db.createObjectStore(TODO_TYPES, { keyPath: 'id' });
         const todosStore = db.createObjectStore(TODO_ITEMS, { keyPath: 'id' });
         todosStore.createIndex(TODO_ITEMS_BY_TYPE_INDEX, 'type', { unique: false });
       };
 
       openreq.onsuccess = () => {
-        resolve(openreq.result);
+        (async () => {
+          await IDBSideSync.init(openreq.result);
+          resolve(openreq.result);
+        })();
       };
     });
   }
@@ -36,7 +39,20 @@ function getDB() {
 
 /**
  * Convenience function for initiating an IndexedDB transaction and getting a reference to an object store. Mostly
- * copied from https://preview.tinyurl.com/yaoxc9cl).
+ * copied from https://preview.tinyurl.com/yaoxc9cl). Makes it possible to use promise/async/await to "wait" for a
+ * transaction to complete. Example:
+ *
+ * let result;
+ *
+ * // "Waits" until the entire transaction completes
+ * await txWithStore('myStore', 'readwrite', (store) => {
+ *   store.add(myThing).onsuccess = (event) => {
+ *     result = event.target.result;
+ *   }
+ * });
+ *
+ * // Now do something else that may depend on the transaction having completed and 'myThing' having been added...
+ * console.log('Your thing was added:', result);
  *
  * @param {string} storeName - name of object store to retrieve
  * @param {string} mode - "readonly" | "readwrite"
@@ -44,25 +60,25 @@ function getDB() {
  *
  * @returns a Promise that will resolve once the transaction completes successfully.
  */
-async function withStore(storeName, mode, callback) {
+async function txWithStore(storeName, mode, callback) {
   const db = await getDB();
   return new Promise((resolve, reject) => {
-    // The flow of execution might be a bit confusing here; it basically works like this:
-    // 1. Open/start the transaction.
-    // 2. Assign event handlers for when the transaction finishes/fails.
-    // 3. Execute the callback, passing in the object store.
-    // 4. When the transaction is complete, resolve the promise.
-    const transactionRequest = db.transaction(storeName, mode);
+    const transactionRequest = db.transaction([storeName, IDBSideSync.OPLOG_STORE], mode);
     transactionRequest.oncomplete = () => resolve();
     transactionRequest.onerror = () => reject(transactionRequest.error);
-    callback(transactionRequest.objectStore(storeName));
+
+    // Note that the object store is immediately available (i.e., this is synchronous).
+    const store = transactionRequest.objectStore(storeName);
+
+    const proxiedStore = IDBSideSync.proxyStore(store);
+    callback(proxiedStore);
   });
 }
 
 async function addTodo(todo) {
   let req;
-  await withStore(TODO_ITEMS, 'readwrite', (store) => {
-    req = store.add({ id: uuidv4(), ...todo });
+  await txWithStore(TODO_ITEMS, 'readwrite', (store) => {
+    req = store.add({ id: IDBSideSync.uuid(), ...todo });
   });
 
   return req.result;
@@ -70,7 +86,7 @@ async function addTodo(todo) {
 
 async function updateTodo(params, id) {
   let req;
-  await withStore(TODO_ITEMS, 'readwrite', (store) => {
+  await txWithStore(TODO_ITEMS, 'readwrite', (store) => {
     req = store.put(params, id);
   });
 
@@ -87,7 +103,7 @@ function undeleteTodo(id) {
 
 async function getAllTodos() {
   let req;
-  await withStore(TODO_ITEMS, 'readonly', (store) => {
+  await txWithStore(TODO_ITEMS, 'readonly', (store) => {
     req = store.getAll();
   });
   return req.result.filter((todo) => todo.tombstone !== 1);
@@ -95,7 +111,7 @@ async function getAllTodos() {
 
 async function getTodo(id) {
   let req;
-  await withStore(TODO_ITEMS, 'readonly', (store) => {
+  await txWithStore(TODO_ITEMS, 'readonly', (store) => {
     req = store.get(id);
   });
   return req.result;
@@ -103,7 +119,7 @@ async function getTodo(id) {
 
 async function getDeletedTodos() {
   let req;
-  await withStore(TODO_ITEMS, 'readonly', (store) => {
+  await txWithStore(TODO_ITEMS, 'readonly', (store) => {
     req = store.getAll();
   });
   return req.result.filter((todo) => todo.tombstone === 1);
@@ -111,7 +127,7 @@ async function getDeletedTodos() {
 
 async function getNumTodos() {
   let req;
-  await withStore(TODO_ITEMS, 'readonly', (store) => {
+  await txWithStore(TODO_ITEMS, 'readonly', (store) => {
     req = store.count();
   });
   return req.result;
@@ -119,7 +135,8 @@ async function getNumTodos() {
 
 async function getTodoTypes() {
   let req;
-  await withStore(TODO_TYPES, 'readonly', (store) => {
+  await txWithStore(TODO_TYPES, 'readonly', (store) => {
+    console.warn('store:', store);
     req = store.getAll();
   });
   return req.result;
@@ -127,20 +144,20 @@ async function getTodoTypes() {
 
 async function addTodoType({ name, color }) {
   let req;
-  await withStore(TODO_TYPES, 'readwrite', (store) => {
-    req = store.add({ id: uuidv4(), name, color });
+  await txWithStore(TODO_TYPES, 'readwrite', (store) => {
+    req = store.add({ id: IDBSideSync.uuid(), name, color });
   });
   return req.result;
 }
 
 async function deleteTodoType(typeId, newTypeId) {
   // First, delete or migrate the todo's of the type that's about to be deleted.
-  await withStore(TODO_ITEMS, 'readwrite', (store) => {
+  await txWithStore(TODO_ITEMS, 'readwrite', (store) => {
     const todosByTypeIndex = store.index(TODO_ITEMS_BY_TYPE_INDEX);
     const req = todosByTypeIndex.openCursor(IDBKeyRange.only(typeId));
     req.onsuccess = (event) => {
       const cursor = event.target.result;
-      if(cursor) {
+      if (cursor) {
         const todo = cursor.value;
         if (todo.type === typeId) {
           if (newTypeId) {
@@ -156,11 +173,11 @@ async function deleteTodoType(typeId, newTypeId) {
         }
         cursor.continue();
       }
-    }
+    };
   });
 
   // Now delete the todo type.
-  await withStore(TODO_TYPES, 'readwrite', (store) => {
+  await txWithStore(TODO_TYPES, 'readwrite', (store) => {
     store.delete(typeId);
   });
 }

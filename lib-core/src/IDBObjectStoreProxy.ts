@@ -1,6 +1,11 @@
-import { STORE_NAMES } from './db';
+import { STORE_NAME } from './db';
+import { HLClock } from './HLClock';
 
 export function proxyStore(target: IDBObjectStore): IDBObjectStore {
+  const storeNames = target.transaction.objectStoreNames;
+  if (storeNames && !storeNames.contains(STORE_NAME.OPLOG)) {
+    throw new Error(`Transaction was opened without including IDBSideSync.OPLOG_STORE as one of the stores.`);
+  }
   const proxy = new IDBObjectStoreProxy(target);
   return new Proxy(target, proxy);
 }
@@ -14,7 +19,7 @@ export class IDBObjectStoreProxy {
       // keys. In that scenario, there's no safe way to share and apply oplog entries (i.e., CRDT messages) since they
       // might describe mutations that _appear_ to be relevant to the same object but actually could refer to different
       // objects that have the same key/ID.
-      throw new Error(`OpLoggy can't work with object stores whose .autoIncrement property is set to true.`);
+      throw new Error(`IDBSideSync can't work with object stores whose .autoIncrement property is set to true.`);
     }
 
     this.target = target;
@@ -55,9 +60,9 @@ export class IDBObjectStoreProxy {
 
   /**
    * This method is used to convert an object that was just "put" into an object store into 1+ oplog entries that can be
-   * recorded and shared so the operation can be re-created as part of a CRDT. It should only be called as part of the
-   * same transaction used to perform the actual add()/put() so that if operation fails--or if the attempt to add an
-   * object to the oplog store fails--all of the operations are rolled back.
+   * recorded and shared so the operation can be replicated on other nodes. It should be called as part of the same
+   * transaction used to perform the actual add()/put() so that if operation fails--or if the attempt to add an object
+   * to the oplog store fails--all of the operations are rolled back.
    *
    * The optional `key` arg should only exist if the proxied object store was created without a `keyPath`. For a nice
    * summary of possible `keyPath` and `autoIncrement` permutations, and what that means for the object store, see
@@ -73,65 +78,64 @@ export class IDBObjectStoreProxy {
       }
     }
 
-    //TODO: For each OpLogEntry object:
-    // 1. Attempt to find an existing OpLogEntry for the same store/object/field.
-    // 2. If existing entry is older than the one we just created, or none exists, then it's ok that the original
-    //    `put()` mutation happened. If, however, a more recent pre-existing operation was found, we need to re-apply
-    //    THAT mutation (i.e., roll back / undo the mutation that just took place).
-    // 3. If existing entry has a different timestamp than the one we just created, or none exists, add the OpLogEntry
-    //    we just created to the entries store.
-
-    /* eslint-disable @typescript-eslint/no-unused-vars */
-    let objectIdentifier;
+    let objectKey;
 
     if (key) {
-      objectIdentifier = key;
+      objectKey = key;
     } else {
       // If key wasn't specified, use `this.target.keyPath` to access a value on the object and use that as the ID
       if (Array.isArray(this.target.keyPath)) {
-        objectIdentifier = this.target.keyPath.map((prop) => newValue[prop]);
+        objectKey = this.target.keyPath.map((prop) => newValue[prop]);
       } else {
-        objectIdentifier = newValue[this.target.keyPath];
+        objectKey = newValue[this.target.keyPath];
       }
     }
 
-    objectIdentifier = JSON.stringify(objectIdentifier);
+    objectKey = JSON.stringify(objectKey);
     let entries: OpLogEntry[] = [];
 
-    // if (typeof newValue === 'object') {
-    //   // Convert the `value` to 1+ OpLogEntry objects
-    //   for (const property in newValue) {
-    //     entries.push({
-    //       hlcTime: HLClock.tick().toString(),
-    //       store: this.target.name,
-    //       objectId: objectIdentifier,
-    //       field: property,
-    //       value: newValue[property],
-    //     });
-    //   }
-    // } else {
-    //   entries.push({
-    //     hlcTime: HLClock.tick().toString(),
-    //     store: this.target.name,
-    //     objectId: objectIdentifier,
-    //     field: null,
-    //     value: newValue,
-    //   });
-    // }
+    if (typeof newValue === 'object') {
+      // Convert each property in the `value` to an OpLogEntry.
+      for (const property in newValue) {
+        entries.push({
+          hlcTime: HLClock.tick().toString(),
+          store: this.target.name,
+          objectKey,
+          prop: property,
+          value: newValue[property],
+        });
+      }
+    } else {
+      // It's possible to store non-object primitives in an object store, too (e.g., `store.put(true, "someKey")`).
+      entries.push({
+        hlcTime: HLClock.tick().toString(),
+        store: this.target.name,
+        objectKey,
+        prop: null,
+        value: newValue,
+      });
+    }
 
     let oplogStore;
     try {
       // When getting a reference to our own object store where the operation will be recorded, it's important that we
       // reuse the existing transaction. By doing so, both recording the operation and performing the operation are part
       // of the same transaction; we can ensure that if anything fails for some reason, nothing will be persisted.
-      oplogStore = this.target.transaction.objectStore(STORE_NAMES.OPLOG);
+      oplogStore = this.target.transaction.objectStore(STORE_NAME.OPLOG);
     } catch (error) {
       const errorMsg =
-        `Error ocurred when attepmting to get reference to the "${STORE_NAMES.OPLOG}" store (this may have happened ` +
-        `because "${STORE_NAMES.OPLOG}" wasn't included when the transaction was created): ${error.toString()}`;
+        `Error ocurred when attepmting to get reference to the "${STORE_NAME.OPLOG}" store (this may have happened ` +
+        `because "${STORE_NAME.OPLOG}" wasn't included when the transaction was created): ${error.toString()}`;
       throw new Error(errorMsg);
     }
 
+    // For each OpLogEntry object:
+    // 1. Attempt to find an existing OpLogEntry for the same store/object/field.
+    // 2. If existing entry is older than the one we just created, or none exists, then it's ok that the original
+    //    `put()` mutation happened. If, however, a more recent pre-existing operation was found, we need to re-apply
+    //    THAT mutation (i.e., roll back / undo the mutation that just took place).
+    // 3. If existing entry has a different timestamp than the one we just created, or none exists, add the OpLogEntry
+    //    we just created to the entries store.
     for (const entry of entries) {
       //TODO: get the most recent local entry
       oplogStore.add(entry);

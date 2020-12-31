@@ -192,8 +192,8 @@ export function isValidOplogEntry(thing: unknown): thing is OpLogEntry {
   if (
     typeof candidate.hlcTime !== 'string' ||
     typeof candidate.store !== 'string' ||
-    typeof candidate.objectId !== 'string' ||
-    (typeof candidate.field !== 'string' && candidate.field !== null) ||
+    typeof candidate.objectKey !== 'string' ||
+    (typeof candidate.prop !== 'string' && candidate.prop !== null) ||
     !('value' in candidate)
   ) {
     return false;

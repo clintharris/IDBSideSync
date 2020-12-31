@@ -6,7 +6,7 @@
 interface OpLogEntry {
   hlcTime: string;
   store: string;
-  objectId: string;
-  field: string | null;
+  objectKey: string;
+  prop: string | null;
   value: unknown;
 }

@@ -1,9 +1,9 @@
 import { expect, describe, it } from '@jest/globals';
-import { makeClientId } from '../src/utils';
+import { makeNodeId } from '../src/utils';
 
 describe('utils', () => {
-  describe('makeClientId()', () => {
-    const clientIds = Array.from({ length: 1000 }, makeClientId);
+  describe('makeNodeId()', () => {
+    const clientIds = Array.from({ length: 1000 }, makeNodeId);
 
     it('returns values in correct format.', () => {
       const lowerAlphaNumRegex = new RegExp('[a-z|\\d]{16}');

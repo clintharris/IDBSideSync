@@ -6,7 +6,7 @@ import FDBFactory from 'fake-indexeddb/lib/FDBFactory';
 import { beforeEach, expect, jest, describe, it } from '@jest/globals';
 
 import { proxyStore } from '../src/IDBObjectStoreProxy';
-import { STORE_NAMES, setupStores } from '../src/db';
+import { STORE_NAME, onupgradeneeded as sideSyncDbUpgrade, init as sideSyncInit } from '../src/db';
 
 jest.setTimeout(10000);
 
@@ -28,43 +28,42 @@ describe('IDBObjectStoreProxy', () => {
         // tell tsc what type 'this' is inside our function. We only need to do this because we are wrapping the
         // function with `jest.fn(...)`. See https://www.typescriptlang.org/docs/handbook/functions.html#this-parameters
         this: IDBOpenDBRequest,
-        // @ts-ignore
         event: IDBVersionChangeEvent
       ) {
         const db = this.result;
-        setupStores(db);
+        sideSyncDbUpgrade(event);
         const objectStore = db.createObjectStore('customers', { keyPath: 'id' });
-
         objectStore.createIndex('name', 'name', { unique: false });
-
-        // Use transaction oncomplete to make sure the objectStore creation is finished before adding data into it.
-        objectStore.transaction.oncomplete = () => {
-          const customersTransaction = db.transaction(['customers', STORE_NAMES.OPLOG], 'readwrite');
-          const customerObjectStore = proxyStore(customersTransaction.objectStore('customers'));
-
-          // Add a new object via add()
-          customerObjectStore.add(spongebObj).onsuccess = onSpongebobAddSuccessFcn;
-
-          // Now update only _one_ field in that existing object (i.e., partial update).
-          const updateSBobReq = customerObjectStore.put({ id: 1, name: 'Robert Squarepants' });
-          updateSBobReq.onsuccess = () => {
-            // Verify that `updateSBobReq.result` has the correct key.
-          };
-
-          // Use put() to add another new object
-          const updatePatrickReq = customerObjectStore.put(patrickObj);
-          updatePatrickReq.onsuccess = onPatrickAddSuccessFcn;
-
-          // Now test that oplog entries exist for everything that happened and that the main store looks like this:
-          // 1. { id: 1, name: 'S. Bob Squarepants', species: 'sponge' }
-          // 2. { id: 2, name: 'patrick', species: 'starfish' }
-          customerObjectStore.transaction.oncomplete = finishTest;
-        };
       });
 
       const openDbRequest = window.indexedDB.open('mydatabase', 1);
-
       openDbRequest.onupgradeneeded = handleUpgradeNeeded;
+
+      openDbRequest.onsuccess = async () => {
+        const db = openDbRequest.result;
+        await sideSyncInit(db);
+
+        const customersTransaction = db.transaction(['customers', STORE_NAME.OPLOG], 'readwrite');
+        const customerObjectStore = proxyStore(customersTransaction.objectStore('customers'));
+
+        // Add a new object via add()
+        customerObjectStore.add(spongebObj).onsuccess = onSpongebobAddSuccessFcn;
+
+        // Now update only _one_ field in that existing object (i.e., partial update).
+        const updateSBobReq = customerObjectStore.put({ id: 1, name: 'Robert Squarepants' });
+        updateSBobReq.onsuccess = () => {
+          // Verify that `updateSBobReq.result` has the correct key.
+        };
+
+        // Use put() to add another new object
+        const updatePatrickReq = customerObjectStore.put(patrickObj);
+        updatePatrickReq.onsuccess = onPatrickAddSuccessFcn;
+
+        // Now test that oplog entries exist for everything that happened and that the main store looks like this:
+        // 1. { id: 1, name: 'S. Bob Squarepants', species: 'sponge' }
+        // 2. { id: 2, name: 'patrick', species: 'starfish' }
+        customerObjectStore.transaction.oncomplete = finishTest;
+      };
 
       function finishTest() {
         // @ts-ignore
