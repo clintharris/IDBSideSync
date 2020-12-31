@@ -1,15 +1,31 @@
-`idb-sidesync` is a JavaScript library that makes it possible to sync IndexedDB object stores using CRDT concepts. It works by intercepting the CRUD calls to an IndexedDB object store and automatically maintaing a record of all the operations "on the side". This operation log/journal is a collection of simple JSON objects that can be serialized and uploaded somewhere, then downloaded and "replayed" somewhere else--in effect, synchronizing one object store with another without conflict (thanks to how [CRDTs](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type) work).
+# Overview
+
+`IdbSideSync` is a JavaScript library that makes it possible to sync IndexedDB object stores using CRDT concepts. It works by intercepting the CRUD calls to IndexedDB objects and automatically logging all the operations "on the side" in a separate store. The objects in the operation log can be uploaded somewhere, then downloaded and "replayed" somewhere else--in effect, synchronizing one object store with another without conflict.
+
+You can use this library to, for example, build a "[local first](https://www.inkandswitch.com/local-first.html)" [PWA](https://developer.mozilla.org/en-US/docs/Web/Apps/Progressive/) that also supports syncing across difference devices without having to run a custom backend server. Once a user enables a remote storage service of their choosing via OAuth (e.g., Google Drive, Dropbox, iCloud), the application can use that to backup/sync data. The user owns their own data and decides where to store it, and the application developer never sees that data.
 
 The idea for the library came from studying [James Long](https://twitter.com/jlongster)'s
-[crdt-example-app](https://github.com/jlongster/crdt-example-app), which offers a fantastic demonstration of how to apply CRDT, hybrid logical clock, and merkle tree concepts. `idb-sidesync` is an attempt at applying those concepts to work with IndexedDB, specifically, and aims to support using simple, file transfer services that users already have (e.g., Google Drive, iCloud, email--anything with an HTTP-accessible API) as the means for syncing data instead of custom servers. Although they're different, `idb-sidesync` was deliberately forked from `crdt-example-app` to make that "heritage" literally part of this project's own history.
+[crdt-example-app](https://github.com/jlongster/crdt-example-app), which offers a fantastic demonstration of how to apply [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type), [hybrid logical clock](https://jaredforsyth.com/posts/hybrid-logical-clocks/), and merkle tree concepts. `IdbSideSync` is an attempt at applying those concepts to work with IndexedDB, specifically, and aims to support using simple, HTTP-accessible file transfer services that users already have as the means for sharing CRDT messages instead of custom servers. `IdbSideSync` was deliberately forked from `crdt-example-app` to make that "heritage" literally part of this project's own history.
 
 # API
 
 ## What types of object stores does it work with?
 
-`idb-sidesync` does not support object stores that use `autoIncrement`. If IndexedDB is auto-assigning the object IDs, then it's possible for two separate clients to create an object with the same key/ID. In that scenario, there's no safe way to share and apply oplog entries (i.e., CRDT messages) since they might describe mutations that _appear_ to be relevant to the same object but actually could refer to different objects that have the same key/ID.
+`IdbSideSync` does not support object stores that use `autoIncrement`. If IndexedDB is auto-assigning the object IDs, then it's possible for two separate clients to create an object with the same key/ID. In that scenario, there's no safe way to share and apply oplog entries (i.e., CRDT messages) since they might describe mutations that _appear_ to be relevant to the same object but actually could refer to different objects that have the same key/ID.
 
-Also, `idb-sidesync` currently doesn't support `add(value, key)` or `put(value, key)` calls when `key` is of type `ArrayBuffer` or `DataView`.
+Also, `IdbSideSync` currently doesn't support `add(value, key)` or `put(value, key)` calls when `key` is of type `ArrayBuffer` or `DataView`.
+
+## FAQ
+
+### Q: What happens if the same oplog/change message is "ingested" more than once?
+
+It will have no effect on the data store. Message values are only applied to the data store if the message's HLC time is more recent than the current value.
+
+However, it would "corrupt" the Merkle tree (if the tree weren't set up to prevent it) since the hash values would still change when the message's hash is inserted a second time.
+
+### Q: Does it work with Jake Archibald's [idb](https://github.com/jakearchibald/idb) library?
+
+Yes. You can pass a sidesync'ed object store to idb's `wrap()` function. Since `IdbSideSync` works as an invisible Proxy, idb won't know the difference.
 
 # Contributing
 
@@ -22,9 +38,11 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
 
 # Roadmap
 
-- [ ] Convert files to TypeScript
-- [ ] Move types to a type def file that can be easily referenced by other apps if being imported as a library
-- [ ] Add unit tests (to ensure consistent behavior in next step, refactoring)
+- [ ] Set up Cypress to run unit tests
+    - this will make it possible to run automated tests that are using the real IndexedDB API
+- [ ] Modify Rollup to bundle murmurhash and uuid _with_ the library
+    - see "https://www.mixmax.com/engineering/rollup-externals/" section of https://www.mixmax.com/engineering/rollup-externals/ for example of which rollup plugins to install and use
+    - see https://tsdx.io/customization#example-adding-postcss for example of how to customize tsdx's rollup config to use rollup plugins
 - [ ] Incorporate Jared Forsyth's HLC string formatting improvements that allow for longer timestamp and counter strings:
     - `physTime.toString().padStart(15, '0')` // 13 digits is enough for the next 100 years, so 15 is plenty
     - `count.toString(36).padStart(5, '0') // 5 digits base 36 is enough for more than 6 million "out of order" changes
@@ -34,40 +52,15 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
     - this will require implementation of in-memory data store
     - how will this work without the use of the merkle tree for efficient diffing? is that even necessary?
     - make sure to prevent the "many changes in same ~10sec window causes issue" problem (https://twitter.com/jaredforsyth/status/1228366315569565696)
-- [ ] Set up [TSDX](https://tsdx.io/) to make it easier to publish libraries?
-- [ ] Refactor code (rename functions, classes, restructure code to classes, etc.)
-    - Easier/safer to do this after everything is using TypeScript
-    - Safer to do this after unit tests exist
-- [ ] Move to sidesync monorepo with `core` subdir (future: `store-indexeddb`, etc., subdirs/packages).
-- [ ] Add support for new features
-- [ ] Create Proxy trap/handlers so that oplog can be maintain transparently as developer uses IndexedDB
-    - Should be implemented to work with the standard IndexedDB API and _not_ depend on a convenience wrapper (such as idb).
-    - Should create its own IndexedDB database so that sidesync-specific CRUD won't involve locking the developer's application database.
-    - When db conn is opened (indexedDB.open()), the resulting db should cached as a singleton so that it can be reused.
-        - Note: Jake Archibald uses the same "cached singleton db conn" approach in his svgomg PWA: https://github.com/jakearchibald/svgomg/blob/master/src/js/utils/storage.js#L5
 - [ ] Set up the project to work with [CodeSandbox CI](https://codesandbox.io/docs/ci).
 - [ ] Set up a simple sandbox app in a sub-directory that can be use to demo/test the library (from relative imports)
 
 ## Refactoring
 
-- [x] `Clock`: Create a Clock class, make `_clock` and the non-class-based functions "static" members.
-- [x] Rename Timestamp to `HLTime`
-- [x] Rename Clock to `HLClock`
-- [x] Move Timestamp.send() into `HLClock` and rename/refactor it to work as `Clock.tick()`. This makes sense because:
-    - Timestamp.send() is only being used to increment the local clock singleton anyways (i.e., it's only ever called as `Timestamp.send(getClock())`); `Clock.tick()` makes it more obvious that the local clock is being updated/advanced to the next hybrid logical time.
 - [ ] Consider increasing the allowed difference for clock times coming from other systems; only allowing for a 1-minute difference between any other clock in the distributed system seems like it could be error prone...
 - [ ] Modify HLTime.parse() to do a better job of checking for issues with the passed-in string and throwing errors if necessary (e.g., throwing if an invalid month is specified)
 - [ ] Merkle tree:
-    - [-] build(): seems like it should be re-assigning a single `tree` variable to the result of `insert()` each time `insert()` is called with a timestamp... Should def test current behavior.
-    - [-] insert(): stop re-assigning `tree` param pointer
-    - [x] move all keys for accessing child nodes under a new "children" key
-    - [x] insertKey(): is it really necessary to create new objects instead of just mutating the existing properties when rebuilding the tree/nodes?
     - [ ] consider only allowing inserts to proceed for "full" 17-digit paths. This would prevent the possibility of setting hash value for non-leaf nodes (which would result in a node whose hash is, technically, not derived from the hashes of all its children). The downside of this is that it would make unit testing harder to easily understand (since you can't use "simple" testing trees with only a few nodes).
-- [ ] db/sync
-    - system needs access to full collection of oplog messages (and needs to be able to sort them)
-        - this means _all_ messages would need to be loaded into memory if persistent storage is unavailable
-
-
 
 ## New features
 
@@ -107,15 +100,3 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
             - if there are thousands of files, this would more efficient since it's not necessary to load the entire list into memory (similar to using a DB cursor)
         - this could be done by "searching" for files using a filename pattern that will exclude oplog entries before some time (see https://stackoverflow.com/a/11011934/62694)
         - OR (maybe simpler but much less efficient), download all file _names_ (i.e., list dir), iterate over them (parsing each filename to an actual HLC time that can be compared to the reference HLC time), and download each one that occurs on/after the reference time.
-
-## FAQ
-
-### Q: What happens if the same oplog/change message is "ingested" more than once?
-
-It will have no effect on the data store. Message values are only applied to the data store if the message's HLC time is more recent than the current value.
-
-However, it would "corrupt" the Merkle tree (if the tree weren't set up to prevent it) since the hash values would still change when the message's hash is inserted a second time.
-
-### Q: Does it work with Jake Archibald's [idb](https://github.com/jakearchibald/idb) library?
-
-Yes. You can pass a sidesync'ed object store to idb's `wrap()` function. Since `idb-sidesync` works as an invisible Proxy, idb won't know the difference.
