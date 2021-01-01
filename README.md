@@ -1,11 +1,15 @@
 # Overview
 
-`IDBSideSync` is a JavaScript library that makes it possible to sync IndexedDB object stores using CRDT concepts. It works by intercepting the CRUD calls to IndexedDB objects and automatically logging all the operations "on the side" in a separate store--the operation log. The objects in the operation log can be uploaded somewhere, then downloaded and "replayed" somewhere else, in effect, synchronizing IndexedDB stores across devices without conflict.
+IDBSideSync is a JavaScript library that makes it possible to sync IndexedDB object stores using CRDT concepts. It works by intercepting the CRUD calls to IndexedDB objects and automatically logging all the operations "on the side" in a separate store--the operation log. The objects in the operation log can be uploaded somewhere, then downloaded and "replayed" somewhere else, in effect, synchronizing IndexedDB stores across devices without conflict.
 
 You can use this library to, for example, build a "[local first](https://www.inkandswitch.com/local-first.html)" [PWA](https://developer.mozilla.org/en-US/docs/Web/Apps/Progressive/) that also supports syncing across differenct devices without having to run a custom backend server. Once a user enables a remote storage service of their choosing via OAuth (e.g., Google Drive, Dropbox, iCloud), the application can use that to backup/sync data. The user owns their own data and decides where to store it, and the application developer never sees that data.
 
 The idea for the library came from studying [James Long](https://twitter.com/jlongster)'s
 [crdt-example-app](https://github.com/jlongster/crdt-example-app), which offers a fantastic demonstration of how to use [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type), [hybrid logical clock](https://jaredforsyth.com/posts/hybrid-logical-clocks/), and merkle tree concepts to build a simple, ephemeral/in-memory data store (that relies on a custom server for synchronization across instances of the application). `IDBSideSync` is an attempt at applying those concepts (and in some cases, modified versions of James' code) to work with [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API), specifically. It also adds the ability for HTTP-accessible data storage APIs that users already have (or host themselves) as the means for syncing data instead of relying on a single, developer-owned, server application. `IDBSideSync` was deliberately forked from `crdt-example-app` to make that "heritage" literally part of this project's own history.
+
+# ⚠️ Disclaimer
+
+IDBSideSync is still experimental and under development. Some parts of it have not been tested, some things are incomplete, etc. It is not ready for production.
 
 # Usage
 
@@ -106,6 +110,8 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
 
 # Roadmap
 
+- [ ] Test CRUD on store with keyPath that is an array.
+    - Modify todo example app so that todo_types store has keyPath: ["id", "name"] (since the name can't be edited).
 - [ ] Set up Cypress to run unit tests
     - this will make it possible to run automated tests that are using the real IndexedDB API
 - [ ] Modify Rollup to bundle murmurhash and uuid _with_ the library

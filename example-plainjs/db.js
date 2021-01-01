@@ -87,7 +87,7 @@ async function addTodo(todo) {
 async function updateTodo(params, id) {
   let req;
   await txWithStore(TODO_ITEMS, 'readwrite', (store) => {
-    req = store.put(params, id);
+    req = store.put({ id, ...params });
   });
 
   return req.result;
@@ -151,29 +151,30 @@ async function addTodoType({ name, color }) {
 
 async function deleteTodoType(typeId, newTypeId) {
   // First, delete or migrate the todo's of the type that's about to be deleted.
-  await txWithStore(TODO_ITEMS, 'readwrite', (store) => {
-    const todosByTypeIndex = store.index(TODO_ITEMS_BY_TYPE_INDEX);
-    const req = todosByTypeIndex.openCursor(IDBKeyRange.only(typeId));
-    req.onsuccess = (event) => {
-      const cursor = event.target.result;
-      if (cursor) {
-        const todo = cursor.value;
-        if (todo.type === typeId) {
-          if (newTypeId) {
-            console.log(`🔄 migrating todo to type ${newTypeId}:`, todo);
-            //TODO: proxy cursor to support partial update()
-            cursor.update({ type: newTypeId });
-          } else {
-            console.log('🗑 deleting todo:', todo);
-            cursor.delete();
-          }
-        } else {
-          console.warn(`🤔 Found todo with typeId !== ${typeId} but shouldn't have since cursor was opened with query`);
-        }
-        cursor.continue();
-      }
-    };
-  });
+  // await txWithStore(TODO_ITEMS, 'readwrite', (store) => {
+
+  //   const todosByTypeIndex = store.index(TODO_ITEMS_BY_TYPE_INDEX);
+  //   const req = todosByTypeIndex.openCursor(IDBKeyRange.only(typeId));
+  //   req.onsuccess = (event) => {
+  //     const cursor = event.target.result;
+  //     if (cursor) {
+  //       const todo = cursor.value;
+  //       if (todo.type === typeId) {
+  //         if (newTypeId) {
+  //           console.log(`🔄 migrating todo to type ${newTypeId}:`, todo);
+  //           //TODO: proxy cursor to support partial update()
+  //           cursor.update({ type: newTypeId });
+  //         } else {
+  //           console.log('🗑 deleting todo:', todo);
+  //           cursor.delete();
+  //         }
+  //       } else {
+  //         console.warn(`🤔 Found todo with typeId !== ${typeId} but shouldn't have since cursor was opened with query`);
+  //       }
+  //       cursor.continue();
+  //     }
+  //   };
+  // });
 
   // Now delete the todo type.
   await txWithStore(TODO_TYPES, 'readwrite', (store) => {
