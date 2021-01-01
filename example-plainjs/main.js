@@ -253,8 +253,8 @@ async function render() {
         <div class="bg-white p-8" style="width: 500px">
           <h2 class="text-lg font-bold mb-4">Delete todo type</h2>
           <div class="pb-2">
-            Delete ${renderTodoTypes({ className: 'selected' })} and
-            merge into ${renderTodoTypes({
+            Delete ${await renderTodoTypes({ className: 'selected' })} and
+            merge into ${await renderTodoTypes({
               className: 'merge',
               showBlank: true,
             })}

@@ -136,7 +136,6 @@ async function getNumTodos() {
 async function getTodoTypes() {
   let req;
   await txWithStore(TODO_TYPES, 'readonly', (store) => {
-    console.warn('store:', store);
     req = store.getAll();
   });
   return req.result;

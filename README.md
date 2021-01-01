@@ -48,15 +48,28 @@ const todoStore = IDBSideSync.proxyStore(txRequest.objectStore('todos'));
 // convenience function.
 const todoId = IDBSideSync.uuid(); // 123
 todoStore.add({ id: todoId, title: "Buy milk" }); // { id: 123, title: "Buy milk" }
+```
 
-// 👉 Note that IDBSideSync modifies `put()` so that it only updates the specific properties that
-// you pass in instead of completely replacing objects (i.e., it now supports "partial" updates).
-// This is out of necessity and can't be changed, (but you can always pass in a complete copy of
-// an object to update all of its properties in the store).
+IDBSideSync modifies `put()` so that it only updates the specific properties that you pass in instead of completely replacing objects (i.e., it now supports "partial" updates). This is out of necessity and can't be changed, (but you can always pass in a complete copy of an object to update all of its properties in the store).
+
+```javascript
 todoStore.put({ title: "Buy cookies" }, todoId);
 todoStore.put({ priority: "high" }, todoId); 
+
+// In a separate transaction...
 todoStore.get(todoId).onsuccess = (event) => {
   console.log(event.target.result); // { id: 123, title: "Buy cookies", priority: "high" }
+}
+```
+
+IDBSideSync modifies `delete()` so that it only "soft deletes" objects (i.e., sets a "deleted" prop on them), and also modifies `get()`, `getAll()` and cursors to filter out the "deleted" objects:
+
+```javascript
+todoStore.delete(todoId);
+
+// In a separate transaction...
+todoStore.get(todoId).onsuccess = (event) => {
+  console.log(event.target.result); // undefined
 }
 ```
 

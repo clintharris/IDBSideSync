@@ -50,8 +50,7 @@ class IDBOpenDBRequestProxy {
         this.upgradeOpLoggyDb(event, value);
       };
 
-      // Proxies should return true to indicate that an assignment (set) succeeded. For more info see
-      // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy/Proxy/set#Return_value
+      // Proxies return true to indicate that an assignment succeeded (https://preview.tinyurl.com/y7n5qhly).
       return true;
     }
 
