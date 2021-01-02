@@ -21,9 +21,12 @@ function getDB() {
       openreq.onupgradeneeded = (event) => {
         const db = event.target.result;
         IDBSideSync.onupgradeneeded(event);
-        db.createObjectStore(TODO_TYPES, { keyPath: 'id' });
+        const todoTypesStore = db.createObjectStore(TODO_TYPES, { keyPath: 'id' });
+        IDBSideSync.setupStore(todoTypesStore);
+
         const todosStore = db.createObjectStore(TODO_ITEMS, { keyPath: 'id' });
         todosStore.createIndex(TODO_ITEMS_BY_TYPE_INDEX, 'type', { unique: false });
+        IDBSideSync.setupStore(todosStore);
       };
 
       openreq.onsuccess = () => {
@@ -42,6 +45,8 @@ function getDB() {
  * copied from https://preview.tinyurl.com/yaoxc9cl). Makes it possible to use promise/async/await to "wait" for a
  * transaction to complete. Example:
  *
+ * @example
+ * ```
  * let result;
  *
  * // "Waits" until the entire transaction completes
@@ -53,6 +58,7 @@ function getDB() {
  *
  * // Now do something else that may depend on the transaction having completed and 'myThing' having been added...
  * console.log('Your thing was added:', result);
+ * ```
  *
  * @param {string} storeName - name of object store to retrieve
  * @param {string} mode - "readonly" | "readwrite"
@@ -152,7 +158,6 @@ async function addTodoType({ name, color }) {
 async function deleteTodoType(typeId, newTypeId) {
   // First, delete or migrate the todo's of the type that's about to be deleted.
   // await txWithStore(TODO_ITEMS, 'readwrite', (store) => {
-
   //   const todosByTypeIndex = store.index(TODO_ITEMS_BY_TYPE_INDEX);
   //   const req = todosByTypeIndex.openCursor(IDBKeyRange.only(typeId));
   //   req.onsuccess = (event) => {

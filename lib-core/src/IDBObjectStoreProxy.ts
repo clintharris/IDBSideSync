@@ -1,13 +1,15 @@
-import { STORE_NAME } from './db';
+import { INDEX_NAME, SOFT_DELETED_PROP, STORE_NAME } from './db';
 import { HLClock } from './HLClock';
-
-export const SOFT_DELETED_PROP = 'IDBSideSync_SoftDeleted';
 
 /**
  * Objects that have been "soft deleted" will a special property that indicates if they have been deleted.
  */
 export interface ThingWithDeletedProp {
-  [SOFT_DELETED_PROP]: boolean;
+  // Note that we're using numbers (0, 1) to indicate if something is soft-deleted and NOT a boolean. This is because
+  // we need to be able to set up IndexedDB indices that use this property (e.g., filtering out soft-deleted items from
+  // query results); however, booleans can NOT be used as keys in IndexedDB--and by extension, you can't create indexes
+  // that reference boolean values.
+  [SOFT_DELETED_PROP]: 0 | 1;
 }
 
 export function proxyStore(target: IDBObjectStore): IDBObjectStore {
@@ -52,9 +54,9 @@ export class IDBObjectStoreProxy {
     return Reflect.get(target, prop, receiver);
   }
 
-  proxiedAdd = (...args: Parameters<IDBObjectStore['add']>): ReturnType<IDBObjectStore['add']> => {
-    this.recordOperation(...args);
-    return this.target.add(...args);
+  proxiedAdd = (value: any, key?: IDBValidKey): ReturnType<IDBObjectStore['add']> => {
+    this.recordOperation(value, key);
+    return this.target.add({ ...value, [SOFT_DELETED_PROP]: 0 }, key);
   };
 
   proxiedPut = (value: any, key?: IDBValidKey): ReturnType<IDBObjectStore['put']> => {
@@ -118,11 +120,17 @@ export class IDBObjectStoreProxy {
         }
       }
 
+      const keyValue = IDBKeyRange.only(1);
+      const countReq = this.target.index(INDEX_NAME.SOFT_DELETED).count(keyValue);
+      countReq.onsuccess = () => {
+        console.log(`${INDEX_NAME.SOFT_DELETED} count() by '${keyValue}'`, countReq.result);
+      };
+
       // TODO: Proxy the request returned by put() so that attempts to access the .result property, or attempts to
       // assign an 'onsuccess' handler function which accesses the `event.result` property, properly ensure that
       // `result` is always `undefined` (per the official `delete()` API). For now, `result` will have the result of
       // the `put()` operation--a minor deviation from the proxied API that is unlikely to cause problems.
-      return this.proxiedPut({ ...objectKeys, [SOFT_DELETED_PROP]: true }, key);
+      return this.proxiedPut({ ...objectKeys, [SOFT_DELETED_PROP]: 1 }, key);
     }
   };
 
