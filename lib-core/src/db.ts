@@ -7,25 +7,10 @@ export enum STORE_NAME {
   OPLOG = 'IDBSideSync_OpLogStore',
 }
 
-export enum INDEX_NAME {
-  SOFT_DELETED = 'IDBSideSync_SoftDeletedIndex',
-}
-
-export const SOFT_DELETED_PROP = 'IDBSideSync_SoftDeleted';
 export const OPLOG_STORE = STORE_NAME.OPLOG;
 
 let dbSingleton: IDBDatabase;
 let settings: { nodeId: string };
-
-/**
- * This should be called in the upstream developer's 'onupgradeneeded' handler for every store they want to use with
- * IDBSideSync. It sets up an index that makes it possible to retrieve objects in that store based on whether or not
- * they are "soft deleted" (i.e., have an IDBSideSync-specific prop that indicates they should be treated as being
- * deleted).
- */
-export function setupStore(store: IDBObjectStore) {
-  store.createIndex(INDEX_NAME.SOFT_DELETED, SOFT_DELETED_PROP, { unique: false });
-}
 
 /**
  * This should be called as part of the upstream library handling an onupgradeneeded event (i.e., note that this won't

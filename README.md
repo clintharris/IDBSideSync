@@ -66,16 +66,33 @@ todoStore.get(todoId).onsuccess = (event) => {
 }
 ```
 
-IDBSideSync modifies `delete()` so that it only "soft deletes" objects (i.e., sets a "deleted" prop on them), and also modifies `get()`, `getAll()` and cursors to filter out the "deleted" objects:
+## Deleting stuff
+
+For now, IDBSideSync doesn't support the deletion of things (although this might be a feature in the future). Don't do the following things, for example:
 
 ```javascript
-todoStore.delete(todoId);
+const todoStore = IDBSideSync.proxyStore(txRequest.objectStore('todos'));
 
-// In a separate transaction...
-todoStore.get(todoId).onsuccess = (event) => {
-  console.log(event.target.result); // undefined
+// Don't do this...
+todoStore.delete(todoId); // ❌
+
+// ...or this
+todoStore.openCursor().onsuccess = function(event) {
+  const cursor = event.target.result;
+  cursor.delete(); // ❌
+}
+
+// ...or this
+const todoIndex = todoStore.index('todos_indxed_by_title');
+todoIndex.openCursor().onsuccess = function(event) {
+  const cursor = event.target.result;
+  cursor.delete(); // ❌
 }
 ```
+
+In fact, IDBSideSync might be modified at some point to throw errors if you do any of the stuff shown above to help prevent problems.
+
+As a recommended alternative, do "soft" deletion of objects instead. In other words, update them with some sort of property that indicates they should be _treated_ as if they were deleted (e.g., `{ name: 'foo', deleted: 1 }`). Note that a nice benefit of this approach is that it's easy to support undo when objecs are "deleted".
 
 # API
 

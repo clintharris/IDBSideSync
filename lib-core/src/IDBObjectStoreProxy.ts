@@ -1,16 +1,5 @@
-import { INDEX_NAME, SOFT_DELETED_PROP, STORE_NAME } from './db';
+import { STORE_NAME } from './db';
 import { HLClock } from './HLClock';
-
-/**
- * Objects that have been "soft deleted" will a special property that indicates if they have been deleted.
- */
-export interface ThingWithDeletedProp {
-  // Note that we're using numbers (0, 1) to indicate if something is soft-deleted and NOT a boolean. This is because
-  // we need to be able to set up IndexedDB indices that use this property (e.g., filtering out soft-deleted items from
-  // query results); however, booleans can NOT be used as keys in IndexedDB--and by extension, you can't create indexes
-  // that reference boolean values.
-  [SOFT_DELETED_PROP]: 0 | 1;
-}
 
 export function proxyStore(target: IDBObjectStore): IDBObjectStore {
   const storeNames = target.transaction.objectStoreNames;
@@ -43,12 +32,6 @@ export class IDBObjectStoreProxy {
       return this.proxiedAdd;
     } else if (prop === 'put') {
       return this.proxiedPut;
-    } else if (prop === 'get') {
-      return this.proxiedGet;
-    } else if (prop === 'getAll') {
-      return this.proxiedGetAll;
-    } else if (prop === 'delete') {
-      return this.proxiedDelete;
     }
 
     return Reflect.get(target, prop, receiver);
@@ -56,7 +39,7 @@ export class IDBObjectStoreProxy {
 
   proxiedAdd = (value: any, key?: IDBValidKey): ReturnType<IDBObjectStore['add']> => {
     this.recordOperation(value, key);
-    return this.target.add({ ...value, [SOFT_DELETED_PROP]: 0 }, key);
+    return this.target.add(value, key);
   };
 
   proxiedPut = (value: any, key?: IDBValidKey): ReturnType<IDBObjectStore['put']> => {
@@ -93,124 +76,6 @@ export class IDBObjectStoreProxy {
     // has a `keyPath`. Doing this causes an error (e.g., "[...] object store uses in-line keys and the key parameter
     // was provided" in Chrome).
     return this.target.keyPath ? this.target.put(value) : this.target.put(value, key);
-  };
-
-  proxiedDelete = (key: IDBValidKey | IDBKeyRange) => {
-    if (key instanceof IDBKeyRange) {
-      //TODO: Use the key range to open a cursor iterating over objects that match the key range, then update each one
-      // const cursorReq = this.target.openCursor(key);
-      // cursorReq.onsuccess
-      throw Error('Calling delete() with a key range is currently unsupported.');
-    } else {
-      const objectKeys: Record<string, unknown> = {};
-      if (this.target.keyPath) {
-        if (Array.isArray(this.target.keyPath)) {
-          // If the object store's `keyPath` is an array (i.e., of property names), then the `key` param should be also
-          // be an array (of values).
-          if (!Array.isArray(key)) {
-            throw new TypeError(`"key" param must be an array since object store's "keyPath" is an array.`);
-          }
-
-          // Build up an object that will have all the required key props and values.
-          this.target.keyPath.forEach((keyName, i) => {
-            objectKeys[keyName] = key[i];
-          });
-        } else {
-          objectKeys[this.target.keyPath] = key;
-        }
-      }
-
-      const keyValue = IDBKeyRange.only(1);
-      const countReq = this.target.index(INDEX_NAME.SOFT_DELETED).count(keyValue);
-      countReq.onsuccess = () => {
-        console.log(`${INDEX_NAME.SOFT_DELETED} count() by '${keyValue}'`, countReq.result);
-      };
-
-      // TODO: Proxy the request returned by put() so that attempts to access the .result property, or attempts to
-      // assign an 'onsuccess' handler function which accesses the `event.result` property, properly ensure that
-      // `result` is always `undefined` (per the official `delete()` API). For now, `result` will have the result of
-      // the `put()` operation--a minor deviation from the proxied API that is unlikely to cause problems.
-      return this.proxiedPut({ ...objectKeys, [SOFT_DELETED_PROP]: 1 }, key);
-    }
-  };
-
-  proxiedGet = (...args: Parameters<IDBObjectStore['get']>): ReturnType<IDBObjectStore['get']> => {
-    const realGetRequest = this.target.get.apply(this.target, args);
-
-    return new Proxy(realGetRequest, {
-      get(target, prop, receiver) {
-        if (prop === 'result') {
-          // Intercept calls to access `request.result` and returned a version of the result in which soft deleted
-          // objects are removed.
-          return filterSoftDeleted(target.result);
-        }
-
-        return Reflect.get(target, prop, receiver);
-      },
-
-      set(target, prop, value, receiver) {
-        if (prop === 'onsuccess' && typeof value === 'function') {
-          // Intercept calls for assigning a function to the 'onsuccess' property, and assign our own function
-          // instead. This, in turn, will handle the successful request by calling the upstream developer's onsuccess
-          // handler, but pass it a "rebuilt" version of the event that has the _filtered_ results instead.
-          target.onsuccess = function(this, event) {
-            value({
-              ...event,
-              target: {
-                ...event.target,
-                result: filterSoftDeleted(this.result),
-              },
-            });
-          };
-          // Proxies return true to indicate that an assignment succeeded (https://preview.tinyurl.com/y7n5qhly).
-          return true;
-        }
-
-        return Reflect.set(target, prop, value, receiver);
-      },
-    });
-  };
-
-  /**
-   * This method is used to intercept a call to the object store's getAll() method so we have a chance to remove soft
-   * deleted objects from the results. We're declaring it as a class property initialized to an arrow function to ensure
-   * that `this` will resolve correctly (an alternative to re-binding a class method to `this` in the constructor).
-   */
-  proxiedGetAll = (...args: Parameters<IDBObjectStore['getAll']>): ReturnType<IDBObjectStore['getAll']> => {
-    const realGetAllRequest = this.target.getAll.apply(this.target, args);
-
-    return new Proxy(realGetAllRequest, {
-      get(target, prop, receiver) {
-        if (prop === 'result') {
-          // Intercept calls to access `request.result` and returned a version of the result in which soft deleted
-          // objects are removed.
-          return filterSoftDeleted(target.result);
-        }
-
-        return Reflect.get(target, prop, receiver);
-      },
-
-      set(target, prop, value, receiver) {
-        if (prop === 'onsuccess' && typeof value === 'function') {
-          // Intercept calls for assigning a function to the 'onsuccess' property, and assign our own function
-          // instead. This, in turn, will handle the successful request by calling the upstream developer's onsuccess
-          // handler, but pass it a "rebuilt" version of the event that has the _filtered_ results instead.
-          target.onsuccess = function(this, event) {
-            value({
-              ...event,
-              target: {
-                ...event.target,
-                result: filterSoftDeleted(this.result),
-              },
-            });
-          };
-          // Proxies return true to indicate that an assignment succeeded (https://preview.tinyurl.com/y7n5qhly).
-          return true;
-        }
-
-        return Reflect.set(target, prop, value, receiver);
-      },
-    });
   };
 
   /**
@@ -313,27 +178,6 @@ export class IDBObjectStoreProxy {
   //   const entryStore = await getStore(db, oplogStoreName, 'readonly');
   //   entryStore.db.transaction(oplogStoreName, 'readonly').objectStore(oplogStoreName);
   // }
-}
-
-/**
- * A Typescript "type guard" for safely casting something to a type.
- */
-export function isThingWithDeletedProp(thing: unknown): thing is ThingWithDeletedProp {
-  const result = thing !== null && typeof thing === 'object' && SOFT_DELETED_PROP in (thing as object);
-  return result;
-}
-
-/**
- * A utility function for returning things only if they haven't been "soft deleted".
- */
-function filterSoftDeleted(thing: unknown): unknown {
-  let filtered = thing;
-  if (Array.isArray(thing)) {
-    filtered = thing.filter((item) => (isThingWithDeletedProp(item) && item[SOFT_DELETED_PROP] ? false : true));
-  } else {
-    filtered = isThingWithDeletedProp(thing) && thing[SOFT_DELETED_PROP] ? null : thing;
-  }
-  return filtered;
 }
 
 /**

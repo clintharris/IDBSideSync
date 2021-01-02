@@ -21,12 +21,10 @@ function getDB() {
       openreq.onupgradeneeded = (event) => {
         const db = event.target.result;
         IDBSideSync.onupgradeneeded(event);
-        const todoTypesStore = db.createObjectStore(TODO_TYPES, { keyPath: 'id' });
-        IDBSideSync.setupStore(todoTypesStore);
+        db.createObjectStore(TODO_TYPES, { keyPath: 'id' });
 
         const todosStore = db.createObjectStore(TODO_ITEMS, { keyPath: 'id' });
         todosStore.createIndex(TODO_ITEMS_BY_TYPE_INDEX, 'type', { unique: false });
-        IDBSideSync.setupStore(todosStore);
       };
 
       openreq.onsuccess = () => {
