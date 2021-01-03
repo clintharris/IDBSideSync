@@ -25,9 +25,11 @@ const openreq = indexedDB.open('todo-app', 1);
 openreq.onupgradeneeded = (event) => {
   const db = event.target.result;
 
-  // 👉 Note that IDBSideSync does NOT support object stores with the autoIncrement option. This
+  // ⛔️ Note that IDBSideSync does NOT support object stores with the autoIncrement option. This
   //  is because if IndexedDB were allowed to auto-assign the "keys" for objects, there would be
   // no guarantee of uniqueness.
+  //
+  // ⛔️ Also, IDBSideSync doesn't currently support "nested" keyPath values (e.g., `keyPath: 'foo.bar'`).
   const todosStore = db.createObjectStore('todos', { keyPath: 'id' });
 
   // Give IDBSideSync a chance to create its own object stores and indices.
@@ -191,3 +193,22 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
             - if there are thousands of files, this would more efficient since it's not necessary to load the entire list into memory (similar to using a DB cursor)
         - this could be done by "searching" for files using a filename pattern that will exclude oplog entries before some time (see https://stackoverflow.com/a/11011934/62694)
         - OR (maybe simpler but much less efficient), download all file _names_ (i.e., list dir), iterate over them (parsing each filename to an actual HLC time that can be compared to the reference HLC time), and download each one that occurs on/after the reference time.
+
+    - [ ] Support sharing/collaboration with other users
+
+        To collaborate, the following is necessary:
+
+        - all oplog entries have 0..1 remote location identifiers
+        - when you download oplog entries from a remote location, it will have that remote's identifier
+        - when you create an oplog entry, you will need to specify which remote it should be associated with
+            - if you haven't set up a remote, the entry won't have a remote identifier
+            - if you have set up 2+ remotes, you'll need to pick which remote it should be associated with
+        - the sync function will only upload oplog entries to their specified remote (if one is set)
+        - in a single-user app, the user will need to set up the same remote on each device to sync across devices
+        - in a collaborative app, each user will need to set up a remote to which all users have read access, and at least one user has write access
+            - example, a shared google drive folder
+        - when a user decides to share an object, a NEW set of oplog entries should be created for all props of the object, with the specified remote identifier.
+        - From that point on, all oplog entries for that destination are only uploaded to that destination.
+        - other users will download those entries and recreate the object
+        - the app on other users devices should know if the user has write access to the remote, and prevent the user from attempting to edit those objects (for good UX; note that permissions are enforced by remote storage service).
+        - if you download oplog entries associated with a shared remote, an object will be created locally.
