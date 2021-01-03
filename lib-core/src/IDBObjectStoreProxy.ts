@@ -46,6 +46,9 @@ export class IDBObjectStoreProxy {
     } else if (prop === 'getAll') {
       // We have explicitly bind some fcn properties to the target before returning them to prevent some weird errors
       return this.target.getAll.bind(this.target);
+    } else if (prop === 'index') {
+      // We have explicitly bind some fcn properties to the target before returning them to prevent some weird errors
+      return this.target.index.bind(this.target);
     }
 
     return Reflect.get(target, prop, receiver);

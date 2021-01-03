@@ -51,6 +51,7 @@ let uiState = {
   editingTodo: null,
   isAddingType: false,
   isDeletingType: false,
+  activeProfileName: null,
 };
 
 let _syncTimer = null;
@@ -119,9 +120,21 @@ function restoreActiveElement() {
 
 async function renderTodoTypes({ className = '', showBlank } = {}) {
   return `
-    <select class="${className} mr-2 bg-transparent shadow border border-gray-300">
+    <label for="types">Type:</label>
+    <select name="types" class="${className} mr-2 bg-transparent shadow border border-gray-300">
       ${showBlank ? '<option value=""></option>' : ''}
       ${(await getTodoTypes()).map((type) => `<option value="${type.id}">${type.name}</option>`)}
+    </select>
+  `;
+}
+
+async function renderProfileNames() {
+  return `
+    <label for="profiles">Profile:</label>
+    <select name="profiles">
+      ${(await getAllProfileNames()).map(
+        (profile) => `<option ${uiState.activeProfileName === profile.name ? 'selected' : ''}>${profile.name}</option>`
+      )}
     </select>
   `;
 }
@@ -195,6 +208,10 @@ async function render() {
         </div>
 
         <div class="absolute left-0 top-0 bottom-0 flex items-center pr-4 text-sm">
+          ${await renderProfileNames()}
+          <button id="btn-add-profile" class="text-sm hover:bg-gray-300 px-2 py-1 rounded">Add Profile</button>
+          <button id="btn-set-bgcolor" class="text-sm hover:bg-gray-300 px-2 py-1 rounded">Set BG Color</button>
+          <button id="btn-set-fontsize" class="text-sm hover:bg-gray-300 px-2 py-1 rounded">Set Font Size</button>
           <button id="btn-offline-simulate" class="text-sm hover:bg-gray-300 px-2 py-1 rounded ${offline ? 'text-blue-700' : 'text-red-700'}">${offline ? 'Go online' : 'Simulate offline'}</button>
         </div>
 
@@ -392,9 +409,76 @@ function addEventHandlers() {
       render();
     });
   }
+
+  qs('#btn-add-profile').addEventListener('click', async (e) => {
+    const newVal = prompt('ADD PROFILE\n(shared across devices if syncing enabled)\n\nProfile name:');
+    if (newVal.trim() === '') {
+      alert(`Ignoring invalid profile name. Please specify a non-empty value.`);
+    } else {
+      await addProfileName(newVal);
+      render();
+    }
+  });
+
+  qs('select[name=profiles]').addEventListener('change', async (e) => {
+    await updateActiveProfileName(e.target.value);
+    uiState.activeProfileName = e.target.value;
+    await loadAndApplyProfileSettings();
+    render();
+  });
+
+  qs('#btn-set-bgcolor').addEventListener('click', async (e) => {
+    const currentVal = qs('#root').style.backgroundColor;
+    const newVal = prompt('BACKGROUND COLOR\n(applies to all devices if syncing enabled)\n\nColor:', currentVal);
+    if (newVal) {
+      await updateBgColorSetting(uiState.activeProfileName, newVal);
+      setBgColor(newVal);
+      render();
+    }
+  });
+
+  qs('#btn-set-fontsize').addEventListener('click', async (e) => {
+    const currentVal = parseFloat(qs('html').style.fontSize || 16);
+    const newVal = parseFloat(
+      prompt('BASE FONT SIZE\n(only applies to current device)\n\nPlease specify number (e.g., "12.5"):', currentVal)
+    );
+    if (!newVal || newVal === NaN) {
+      alert(`Ignoring invalid font size. Please specify a floating point number (e.g., 12.5).`);
+    } else {
+      await updateFontSizeSetting(uiState.activeProfileName, newVal);
+      setFontSize(newVal);
+    }
+  });
 }
 
-render();
+function setBgColor(color) {
+  qs('#root').style.backgroundColor = color;
+}
+
+function setFontSize(size) {
+  qs('html').style.fontSize = `${size}px`;
+}
+
+async function loadAndApplyProfileSettings(profileName) {
+  setBgColor(await getBgColorSetting(uiState.activeProfileName));
+  setFontSize(await getFontSizeSetting(uiState.activeProfileName));
+}
+
+(async () => {
+  const activeProfileName = await getActiveProfileName();
+  if (activeProfileName) {
+    uiState.activeProfileName = activeProfileName;
+    // If a profile exists, try loading profile-specific settings
+    await loadAndApplyProfileSettings();
+  } else {
+    const defaultProfileName = 'Default';
+    await addProfileName(defaultProfileName);
+    await updateActiveProfileName(defaultProfileName);
+    uiState.activeProfileName = defaultProfileName;
+  }
+
+  render();
+})();
 
 let _syncMessageTimer = null;
 
