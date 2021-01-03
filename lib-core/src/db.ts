@@ -3,8 +3,8 @@ import { HLTime } from './HLTime';
 import { makeNodeId } from './utils';
 
 export enum STORE_NAME {
-  META = 'IDBSideSync_MetaStore',
-  OPLOG = 'IDBSideSync_OpLogStore',
+  META = 'IDBSideSync_UNSYNCED_MetaStore',
+  OPLOG = 'IDBSideSync_SYNCED_OpLogStore',
 }
 
 export const OPLOG_STORE = STORE_NAME.OPLOG;
@@ -26,7 +26,9 @@ export function onupgradeneeded(event: IDBVersionChangeEvent): void {
   // calling any of the CRUD methods on the store. Example: `store.put("1234", "agent_id"); store.get("agent_id")`.
   db.createObjectStore(STORE_NAME.META);
 
-  // Use `keyof OpLogEntry` type in case OpLogEntry props are ever renamed.
+  // Use `keyof OpLogEntry` type in case OpLogEntry props are ever renamed. Note that the FIRST key (and only the first
+  // key) in the `keyPath` determines how the objects will be sorted by default (e.g., the order they'd appear in
+  // `getAll()` results).
   const keyPath: Array<keyof OpLogEntry> = ['hlcTime', 'store', 'objectKey', 'prop'];
   db.createObjectStore(STORE_NAME.OPLOG, { keyPath });
 }

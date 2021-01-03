@@ -20,6 +20,14 @@ export class IDBObjectStoreProxy {
       // might describe mutations that _appear_ to be relevant to the same object but actually could refer to different
       // objects that have the same key/ID.
       throw new Error(`IDBSideSync can't work with object stores whose .autoIncrement property is set to true.`);
+    } else if (target.keyPath) {
+      for (const keyPath of Array.isArray(target.keyPath) ? target.keyPath : [target.keyPath]) {
+        if (keyPath.includes('.')) {
+          throw new Error(
+            `IDBSideSync doesn't support stores with a nested keyPath values (i.e., keyPath with dot-notation strings)`
+          );
+        }
+      }
     }
 
     this.target = target;
@@ -32,17 +40,29 @@ export class IDBObjectStoreProxy {
       return this.proxiedAdd;
     } else if (prop === 'put') {
       return this.proxiedPut;
+    } else if (prop === 'get') {
+      // We have explicitly bind some fcn properties to the target before returning them to prevent some weird errors
+      return this.target.get.bind(this.target);
+    } else if (prop === 'getAll') {
+      // We have explicitly bind some fcn properties to the target before returning them to prevent some weird errors
+      return this.target.getAll.bind(this.target);
     }
 
     return Reflect.get(target, prop, receiver);
   }
 
   proxiedAdd = (value: any, key?: IDBValidKey): ReturnType<IDBObjectStore['add']> => {
+    if (!this.target.keyPath && !key) {
+      throw new Error(`IDBSideSync: You must specify the "key" param when calling add() on a store without a keyPath.`);
+    }
     this.recordOperation(value, key);
     return this.target.add(value, key);
   };
 
   proxiedPut = (value: any, key?: IDBValidKey): ReturnType<IDBObjectStore['put']> => {
+    if (!this.target.keyPath && !key) {
+      throw new Error(`IDBSideSync: You must specify the "key" param when calling add() on a store without a keyPath.`);
+    }
     this.recordOperation(value, key);
 
     const existingObjKey = resolveKey(this.target, value, key);
@@ -101,20 +121,8 @@ export class IDBObjectStoreProxy {
       }
     }
 
-    let objectKey;
+    const objectKey = resolveKey(this.target, newValue, key);
 
-    if (key) {
-      objectKey = key;
-    } else {
-      // If key wasn't specified, use `this.target.keyPath` to access a value on the object and use that as the ID
-      if (Array.isArray(this.target.keyPath)) {
-        objectKey = this.target.keyPath.map((prop) => newValue[prop]);
-      } else {
-        objectKey = newValue[this.target.keyPath];
-      }
-    }
-
-    objectKey = JSON.stringify(objectKey);
     let entries: OpLogEntry[] = [];
 
     if (typeof newValue === 'object') {
@@ -123,7 +131,7 @@ export class IDBObjectStoreProxy {
         entries.push({
           hlcTime: HLClock.tick().toString(),
           store: this.target.name,
-          objectKey,
+          objectKey: objectKey,
           prop: property,
           value: newValue[property],
         });
@@ -133,8 +141,12 @@ export class IDBObjectStoreProxy {
       entries.push({
         hlcTime: HLClock.tick().toString(),
         store: this.target.name,
-        objectKey,
-        prop: null,
+        objectKey: objectKey,
+        // If a non-object/primitive is being updated, then there isn't a property that's being updated--we're just
+        // setting some key to a value--so there isn't a `prop`. We can't use `prop: null`, however; this causes an
+        // error because `prop` is one of the properties in the oplog store's `keyPath` and IndexedDB doesn't allow
+        // null, undefined, or boolean values to be used as keys.
+        prop: '',
         value: newValue,
       });
     }
@@ -195,3 +207,19 @@ function resolveKey(store: IDBObjectStore, value: any, key?: IDBValidKey) {
   }
   return resolvedKey;
 }
+
+// function buildKeyObj(store: IDBObjectStore, value: any, key?: IDBValidKey) {
+//   if (Array.isArray(store.keyPath)) {
+//     let keyObj: Record<string, any> = {};
+//     for (const keyName of store.keyPath) {
+//       keyObj[keyName] = value[keyName];
+//     }
+//     return keyObj;
+//   } else if (store.keyPath) {
+//     return { [store.keyPath]: value[store.keyPath] };
+//   } else if (!key) {
+//     throw new Error(`IDBSideSync: Unable to build a key object.`);
+//   } else {
+//     return key;
+//   }
+// }
