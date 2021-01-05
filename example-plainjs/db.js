@@ -3,8 +3,9 @@ const PROFILE_SETTINGS = 'profile_settings';
 const PROFILES = 'profiles';
 const TODO_TYPE_SYMLINKS = 'todo_type_symlinks';
 const TODO_TYPES = 'todo_types';
-const TODO_TYPES_BY_DELETED_INDEX = 'index_todo_types-deleted';
+const TODO_TYPES_BY_DELETED_INDEX = 'todo_types-index_by_deleted';
 const TODO_ITEMS = 'todo_items';
+const TODO_ITEMS_BY_DELETED_INDEX = 'todo_items-index_by_deleted';
 const DELETED_PROP = 'deleted';
 let db;
 
@@ -27,9 +28,14 @@ function getDB() {
         const db = event.target.result;
         IDBSideSync.onupgradeneeded(event);
         const todoTypeStore = db.createObjectStore(TODO_TYPES, { keyPath: 'id' });
+
+        // Create an index so we can quickly query for non-deleted types using an IDBKeyRange. Note that we'll need to
+        // A) ensure that non-deleted objects have a value for this prop, and B) we use something other than booleans
+        // for the values, since you can't use bools as keys / index them (we'll use 0 | 1 to indicate deleted).
         todoTypeStore.createIndex(TODO_TYPES_BY_DELETED_INDEX, DELETED_PROP, { unique: false });
 
-        db.createObjectStore(TODO_ITEMS, { keyPath: 'id' });
+        const todoItemsStore = db.createObjectStore(TODO_ITEMS, { keyPath: 'id' });
+        todoItemsStore.createIndex(TODO_ITEMS_BY_DELETED_INDEX, DELETED_PROP, { unique: false });
 
         // The todo type "mappings" store maps the IDs of todo types to "current" type IDs. You can think of it as a
         // symbolic link or shortcut... The todo items each have a "type" field set to the key of a record in this
@@ -132,7 +138,7 @@ async function txWithStores(storeNames, mode, callback) {
 async function addTodo(todo) {
   let req;
   await txWithStore(TODO_ITEMS, 'readwrite', (store) => {
-    req = store.add({ id: IDBSideSync.uuid(), ...todo });
+    req = store.add({ id: IDBSideSync.uuid(), ...todo, [DELETED_PROP]: 0 });
   });
 
   return req.result;
@@ -148,19 +154,54 @@ async function updateTodo(params, id) {
 }
 
 function deleteTodo(id) {
-  return updateTodo({ tombstone: 1 }, id);
+  return updateTodo({ [DELETED_PROP]: 1 }, id);
 }
 
 function undeleteTodo(id) {
-  return updateTodo({ tombstone: 0 }, id);
+  return updateTodo({ [DELETED_PROP]: 0 }, id);
 }
 
-async function getAllTodos() {
+async function getAllTodos(deleted = false) {
   let req;
   await txWithStore(TODO_ITEMS, 'readonly', (store) => {
-    req = store.getAll();
+    const index = store.index(TODO_ITEMS_BY_DELETED_INDEX);
+    req = index.getAll(IDBKeyRange.only(deleted ? 1 : 0));
   });
-  return req.result.filter((todo) => todo.tombstone !== 1);
+
+  return Array.isArray(req.result) ? await resolveTodos(req.result) : req.result;
+}
+
+async function resolveTodos(todos) {
+  const resolvedTodos = [];
+  for (const todo of todos) {
+    type = todo.type ? await getTodoType(todo.type) : null;
+    resolvedTodos.push({ ...todo, type });
+  }
+
+  resolvedTodos.sort((t1, t2) => {
+    if (t1.order < t2.order) {
+      return 1;
+    } else if (t1.order > t2.order) {
+      return -1;
+    }
+    return 0;
+  });
+
+  return resolvedTodos;
+}
+
+async function getTodoType(id) {
+  let typeMappingReq;
+  await txWithStore(TODO_TYPE_SYMLINKS, 'readonly', (store) => {
+    typeMappingReq = store.get(id);
+  });
+
+  let typeReq;
+  await txWithStore(TODO_TYPES, 'readonly', (store) => {
+    typeReq = store.get(typeMappingReq.result);
+  });
+
+  return typeReq.result;
 }
 
 async function getTodo(id) {
@@ -171,27 +212,20 @@ async function getTodo(id) {
   return req.result;
 }
 
-async function getDeletedTodos() {
+async function getNumTodos(includeDeleted = false) {
   let req;
   await txWithStore(TODO_ITEMS, 'readonly', (store) => {
-    req = store.getAll();
-  });
-  return req.result.filter((todo) => todo.tombstone === 1);
-}
-
-async function getNumTodos() {
-  let req;
-  await txWithStore(TODO_ITEMS, 'readonly', (store) => {
-    req = store.count();
+    const index = store.index(TODO_ITEMS_BY_DELETED_INDEX);
+    req = includeDeleted ? index.count() : index.count(IDBKeyRange.only(0));
   });
   return req.result;
 }
 
-async function getTodoTypes() {
+async function getTodoTypes(includeDeleted = false) {
   let req;
   await txWithStore(TODO_TYPES, 'readonly', (store) => {
     const index = store.index(TODO_TYPES_BY_DELETED_INDEX);
-    req = index.getAll(IDBKeyRange.only(0));
+    req = includeDeleted ? index.getAll() : index.getAll(IDBKeyRange.only(0));
   });
   return req.result;
 }
@@ -199,6 +233,8 @@ async function getTodoTypes() {
 async function addTodoType({ name, color }) {
   const typeId = IDBSideSync.uuid();
   await txWithStores([TODO_TYPES, TODO_TYPE_SYMLINKS], 'readwrite', (typeStore, typeSymlinkStore) => {
+    // Ensure that non-deleted objects have a "false" value for the "deleted" prop, and use numeric value instead of a
+    // boolean (since you can't use bools as keys / index them).
     typeStore.add({ id: typeId, name, color, [DELETED_PROP]: 0 });
     typeSymlinkStore.add(typeId, typeId); // symlink ID -> target ID. We can re-use the target ID at first.
     // TODO: the statement below is invalid and causes an error, which SHOULD cause the entire transaction to fail and
@@ -212,7 +248,6 @@ async function deleteTodoType(typeId, newTypeId) {
   await txWithStores([TODO_TYPES, TODO_TYPE_SYMLINKS], 'readwrite', (typeStore, typeSymlinkStore) => {
     // Update the type symlink to point to the new type
     if (newTypeId) {
-      console.log(`Updating type symlink ${typeId} -> ${newTypeId}`);
       typeSymlinkStore.put(newTypeId, typeId);
     }
 
@@ -243,7 +278,6 @@ async function getActiveProfileName() {
     const req = store.get('activeProfileName');
     req.onsuccess = (event) => {
       activeProfileName = req.result;
-      console.log(`Found activeProfile: ${activeProfileName}`);
     };
   });
   return activeProfileName;
@@ -253,7 +287,6 @@ async function updateActiveProfileName(newValue) {
   await txWithStore(SHARED_SETTINGS, 'readwrite', (store) => {
     const req = store.put(newValue, 'activeProfileName');
     req.onsuccess = (event) => {
-      console.log(`Saved new activeProfileName: ${newValue}`);
     };
   });
 }
@@ -272,9 +305,6 @@ async function getBgColorSetting(profileName) {
 async function updateBgColorSetting(profileName, newValue) {
   await txWithStore(PROFILE_SETTINGS, 'readwrite', (store) => {
     const req = store.put({ profileName, settingName: 'bgColor', value: newValue });
-    req.onsuccess = (event) => {
-      console.log('Successfully persisted new bgColor', event.target.result);
-    };
   });
   // printOpLog();
 }
@@ -293,9 +323,6 @@ async function getFontSizeSetting(profileName) {
 async function updateFontSizeSetting(profileName, newValue) {
   await txWithStore(PROFILE_SETTINGS, 'readwrite', (store) => {
     const req = store.put({ profileName, settingName: 'fontSize', value: newValue });
-    req.onsuccess = (event) => {
-      console.log('Successfully persisted new fontSize', event.target.result);
-    };
   });
   // printOpLog();
 }
@@ -304,7 +331,7 @@ async function printOpLog() {
   txWithStore(IDBSideSync.OPLOG_STORE, 'readonly', (store) => {
     const req = store.getAll();
     req.onsuccess = (event) => {
-      console.log('Updated oplog store (how is it sorted?):', event.target.result);
+      console.log('All oplog entries:', event.target.result);
     };
   });
 }

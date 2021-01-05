@@ -226,7 +226,7 @@ async function render() {
   renderTodos({ root: qs('#todos'), todos: await getAllTodos() });
   renderTodos({
     root: qs('#deleted-todos'),
-    todos: await getDeletedTodos(),
+    todos: await getAllTodos(true),
     isDeleted: true,
   });
 
@@ -307,6 +307,7 @@ function addEventHandlers() {
     }
 
     await addTodo({ name, type, order: await getNumTodos() });
+    render();
   });
 
   qs('#btn-sync').addEventListener('click', async (e) => {
