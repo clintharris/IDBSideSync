@@ -1,5 +1,6 @@
 import { STORE_NAME } from './db';
 import { HLClock } from './HLClock';
+import { proxyPutRequest } from './IDBUpsertRequestProxy';
 
 export function proxyStore(target: IDBObjectStore): IDBObjectStore {
   const storeNames = target.transaction.objectStoreNames;
@@ -71,34 +72,48 @@ export class IDBObjectStoreProxy {
     const existingObjKey = resolveKey(this.target, value, key);
     const existingObjReq = this.target.get(existingObjKey);
 
-    let putWithMergedValuesRan = false;
+    let tempPutCompleted = false;
 
     existingObjReq.onsuccess = () => {
       const resolvedValue =
         value && typeof value === 'object' && existingObjReq.result && typeof existingObjReq.result === 'object'
           ? { ...existingObjReq.result, ...value } // "Merge" the new object with the existing object
           : value;
-      this.target.keyPath ? this.target.put(resolvedValue) : this.target.put(resolvedValue, key);
-      putWithMergedValuesRan = true;
+      const mergedPutReq = this.target.keyPath ? this.target.put(resolvedValue) : this.target.put(resolvedValue, key);
+      mergedPutReq.onsuccess = () => {
+        // This is sort of a crude way of trying to verify that `mergedPutReq` finishes last (i.e., the "merged" value
+        // of the object is what ends up being persisted when the transaction is complete).
+        if (!tempPutCompleted) {
+          throw new Error(`IDBSideSync: "final" put() with merged value ran BEFORE the "temp" put.`);
+        }
+      };
     };
 
-    // The call to `put()` _below_ is "temporary" and it's assumed that the additional call to `put()` _above_ will
-    // always run LAST. This is because the `value` param passed to the "temporary" put() _below_ may be incomplete
-    // (since IDBSideSync assumes that the `value` param being passed to `proxiedPut()` only containing properties for
-    // the specific props that should be updated--not a completely new version of the object).
+    // The call to `put()` below is "temporary" and it's assumed that the additional call to `put()` above will always
+    // run LAST (i.e., ensuring that the call to `put()` with the MERGED values will "win" when the transaction is
+    // resolved and committed).
     //
-    // The current approach of calling put() immediately just so a valid IDBRequest can be returned, then calling it
-    // again later with the merged values seems to be working, but we'll still do a quick check to verify the order of
-    // the calls. If it turns out that this order doesn't work in some cases, another solution will be needed (e.g.,
-    // returning some sort of manually-built, fake IDBRequest object).
-    if (putWithMergedValuesRan) {
-      throw new Error(`IDBSideSync: put() with merged value ran before the "temp" put with incomplete value.`);
-    }
-
-    // When calling the actual object store's `put()` method it's important to NOT include a `key` param if the store
+    // This approach of calling put() below just so a valid IDBRequest can be returned, then calling it again later with
+    // the merged values seems...hacky. It has been observed to work in different browsers through testing, but the
+    // actual IndexedDB implementations and spec haven't been studied to completely guarantee that the transaction will
+    // _always_ resolve/commit in the order that we want (and have observed so far).
+    //
+    // If at some point issues are found with how final the final value is resolved when the transaction is committed,
+    // another solution will be needed. For example, maybe some sort of "manually-built", totally synthetic object that
+    // implements the IDBRequest<IDBValidKey> interface is returned below. Returning a fake request seems like it could
+    // be tricky and include its own hacky baggage, however; we'll stick with the current approach (which seems to work)
+    // for now.
+    //
+    // 👉 When calling the actual object store's `put()` method it's important to NOT include a `key` param if the store
     // has a `keyPath`. Doing this causes an error (e.g., "[...] object store uses in-line keys and the key parameter
     // was provided" in Chrome).
-    return this.target.keyPath ? this.target.put(value) : this.target.put(value, key);
+    const tempPutReq = this.target.keyPath ? this.target.put(value) : this.target.put(value, key);
+
+    return proxyPutRequest(tempPutReq, {
+      onSuccess: () => {
+        tempPutCompleted = true;
+      },
+    });
   };
 
   /**
