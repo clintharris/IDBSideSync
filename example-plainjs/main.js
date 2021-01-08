@@ -151,7 +151,7 @@ function renderTodos({ root, todos, isDeleted = false }) {
               ${todo.type ? sanitize(todo.type.name) : ''}
             </div>
           </div>
-          <button class="btn-delete hover:bg-gray-400 px-2 rounded ${isDeleted ? 'hidden' : ''}" data-id="${todo.id}">X</button>
+          <button class="btn-delete hover:bg-gray-400 px-2 rounded${isDeleted ? ' hidden' : ''}" data-id="${todo.id}">X</button>
         </div>
       `,
       root
@@ -346,6 +346,7 @@ function addEventHandlers() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       deleteTodo(e.target.dataset.id);
+      render();
     });
   }
 
