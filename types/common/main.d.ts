@@ -131,7 +131,7 @@
 interface OpLogEntry {
   hlcTime: string;
   store: string;
-  objectKey: IDBValidKey;
+  objectKey: number | string | Date | Array<number | string | Date>;
   prop: string;
   value: unknown;
 }
