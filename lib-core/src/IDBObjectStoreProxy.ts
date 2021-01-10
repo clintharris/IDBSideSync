@@ -65,7 +65,7 @@ export class IDBObjectStoreProxy {
 
   proxiedPut = (value: any, key?: IDBValidKey): ReturnType<IDBObjectStore['put']> => {
     if (!this.target.keyPath && !key) {
-      throw new Error(`IDBSideSync: You must specify the "key" param when calling add() on a store without a keyPath.`);
+      throw new Error(`IDBSideSync: You must specify the "key" param when calling put() on a store without a keyPath.`);
     }
     this.recordOperation(value, key);
 
@@ -188,43 +188,22 @@ export class IDBObjectStoreProxy {
       oplogStore = this.target.transaction.objectStore(STORE_NAME.OPLOG);
     } catch (error) {
       const errorMsg =
-        `Error ocurred when attempting to get reference to the "${STORE_NAME.OPLOG}" store (this may have happened ` +
-        `because "${STORE_NAME.OPLOG}" wasn't included when the transaction was created): ${error.toString()}`;
+        `IDBSideSync: Error ocurred when attempting to get reference to the "${STORE_NAME.OPLOG}" store (this may ` +
+        `have happened because "${STORE_NAME.OPLOG}" wasn't included when the transaction was created): ` +
+        error.toString();
       throw new Error(errorMsg);
     }
 
-    // For each OpLogEntry object:
-    // 1. Attempt to find an existing OpLogEntry for the same store/object/field.
-    // 2. If existing entry is older than the one we just created, or none exists, then it's ok that the original
-    //    `put()` mutation happened. If, however, a more recent pre-existing operation was found, we need to re-apply
-    //    THAT mutation (i.e., roll back / undo the mutation that just took place).
-    // 3. If existing entry has a different timestamp than the one we just created, or none exists, add the OpLogEntry
-    //    we just created to the entries store.
     for (const entry of entries) {
-      //TODO: get the most recent local entry
       oplogStore.add(entry);
     }
   };
-
-  // applyOpLogEntries(entries: OpLogEntry[]) {
-  //   // TODO:
-  //   // 1. Get reference to internal OplogEntries collection.
-  //   // 2. Search for most recent existing entry for given store/idPath/idValue
-  //   // 3. If `entry` is newer, proceed with mutation
-  //   // 4. Get reference target object store
-  //   // 5. Get existing object from store
-  //   // 6. Apply entry operation
-
-  //   const db = await getOpLoggyDb();
-  //   const entryStore = await getStore(db, oplogStoreName, 'readonly');
-  //   entryStore.db.transaction(oplogStoreName, 'readonly').objectStore(oplogStoreName);
-  // }
 }
 
 /**
  * A utility function for deriving a key value that can be used to retrieve an object from an IDBObjectStore.
  */
-function resolveKey(store: IDBObjectStore, value: any, key?: IDBValidKey) {
+export function resolveKey(store: IDBObjectStore, value: any, key?: IDBValidKey) {
   const resolvedKey = Array.isArray(store.keyPath)
     ? store.keyPath.map((keyProp) => value[keyProp])
     : store.keyPath
@@ -236,19 +215,3 @@ function resolveKey(store: IDBObjectStore, value: any, key?: IDBValidKey) {
   }
   return resolvedKey;
 }
-
-// function buildKeyObj(store: IDBObjectStore, value: any, key?: IDBValidKey) {
-//   if (Array.isArray(store.keyPath)) {
-//     let keyObj: Record<string, any> = {};
-//     for (const keyName of store.keyPath) {
-//       keyObj[keyName] = value[keyName];
-//     }
-//     return keyObj;
-//   } else if (store.keyPath) {
-//     return { [store.keyPath]: value[store.keyPath] };
-//   } else if (!key) {
-//     throw new Error(`IDBSideSync: Unable to build a key object.`);
-//   } else {
-//     return key;
-//   }
-// }
