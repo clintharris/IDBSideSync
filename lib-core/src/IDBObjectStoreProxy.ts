@@ -75,11 +75,22 @@ export class IDBObjectStoreProxy {
     let tempPutCompleted = false;
 
     existingObjReq.onsuccess = () => {
+      // Figure out what the new value for the object will be--either a merger of its existing props with new ones (in
+      // the case that it's an object), or a new primitive value (e.g., you can't merge numbers, dates, etc.).
+      //
+      // Note that this operation does not involve checking the collection of oplog entries to see if newer values
+      // exist. That's only a concern when 1+ oplog entries are being applied outside of normal application CRUD calls
+      // on a proxied object store. In other words, it's assumed that when an application calls `store.put()`, the
+      // passed-in value is most recent known value at that point in time--there is no need to check for a newer value.
+      // The concern with ensuring that an "old" oplog entry is not used to set a value when a NEWER oplog entry for the
+      // same field exists only applies to syncing.
       const resolvedValue =
         value && typeof value === 'object' && existingObjReq.result && typeof existingObjReq.result === 'object'
           ? { ...existingObjReq.result, ...value } // "Merge" the new object with the existing object
           : value;
+
       const mergedPutReq = this.target.keyPath ? this.target.put(resolvedValue) : this.target.put(resolvedValue, key);
+
       mergedPutReq.onsuccess = () => {
         // This is sort of a crude way of trying to verify that `mergedPutReq` finishes last (i.e., the "merged" value
         // of the object is what ends up being persisted when the transaction is complete).

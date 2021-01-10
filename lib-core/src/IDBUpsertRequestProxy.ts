@@ -17,43 +17,66 @@ export function proxyPutRequest(
 export class IDBUpsertRequestProxy {
   target: IDBRequest<IDBValidKey>;
   options: IDBUpsertRequestProxyOptions;
+  upstreamOnSuccess: IDBRequest['onsuccess'] = null;
+  upstreamOnError: IDBRequest['onerror'] = null;
 
   constructor(target: IDBRequest<IDBValidKey>, options: IDBUpsertRequestProxyOptions = {}) {
     this.target = target;
     this.options = options;
+    this.target.onsuccess = this.onSuccess;
+    this.target.onerror = this.onError;
   }
 
-  set(target: IDBRequest<IDBValidKey>, prop: keyof IDBRequest<IDBValidKey>, value: unknown, receiver: unknown) {
-    this.target = target;
+  get = (target: IDBRequest<IDBValidKey>, prop: keyof IDBRequest<IDBValidKey>) => {
+    if (target && target[prop]) {
+      const value = target[prop];
+      if (value !== null && typeof value === 'function') {
+        return value.bind(target);
+      }
+    }
 
-    if (prop === 'onsuccess') {
-      // Instead of allowing the user to assign _their_ function to 'onupgradeneeded', assign _our_ function.
-      target.onsuccess = (event) => {
-        // Run our handler first.
-        this.options.onSuccess?.(event);
+    // The `Proxy` API docs indicate that we should actually return `Reflect.get(target, prop, receiver)` at this point
+    // but, in practice, Chrome throws "TypeError: Illegal invocation" when this is done.
+    return target[prop];
+  };
 
-        // Now allow the other onsuccess handler to run.
-        if (typeof value === 'function') {
-          value(event);
-        }
-      };
+  set = (target: IDBRequest<IDBValidKey>, prop: keyof IDBRequest<IDBValidKey>, value: unknown, receiver: unknown) => {
+    if (prop === 'onsuccess' && typeof value === 'function') {
+      // Upstream developer is attempting to assign theor own `onsuccess` handler to the request object; however, we're
+      // going to just capture their handler function and not actually allow it to be assigned. We have already assigned
+      // an `onsuccess` handler to the request (myOnSuccess), and that will call the upstream developer's handler.
+      this.upstreamOnSuccess = value.bind(target);
 
       // Proxies should return true to indicate that an assignment (set) succeeded. For more info see
       // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy/Proxy/set#Return_value
       return true;
-    } else if (prop === 'onerror') {
-      target.onerror = (event) => {
-        // Run our handler first.
-        this.options.onError?.(event);
+    }
 
-        // Now allow the other onsuccess handler to run.
-        if (typeof value === 'function') {
-          value(event);
-        }
-        return true;
-      };
+    if (prop === 'onerror' && typeof value === 'function') {
+      this.upstreamOnError = value.bind(target);
+      return true;
     }
 
     return Reflect.set(target, prop, value, receiver);
-  }
+  };
+
+  onSuccess: IDBRequest['onsuccess'] = (...args) => {
+    if (typeof this.options.onSuccess === 'function') {
+      this.options.onSuccess(...args);
+    }
+
+    if (typeof this.upstreamOnSuccess === 'function') {
+      this.upstreamOnSuccess.apply(this.target, args);
+    }
+  };
+
+  onError: IDBRequest['onerror'] = (...args) => {
+    if (typeof this.options.onError === 'function') {
+      this.options.onError(...args);
+    }
+
+    if (typeof this.upstreamOnError === 'function') {
+      this.upstreamOnError.apply(this.target, args);
+    }
+  };
 }
