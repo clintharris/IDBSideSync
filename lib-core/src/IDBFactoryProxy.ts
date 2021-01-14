@@ -1,5 +1,3 @@
-import { HLTime } from './HLTime';
-
 /**
  * Instances of this class can intercept and modify calls to the IndexedDB API if used as a Proxy handler, wrapping
  * window.indexedDB.
@@ -177,30 +175,3 @@ class OpLoggyProxyError extends Error {
 //   }
 // };
 // }
-
-/**
- * Type guard for safely asserting that something is an OpLogEntry.
- */
-export function isValidOplogEntry(thing: unknown): thing is OpLogEntry {
-  if (!thing) {
-    return false;
-  }
-
-  const candidate = thing as OpLogEntry;
-
-  if (
-    typeof candidate.hlcTime !== 'string' ||
-    typeof candidate.store !== 'string' ||
-    typeof candidate.objectKey !== 'string' ||
-    (typeof candidate.prop !== 'string' && candidate.prop !== null) ||
-    !('value' in candidate)
-  ) {
-    return false;
-  }
-
-  if (!HLTime.parse(candidate.hlcTime)) {
-    return false;
-  }
-
-  return true;
-}

@@ -1,4 +1,5 @@
 import { v4 as uuid } from 'uuid';
+import { HLTime } from './HLTime';
 
 export { v4 as uuid } from 'uuid';
 
@@ -12,4 +13,31 @@ export function makeNodeId(): string {
   return uuid()
     .replace(/-/g, '')
     .slice(-16); // TODO: Figure out if there's a reason for using last 16 chars, specifically.
+}
+
+/**
+ * Type guard for safely asserting that something is an OpLogEntry.
+ */
+export function isValidOplogEntry(thing: unknown): thing is OpLogEntry {
+  if (!thing) {
+    return false;
+  }
+
+  const candidate = thing as OpLogEntry;
+
+  if (
+    typeof candidate.hlcTime !== 'string' ||
+    typeof candidate.store !== 'string' ||
+    typeof candidate.objectKey !== 'string' ||
+    (typeof candidate.prop !== 'string' && candidate.prop !== null) ||
+    !('value' in candidate)
+  ) {
+    return false;
+  }
+
+  if (!HLTime.parse(candidate.hlcTime)) {
+    return false;
+  }
+
+  return true;
 }
