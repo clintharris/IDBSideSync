@@ -144,14 +144,16 @@ function renderTodos({ root, todos, isDeleted = false }) {
     append(
       // prettier-ignore
       `
-        <div class="todo-item bg-gray-200 p-4 mb-4 rounded flex cursor-pointer" data-id="${todo.id}">
+        <div class="todo-item bg-gray-100 p-4 mb-4 rounded flex" data-id="${todo.id}">
+          <input type="checkbox" ${todo.done ? 'checked' : ''} class="checkbox mr-4 h-6 w-6" data-id="${todo.id}" />
           <div class="flex-grow flex items-center">
             <div class="${isDeleted ? 'line-through' : ''}">${sanitize(todo.name)}</div>
             <div class="text-sm rounded ${todo.type ? getColor(todo.type.color) : ''} px-2 ml-3">
               ${todo.type ? sanitize(todo.type.name) : ''}
             </div>
           </div>
-          <button class="btn-delete hover:bg-gray-400 px-2 rounded${isDeleted ? ' hidden' : ''}" data-id="${todo.id}">X</button>
+          <button class="btn-edit hover:bg-gray-400 px-2 rounded" data-id="${todo.id}">✏️</button>
+          <button class="btn-delete ml-1 hover:bg-gray-400 px-2 rounded" data-id="${todo.id}">${isDeleted ? '♻️' : '🗑'}</button>
         </div>
       `,
       root
@@ -334,18 +336,30 @@ function addEventHandlers() {
     render();
   });
 
-  for (let todoNode of qsa('.todo-item')) {
-    todoNode.addEventListener('click', (e) => {
-      let todo = getTodo(todoNode.dataset.id);
+  for (let editBtn of qsa('.todo-item .btn-edit')) {
+    editBtn.addEventListener('click', async (e) => {
+      let todo = await getTodo(editBtn.dataset.id);
       uiState.editingTodo = todo;
       render();
     });
   }
 
-  for (let btn of qsa('.btn-delete')) {
-    btn.addEventListener('click', (e) => {
+  for (let todoNode of qsa('.todo-item .checkbox')) {
+    todoNode.addEventListener('click', async (e) => {
+      updateTodo({ done: e.target.checked }, todoNode.dataset.id);
+      render();
+    });
+  }
+
+  for (let deleteBtn of qsa('.todo-item .btn-delete')) {
+    deleteBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      deleteTodo(e.target.dataset.id);
+      let todo = await getTodo(deleteBtn.dataset.id);
+      if (todo.deleted) {
+        undeleteTodo(todo.id);
+      } else {
+        deleteTodo(todo.id);
+      }
       render();
     });
   }

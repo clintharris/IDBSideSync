@@ -286,8 +286,6 @@ async function getActiveProfileName() {
 async function updateActiveProfileName(newValue) {
   await txWithStore(SHARED_SETTINGS, 'readwrite', (store) => {
     const req = store.put(newValue, 'activeProfileName');
-    req.onsuccess = (event) => {
-    };
   });
 }
 
