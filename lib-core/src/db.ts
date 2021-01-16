@@ -11,7 +11,7 @@ export const OPLOG_STORE = STORE_NAME.OPLOG;
 export const OPLOG_INDEX = 'Indexed by: store, objectKey, prop, hlcTime';
 
 let dbSingleton: IDBDatabase;
-let settings: { nodeId: string };
+let cachedSettings: Settings;
 
 /**
  * This should be called as part of the upstream library handling an onupgradeneeded event (i.e., this won't be called
@@ -65,7 +65,7 @@ export async function init(db: IDBDatabase): Promise<void> {
     throw new TypeError(`IDBSideSync.init(): 'db' arg must be an instance of IDBDatabase.`);
   }
   dbSingleton = db;
-  await initSettings();
+  const settings = await initSettings();
   HLClock.setTime(new HLTime(0, 0, settings.nodeId));
 }
 
@@ -73,26 +73,26 @@ export async function init(db: IDBDatabase): Promise<void> {
  * Ensures that IDBSideSync has required settings in its own IndexedDB store (e.g., a unique node ID that identifies
  * all the oplog entries created by the application instance).
  */
-export async function initSettings(): Promise<typeof settings> {
-  if (settings) {
-    return settings;
+export async function initSettings(): Promise<typeof cachedSettings> {
+  if (cachedSettings) {
+    return cachedSettings;
   }
 
   await txWithStore([STORE_NAME.META], 'readwrite', (store) => {
     const getReq = store.get('settings');
     getReq.onsuccess = () => {
       if (getReq.result) {
-        settings = getReq.result;
+        cachedSettings = getReq.result;
       } else {
-        settings = {
+        cachedSettings = {
           nodeId: makeNodeId(),
         };
-        store.put(settings, 'settings');
+        store.put(cachedSettings, 'settings');
       }
     };
   });
 
-  return settings;
+  return cachedSettings;
 }
 
 export async function applyOplogEntries(candidates: OpLogEntry[]) {

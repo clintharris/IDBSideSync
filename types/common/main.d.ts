@@ -135,3 +135,7 @@ interface OpLogEntry {
   prop: string;
   value: unknown;
 }
+
+interface Settings {
+  nodeId: string;
+}
