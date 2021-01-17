@@ -18,6 +18,9 @@ let cachedSettings: Settings;
  * every time an app starts up--only when the database version changes).
  */
 export function onupgradeneeded(event: IDBVersionChangeEvent): void {
+  if (process.env.NODE_ENV !== 'production') {
+    console.info('IDBSideSync: onupgradeneeded()');
+  }
   const db = (event.target as IDBOpenDBRequest).result;
 
   // Create an object store where we can put IDBSideSync settings that won't be sync'ed. Note the lack of a keypath.
@@ -61,6 +64,9 @@ export function onupgradeneeded(event: IDBVersionChangeEvent): void {
  * Allow IDBSideSync to initialize itself with the provided IndexedDB database.
  */
 export async function init(db: IDBDatabase): Promise<void> {
+  if (process.env.NODE_ENV !== 'production') {
+    console.info('IDBSideSync: init()');
+  }
   if (!db || !db.createObjectStore) {
     throw new TypeError(`IDBSideSync.init(): 'db' arg must be an instance of IDBDatabase.`);
   }
@@ -76,6 +82,9 @@ export async function init(db: IDBDatabase): Promise<void> {
 export async function initSettings(): Promise<typeof cachedSettings> {
   if (cachedSettings) {
     return cachedSettings;
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    console.info('IDBSideSync: initSettings()');
   }
 
   await txWithStore([STORE_NAME.META], 'readwrite', (store) => {
@@ -247,9 +256,15 @@ export async function applyOplogEntry(candidate: OpLogEntry) {
           ? targetStore.put(newValue)
           : targetStore.put(newValue, candidate.objectKey);
 
+        mergedPutReq.onerror = (event) => {
+          const errMsg = `IDBSideSync: encountered error while attempting to update object in "${targetStore.name}".`;
+          console.error(errMsg, event);
+          throw new Error(errMsg);
+        };
+
         if (process.env.NODE_ENV !== 'production') {
           mergedPutReq.onsuccess = () => {
-            console.log(`IDBSideSync: successfully applied oplog entry to ${candidate.store}.`, {
+            console.log(`IDBSideSync: successfully applied oplog entry to ${targetStore.name}.`, {
               existingValue,
               newValue,
             });
@@ -259,7 +274,7 @@ export async function applyOplogEntry(candidate: OpLogEntry) {
 
       existingObjReq.onerror = (event) => {
         const errMsg =
-          `IDBSideSync: encountered an error while trying to retrieve an object from "${candidate.store}"  as part ` +
+          `IDBSideSync: encountered an error while trying to retrieve an object from "${targetStore.name}"  as part ` +
           `of applying an oplog entry change to that object.`;
         console.error(errMsg, event);
         throw new Error(errMsg);
@@ -304,10 +319,11 @@ async function txWithStore(
   callback: (...stores: IDBObjectStore[]) => void
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const transactionRequest = dbSingleton.transaction(storeNames, mode);
-    transactionRequest.oncomplete = () => resolve();
-    transactionRequest.onerror = () => reject(transactionRequest.error);
-    const stores = storeNames.map((storeName) => transactionRequest.objectStore(storeName));
+    const txReq = dbSingleton.transaction(storeNames, mode);
+    txReq.oncomplete = () => resolve();
+    txReq.onabort = reject;
+    txReq.onerror = reject;
+    const stores = storeNames.map((storeName) => txReq.objectStore(storeName));
     callback(...stores);
   });
 }
