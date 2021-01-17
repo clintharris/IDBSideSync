@@ -1,4 +1,5 @@
 {
+  "testFiles": "**/*.+(test|spec).ts",
   "screenshotOnRunFailure": false,
   "video": false
 }

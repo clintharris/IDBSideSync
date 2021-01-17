@@ -1,8 +1,6 @@
 import * as IDBSideSync from '../../src/index';
-
-const TODOS_DB = 'todos-db';
-const TODOS_STORE = 'todos-store';
-let dbPromise: Promise<IDBDatabase> | null = null;
+import * as oplog_entries from '../fixtures/oplog_entries.json';
+import { clearDb, getDb, onSuccess, TODOS_DB } from './utils';
 
 context('IDBSideSync:db', () => {
   beforeEach(clearDb);
@@ -32,46 +30,13 @@ context('IDBSideSync:db', () => {
     expect(settings).to.have.property('nodeId');
     expect(settings.nodeId).not.to.be.empty;
   });
+
+  // it.only('applyOplogEntries() works', async () => {
+  //   const db = await getDb();
+
+  //   await IDBSideSync.init(db);
+  //   console.log('oplog_entries:', oplog_entries);
+  //   // await IDBSideSync.applyOplogEntries(oplog_entries);
+  //   expect(true).to.be.true;
+  // });
 });
-
-function onSuccess(request) {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = reject;
-  });
-}
-
-async function clearDb() {
-  // If a database connection is open, the attempt to delete it will fail. More specifically, the attempt to delete will
-  // be "blocked" and the `onblocked` callback will run.
-  if (dbPromise) {
-    (await dbPromise).close();
-    dbPromise = null;
-  }
-
-  return new Promise((resolve, reject) => {
-    const delReq = indexedDB.deleteDatabase(TODOS_DB);
-    delReq.onsuccess = () => resolve(delReq.result);
-    delReq.onerror = () => reject(new Error(`Couldn't delete "${TODOS_DB}" DB between tests; 'onerror' event fired`));
-    delReq.onblocked = () => {
-      reject(new Error(`Couldn't delete "${TODOS_DB}" DB between tests; This could mean a db conn is still open.`));
-    };
-  });
-}
-
-async function getDb(): Promise<IDBDatabase> {
-  if (!dbPromise) {
-    dbPromise = new Promise((resolve, reject) => {
-      const openreq = indexedDB.open(TODOS_DB, 1);
-      openreq.onblocked = reject;
-      openreq.onerror = reject;
-      openreq.onsuccess = () => resolve(openreq.result);
-      openreq.onupgradeneeded = (event) => {
-        const db = openreq.result;
-        IDBSideSync.onupgradeneeded(event);
-        db.createObjectStore(TODOS_STORE, { keyPath: 'id' });
-      };
-    });
-  }
-  return dbPromise;
-}

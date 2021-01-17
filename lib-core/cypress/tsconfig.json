@@ -6,6 +6,7 @@
     // Note that we don't have to include "../node_modules/@types"; the compiler will automagically find it (see
     // https://www.typescriptlang.org/tsconfig#typeRoots). We do have to add the path to the directory that contains our
     // custom types package ("common"), however.
-    "typeRoots": ["../../types"]
+    "typeRoots": ["../../types"],
+    "resolveJsonModule": true
   }
 }
