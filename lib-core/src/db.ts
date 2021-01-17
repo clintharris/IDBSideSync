@@ -232,9 +232,7 @@ export async function applyOplogEntry(candidate: OpLogEntry) {
         const existingValue = existingObjReq.result;
 
         if (process.env.NODE_ENV !== 'production') {
-          existingObjReq.onsuccess = () => {
-            console.info(`IDBSideSync: retrieved existing object from "${candidate.store}".`, existingValue);
-          };
+          console.info(`IDBSideSync: retrieved existing object from "${candidate.store}".`, existingValue);
         }
 
         const newValue =
