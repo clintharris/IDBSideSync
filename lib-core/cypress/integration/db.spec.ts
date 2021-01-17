@@ -1,11 +1,8 @@
-// This enables intelligent code completion for Cypress commands (see https://on.cypress.io/intelligent-code-completion)
-/// <reference types="cypress" />
 import * as IDBSideSync from '../../src/index';
-import { OPLOG_STORE } from '../../src/index';
 
 const TODOS_DB = 'todos-db';
 const TODOS_STORE = 'todos-store';
-let dbPromise = null;
+let dbPromise: Promise<IDBDatabase> | null = null;
 
 context('IDBSideSync:db', () => {
   beforeEach(() => {
@@ -34,9 +31,8 @@ context('IDBSideSync:db', () => {
     const txReq = db.transaction(IDBSideSync.STORE_NAME.META, 'readonly');
     const metaStore = txReq.objectStore(IDBSideSync.STORE_NAME.META);
     const getReq = metaStore.get('settings');
-    const settings = await onSuccess(getReq);
+    const settings: Settings = await onSuccess(getReq) as Settings;
     expect(settings).to.have.property('nodeId');
-    //@ts-ignore
     expect(settings.nodeId).not.to.be.empty;
   });
 });
