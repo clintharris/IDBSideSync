@@ -144,10 +144,10 @@ async function addTodo(todo) {
   return req.result;
 }
 
-async function updateTodo(params, id) {
+async function updateTodo(updates, id) {
   let req;
   await txWithStore(TODO_ITEMS, 'readwrite', (store) => {
-    req = store.put({ id, ...params });
+    req = store.put(updates, id);
   });
 
   return req.result;
