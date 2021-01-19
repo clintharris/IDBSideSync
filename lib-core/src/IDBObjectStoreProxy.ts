@@ -64,7 +64,9 @@ export class IDBObjectStoreProxy {
   };
 
   proxiedPut = (value: any, key?: IDBValidKey): ReturnType<IDBObjectStore['put']> => {
-    if (!this.target.keyPath && !key) {
+    const keyPath = this.target.keyPath;
+
+    if (!keyPath && !key) {
       throw new Error(`IDBSideSync: You must specify the "key" param when calling put() on a store without a keyPath.`);
     }
     this.recordOperation(value, key);
@@ -89,42 +91,80 @@ export class IDBObjectStoreProxy {
           ? { ...existingObjReq.result, ...value } // "Merge" the new object with the existing object
           : value;
 
-      const mergedPutReq = this.target.keyPath ? this.target.put(resolvedValue) : this.target.put(resolvedValue, key);
+      try {
+        const mergedPutReq = keyPath ? this.target.put(resolvedValue) : this.target.put(resolvedValue, key);
 
-      mergedPutReq.onsuccess = () => {
-        // This is sort of a crude way of trying to verify that `mergedPutReq` finishes last (i.e., the "merged" value
-        // of the object is what ends up being persisted when the transaction is complete).
-        if (!tempPutCompleted) {
-          throw new Error(`IDBSideSync: "final" put() with merged value ran BEFORE the "temp" put.`);
-        }
-      };
+        mergedPutReq.onsuccess = () => {
+          // This is sort of a crude way of trying to verify that `mergedPutReq` finishes last (i.e., the "merged" value
+          // of the object is what ends up being persisted when the transaction is complete).
+          if (!tempPutCompleted) {
+            throw new Error(`IDBSideSync: "final" put() with merged value ran BEFORE the "temp" put.`);
+          }
+        };
+      } catch (error) {
+        throw new FinalPutError(this.target.name, error);
+      }
     };
 
-    // The call to `put()` below is "temporary" and it's assumed that the additional call to `put()` above will always
-    // run LAST (i.e., ensuring that the call to `put()` with the MERGED values will "win" when the transaction is
-    // resolved and committed).
-    //
-    // This approach of calling put() below just so a valid IDBRequest can be returned, then calling it again later with
-    // the merged values seems...hacky. It has been observed to work in different browsers through testing, but the
-    // actual IndexedDB implementations and spec haven't been studied to completely guarantee that the transaction will
-    // _always_ resolve/commit in the order that we want (and have observed so far).
-    //
-    // If at some point issues are found with how final the final value is resolved when the transaction is committed,
-    // another solution will be needed. For example, maybe some sort of "manually-built", totally synthetic object that
-    // implements the IDBRequest<IDBValidKey> interface is returned below. Returning a fake request seems like it could
-    // be tricky and include its own hacky baggage, however; we'll stick with the current approach (which seems to work)
-    // for now.
-    //
-    // 👉 When calling the actual object store's `put()` method it's important to NOT include a `key` param if the store
-    // has a `keyPath`. Doing this causes an error (e.g., "[...] object store uses in-line keys and the key parameter
-    // was provided" in Chrome).
-    const tempPutReq = this.target.keyPath ? this.target.put(value) : this.target.put(value, key);
+    let tempValue = value;
 
-    return proxyPutRequest(tempPutReq, {
-      onSuccess: () => {
-        tempPutCompleted = true;
-      },
-    });
+    // Ensure that the object has all the properties it needs, per the store's `keyPath`. If it doesn't, try to get
+    // them from the `key` arg.
+    if (keyPath) {
+      tempValue = { ...value };
+      if (Array.isArray(keyPath)) {
+        for (let i = 0; i < keyPath.length; i++) {
+          const keyProp = keyPath[i];
+          if (!(keyProp in tempValue) || tempValue[keyProp] === undefined) {
+            if (!key) {
+              throw new PutWithoutKeyError(keyPath.join(', '));
+            } else if (!Array.isArray(key)) {
+              throw new Error(`IDBSideSync: The "key" passed to "store.put(obj, key)" should be an array.`);
+            }
+            tempValue[keyProp] = key[i];
+          }
+        }
+      } else if (!(keyPath in tempValue)) {
+        if (!key) {
+          throw new PutWithoutKeyError(keyPath);
+        }
+        tempValue[keyPath] = key;
+      }
+    }
+
+    try {
+      // The call to `put()` below is "temporary" and it's assumed that the additional call to `put()` above will always
+      // run LAST (i.e., ensuring that the call to `put()` with the MERGED values will "win" when the transaction is
+      // resolved and committed).
+      //
+      // This approach of calling put() below just so a valid IDBRequest can be returned, then calling it again later
+      // with the merged values seems...hacky. It has been observed to work in different browsers through testing, but
+      // the actual IndexedDB implementations and spec haven't been studied to completely guarantee that the transaction
+      // will _always_ resolve/commit in the order that we want (and have observed so far).
+      //
+      // If at some point issues are found with how final the final value is resolved when the transaction is committed,
+      // another solution will be needed. For example, maybe some sort of "manually-built", totally synthetic object
+      // that implements the IDBRequest<IDBValidKey> interface is returned below. Returning a fake request seems like it
+      // could be tricky and include its own hacky baggage, however; we'll stick with the current approach (which seems
+      // to work) for now.
+      //
+      // When calling the actual object store's `put()` method it's important to NOT include a `key` param if the store
+      // has a `keyPath`. Doing so would cause an error (e.g., "[...] object store uses in-line keys and the key
+      // parameter was provided" in Chrome).
+      const tempPutReq = keyPath ? this.target.put(tempValue) : this.target.put(tempValue, key);
+
+      const proxyPutReq = proxyPutRequest(tempPutReq, {
+        onSuccess: () => {
+          tempPutCompleted = true;
+        },
+        onError: () => {
+          throw new TempPutError(this.target.name, proxyPutReq.error);
+        },
+      });
+      return proxyPutReq;
+    } catch (error) {
+      throw new TempPutError(this.target.name, error);
+    }
   };
 
   /**
@@ -204,14 +244,43 @@ export class IDBObjectStoreProxy {
  * A utility function for deriving a key value that can be used to retrieve an object from an IDBObjectStore.
  */
 export function resolveKey(store: IDBObjectStore, value: any, key?: IDBValidKey) {
-  const resolvedKey = Array.isArray(store.keyPath)
-    ? store.keyPath.map((keyProp) => value[keyProp])
-    : store.keyPath
-    ? value[store.keyPath]
-    : key;
+  let resolvedKey;
+
+  if (key) {
+    resolvedKey = key;
+  } else if (Array.isArray(store.keyPath)) {
+    resolvedKey = store.keyPath.map((keyProp) => value[keyProp]);
+  } else if (store.keyPath) {
+    resolvedKey = value[store.keyPath];
+  }
 
   if (!resolvedKey || (Array.isArray(resolvedKey) && resolvedKey.length === 0)) {
     throw new Error('IDBSideSync: failed to establish a key for retrieving object before updating it.');
   }
   return resolvedKey;
+}
+
+export class PutWithoutKeyError extends Error {
+  constructor(keyPropertyNames: string) {
+    super(
+      `The object passed to store.put(...) is missing key properties with valid values, and no ` +
+        `"key" arg was specified. Either call put() with a key arg (e.g., store.put(obj, key)) or make sure the ` +
+        `object has the following properties set to a VALID values (string, number, date, etc.): ${keyPropertyNames}`
+    );
+    Object.setPrototypeOf(this, PutWithoutKeyError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+  }
+}
+
+export class TempPutError extends Error {
+  constructor(storeName: string, error: unknown) {
+    super(`IDBSideSync: error while attempting to "temporarily" put() something into "${storeName}": ` + error);
+    Object.setPrototypeOf(this, TempPutError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+  }
+}
+
+export class FinalPutError extends Error {
+  constructor(storeName: string, error: unknown) {
+    super(`IDBSideSync: error while attempting to put() final/merged version of object into "${storeName}": ` + error);
+    Object.setPrototypeOf(this, FinalPutError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+  }
 }

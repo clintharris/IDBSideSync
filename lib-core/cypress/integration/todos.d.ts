@@ -1,10 +1,11 @@
 interface TodoItem {
   id: number;
   name: string;
-  done: false;
+  done: boolean;
 }
 
-interface TodoSetting {
+interface ScopedSetting {
   scope: string;
   name: string;
+  value: string;
 }

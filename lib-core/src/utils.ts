@@ -41,3 +41,19 @@ export function isValidOplogEntry(thing: unknown): thing is OpLogEntry {
 
   return true;
 }
+
+export const log = {
+  warn(message: string, ...args: unknown[]): void {
+    console.warn('[IDBSideSync:warn] ' + message, ...args);
+  },
+
+  error(message: string, ...args: unknown[]): void {
+    console.error('[IDBSideSync:error] ' + message, ...args);
+  },
+
+  debug(message: string, ...args: unknown[]): void {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[IDBSideSync:debug] ' + message, ...args);
+    }
+  },
+};

@@ -1,5 +1,15 @@
 import * as IDBSideSync from '../../src/index';
-import { clearDb, getDb, TODO_ITEMS_STORE, txWithStore } from './utils';
+import {
+  clearDb,
+  getDb,
+  onSuccess,
+  TODO_ITEMS_STORE,
+  ARR_KEYPATH_STORE,
+  resolveOnTxComplete,
+  throwOnReqError,
+  NO_KEYPATH_STORE,
+  assertEntries,
+} from './utils';
 
 context('IDBObjectStoreProxy', () => {
   beforeEach(async () => {
@@ -8,47 +18,219 @@ context('IDBObjectStoreProxy', () => {
     await IDBSideSync.init(db);
   });
 
-  it(`proxies store.add() correctly.`, async () => {
-    const expectedTodo: TodoItem = { id: 1, name: 'buy cookies', done: false };
+  describe('store.add() proxy', () => {
+    it(`works with single-value keyPath`, async () => {
+      const key = 1;
+      const expectedTodo: TodoItem = { id: key, name: 'buy cookies', done: false };
+      let foundTodo;
+      let foundEntries;
 
-    await txWithStore([TODO_ITEMS_STORE, IDBSideSync.OPLOG_STORE], 'readwrite', (todoItemsStore, oplogStore) => {
-      const proxiedStore = IDBSideSync.proxyStore(todoItemsStore);
-      proxiedStore.add(expectedTodo);
+      await txCompletion(TODO_ITEMS_STORE, (proxiedStore) => {
+        proxiedStore.add(expectedTodo);
+      });
+
+      await txCompletion(TODO_ITEMS_STORE, async (proxiedStore, oplogStore) => {
+        foundTodo = await onSuccess(proxiedStore.get(key));
+        foundEntries = await onSuccess(oplogStore.getAll());
+      });
+
+      expect(foundTodo).to.deep.equal(expectedTodo);
+
+      let previousHlcTime = '';
+      foundEntries.forEach((entry: OpLogEntry) => {
+        assert(entry.hlcTime > previousHlcTime, `each OpLogEntry's .hlcTime is greater than the previous time`);
+        previousHlcTime = entry.hlcTime;
+      });
+
+      const sharedWhere = { store: TODO_ITEMS_STORE, objectKey: key };
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'id', value: expectedTodo.id } });
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'name', value: expectedTodo.name } });
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'done', value: expectedTodo.done } });
     });
 
-    let foundTodo;
-    let foundOplogEntries;
+    it(`works with array keyPath`, async () => {
+      let foundSetting;
+      let foundEntries;
+      const key = ['foo', 'bar'];
+      const expected: ScopedSetting = { scope: 'foo', name: 'bar', value: 'baz' };
 
-    await txWithStore([TODO_ITEMS_STORE, IDBSideSync.OPLOG_STORE], 'readonly', (todoItemsStore, oplogStore) => {
-      const proxiedStore = IDBSideSync.proxyStore(todoItemsStore);
-      const getTodoReq = proxiedStore.get(expectedTodo.id);
-      getTodoReq.onsuccess = () => {
-        foundTodo = getTodoReq.result;
-      };
+      await txCompletion(ARR_KEYPATH_STORE, (proxiedStore) => {
+        proxiedStore.add(expected);
+      });
 
-      const getOplogEntriesReq = oplogStore.getAll();
-      getOplogEntriesReq.onsuccess = () => {
-        foundOplogEntries = getOplogEntriesReq.result;
-      };
+      await txCompletion(ARR_KEYPATH_STORE, async (store, oplogStore) => {
+        foundSetting = await onSuccess(store.get(key));
+        foundEntries = await onSuccess(oplogStore.getAll());
+      });
+
+      expect(foundSetting).to.deep.equal(expected);
+
+      foundEntries.forEach((entry: OpLogEntry) => {
+        expect(entry.objectKey).to.deep.equal([foundSetting.scope, foundSetting.name]);
+      });
+
+      const sharedWhere = { store: ARR_KEYPATH_STORE, objectKey: key };
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'scope', value: expected.scope } });
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'name', value: expected.name } });
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'value', value: expected.value } });
     });
 
-    expect(foundTodo).to.deep.equal(expectedTodo);
+    it(`works without a keyPath`, async () => {
+      const key = 'foo';
+      const initialValue = 'bar';
+      let foundValue;
+      let foundEntries;
 
-    let previousHlcTime = '';
+      await txCompletion(NO_KEYPATH_STORE, (proxiedStore) => {
+        proxiedStore.add(initialValue, key);
+      });
 
-    foundOplogEntries.forEach((entry: OpLogEntry) => {
-      assert(entry.hlcTime > previousHlcTime, `each OpLogEntry's .hlcTime is greater than the previous time`);
-      assert(entry.store === TODO_ITEMS_STORE, `each OpLogEntry has expected .store`);
-      assert(entry.objectKey === expectedTodo.id, `each OpLogEntry has expected .objectKey`);
-      previousHlcTime = entry.hlcTime;
+      await txCompletion(NO_KEYPATH_STORE, async (store, oplogStore) => {
+        foundValue = await onSuccess(store.get(key));
+        foundEntries = await onSuccess(oplogStore.getAll());
+      });
+
+      // Verify that we found the initial value...
+      expect(foundValue).to.deep.equal(initialValue);
+
+      let previousHlcTime = '';
+      foundEntries.forEach((entry: OpLogEntry) => {
+        assert(entry.hlcTime > previousHlcTime, `each OpLogEntry's .hlcTime is greater than the previous time`);
+        previousHlcTime = entry.hlcTime;
+      });
+
+      const sharedWhere = { store: NO_KEYPATH_STORE, objectKey: key, prop: '' };
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, value: initialValue } });
+    });
+  });
+
+  describe('store.put() proxy', () => {
+    it(`works with single-value keyPath`, async () => {
+      const key = 1;
+      let foundTodo;
+      let foundEntries;
+      const initialTodo: TodoItem = { id: key, name: 'buy cookies', done: false };
+      const change: Partial<TodoItem> = { done: true };
+      const finalTodo: TodoItem = { ...initialTodo, ...change };
+
+      await txCompletion(TODO_ITEMS_STORE, async (proxiedStore) => {
+        throwOnReqError(proxiedStore.put(initialTodo));
+      });
+
+      await txCompletion(TODO_ITEMS_STORE, (proxiedStore) => {
+        throwOnReqError(proxiedStore.put(change, key));
+      });
+
+      await txCompletion(TODO_ITEMS_STORE, async (proxiedStore, oplogStore) => {
+        foundTodo = await onSuccess(proxiedStore.get(finalTodo.id));
+        foundEntries = await onSuccess(oplogStore.getAll());
+      });
+
+      expect(foundTodo).to.deep.equal(finalTodo);
+
+      let previousHlcTime = '';
+      foundEntries.forEach((entry: OpLogEntry) => {
+        assert(entry.hlcTime > previousHlcTime, `each OpLogEntry's .hlcTime is greater than the previous time`);
+        previousHlcTime = entry.hlcTime;
+      });
+
+      const sharedWhere = { store: TODO_ITEMS_STORE, objectKey: key };
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'id', value: initialTodo.id } });
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'name', value: initialTodo.name } });
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'done', value: initialTodo.done } });
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'done', value: finalTodo.done } });
     });
 
-    assert(find(foundOplogEntries, 'id').value === expectedTodo.id, 'OpLogEntry was created for .id prop');
-    assert(find(foundOplogEntries, 'name').value === expectedTodo.name, 'OpLogEntry was created for .name prop');
-    assert(find(foundOplogEntries, 'done').value === expectedTodo.done, 'OpLogEntry was created for .done prop');
+    it(`works with array keyPath`, async () => {
+      const initial: ScopedSetting = { scope: 'foo', name: 'bar', value: 'baz' };
+      const key = [initial.scope, initial.name];
+      const change: Partial<ScopedSetting> = { value: 'boo' };
+      const final = { ...initial, ...change };
+
+      let foundSetting;
+      let foundEntries;
+
+      await txCompletion(ARR_KEYPATH_STORE, (proxiedStore) => {
+        proxiedStore.put(initial);
+      });
+
+      await txCompletion(ARR_KEYPATH_STORE, (proxiedStore) => {
+        proxiedStore.put(change, key);
+      });
+
+      await txCompletion(ARR_KEYPATH_STORE, async (store, oplogStore) => {
+        foundSetting = await onSuccess(store.get(key));
+        foundEntries = await onSuccess(oplogStore.getAll());
+      });
+
+      expect(foundSetting).to.deep.equal(final);
+
+      foundEntries.forEach((entry: OpLogEntry) => {
+        expect(entry.objectKey).to.deep.equal([foundSetting.scope, foundSetting.name]);
+      });
+
+      const sharedWhere = { store: ARR_KEYPATH_STORE, objectKey: key };
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'scope', value: initial.scope } });
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'name', value: initial.name } });
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'value', value: initial.value } });
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'value', value: final.value } });
+    });
+
+    it(`works without a keyPath`, async () => {
+      const key = 'foo';
+      const initialValue = 'bar';
+      const finalValue = 8675309;
+      let foundValue;
+      let foundEntries;
+
+      // Add the initial value to the store...
+      await txCompletion(NO_KEYPATH_STORE, (proxiedStore) => {
+        proxiedStore.put(initialValue, key);
+      });
+
+      // Read the initial value back from the store...
+      await txCompletion(NO_KEYPATH_STORE, async (store, oplogStore) => {
+        foundValue = await onSuccess(store.get(key));
+      });
+
+      // Verify that we found the initial value...
+      expect(foundValue).to.deep.equal(initialValue);
+
+      // Update the value...
+      await txCompletion(NO_KEYPATH_STORE, (proxiedStore) => {
+        proxiedStore.put(finalValue, key);
+      });
+
+      // Read it back out...
+      await txCompletion(NO_KEYPATH_STORE, async (store, oplogStore) => {
+        foundValue = await onSuccess(store.get(key));
+      });
+
+      // Verify that it has the expected value...
+      expect(foundValue).to.deep.equal(finalValue);
+
+      // Get all the oplog entries...
+      await txCompletion(NO_KEYPATH_STORE, async (store, oplogStore) => {
+        foundEntries = await onSuccess(oplogStore.getAll());
+      });
+
+      let previousHlcTime = '';
+
+      foundEntries.forEach((entry: OpLogEntry) => {
+        assert(entry.hlcTime > previousHlcTime, `each OpLogEntry's .hlcTime is greater than the previous time`);
+        previousHlcTime = entry.hlcTime;
+      });
+
+      const sharedWhere = { store: NO_KEYPATH_STORE, objectKey: key, prop: '' };
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, value: initialValue } });
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, value: finalValue } });
+    });
   });
 });
 
-function find(entries: OpLogEntry[], prop: string): OpLogEntry | undefined {
-  return entries.find((entry: OpLogEntry) => entry.prop === prop);
+function txCompletion(storeName: string, callback: (proxiedStore: IDBObjectStore, oplogStore: IDBObjectStore) => void) {
+  return resolveOnTxComplete([storeName, IDBSideSync.OPLOG_STORE], 'readwrite', (store, oplogStore) => {
+    const proxiedStore = IDBSideSync.proxyStore(store);
+    callback(proxiedStore, oplogStore);
+  });
 }
