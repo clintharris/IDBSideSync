@@ -294,15 +294,20 @@ async function getBgColorSetting(profileName) {
   await txWithStore(PROFILE_SETTINGS, 'readonly', (store) => {
     const req = store.get([profileName, 'bgColor']);
     req.onsuccess = (event) => {
-      bgColor = event.target.result ? event.target.result.value : 'white';
+      bgColor = event.target.result ? event.target.result.value : null;
     };
   });
   return bgColor;
 }
 
 async function updateBgColorSetting(profileName, newValue) {
+  const existing = await getBgColorSetting(profileName);
   await txWithStore(PROFILE_SETTINGS, 'readwrite', (store) => {
-    const req = store.put({ profileName, settingName: 'bgColor', value: newValue });
+    if (existing) {
+      const req = store.put({ value: newValue }, [profileName, 'bgColor']);
+    } else {
+      const req = store.put({ profileName, settingName: 'bgColor', value: newValue });
+    }
   });
   // printOpLog();
 }

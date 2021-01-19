@@ -235,7 +235,7 @@ async function render() {
   if (editingTodo) {
     append(`
       <div class="absolute bottom-0 left-0 right-0 top-0 flex items-center justify-center" style="background-color: rgba(.2, .2, .2, .4)">
-        <div class="bg-white p-8" style="width: 500px">
+        <div class="bg-white p-8">
           <h2 class="text-lg font-bold mb-4">Edit todo</h2>
           <div class="flex">
             <input value="${sanitize(
@@ -476,7 +476,7 @@ function setFontSize(size) {
 }
 
 async function loadAndApplyProfileSettings(profileName) {
-  setBgColor(await getBgColorSetting(uiState.activeProfileName));
+  setBgColor(await getBgColorSetting(uiState.activeProfileName) || 'white');
   setFontSize(await getFontSizeSetting(uiState.activeProfileName));
 }
 
