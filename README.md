@@ -20,7 +20,7 @@ npm install --save @clintharris/IDBSideSync
 First, you'll need to add a few lines to your existing IndexedDB setup code for initializing `IDBSideSync`:
 
 ```javascript
-const openreq = indexedDB.open('todo-app', 1);
+const openreq = indexedDB.open("todo-app", 1);
 
 openreq.onupgradeneeded = (event) => {
   const db = event.target.result;
@@ -30,7 +30,7 @@ openreq.onupgradeneeded = (event) => {
   // no guarantee of uniqueness.
   //
   // ⛔️ Also, IDBSideSync doesn't currently support "nested" keyPath values (e.g., `keyPath: 'foo.bar'`).
-  const todosStore = db.createObjectStore('todos', { keyPath: 'id' });
+  const todosStore = db.createObjectStore("todos", { keyPath: "id" });
 
   // Give IDBSideSync a chance to create its own object stores and indices.
   IDBSideSync.onupgradeneeded(event);
@@ -39,16 +39,21 @@ openreq.onupgradeneeded = (event) => {
 openreq.onsuccess = () => {
   // Now that the object stores exist, allow IDBSideSync to initiailize itself before using it.
   IDBSideSync.init(openreq.result);
-}
+};
 ```
+
+## Adding Stuff
 
 Now just make sure to use an "IDBSideSync wrapped" version of the IndexedDB object store so that data mutations can be intercepted and recorded in the background as you perform CRUD operations on your data:
 
 ```javascript
 // Make sure to include IDBSideSync's OPLOG_STORE in the transaction (otherwise it won't be able
 // to commit/rollback its own operation log changes as part of the same transaction).
-const txRequest = db.transaction(['todos', IDBSideSync.OPLOG_STORE], 'readwrite');
-const todoStore = IDBSideSync.proxyStore(txRequest.objectStore('todos'));
+const txRequest = db.transaction(
+  ["todos", IDBSideSync.OPLOG_STORE],
+  "readwrite"
+);
+const todoStore = IDBSideSync.proxyStore(txRequest.objectStore("todos"));
 
 // You need to ensure that object keys are unqiue. One option is to use  IDBSideSync's `uuid()`
 // convenience function.
@@ -56,16 +61,18 @@ const todoId = IDBSideSync.uuid(); // 123
 todoStore.add({ id: todoId, title: "Buy milk" }); // { id: 123, title: "Buy milk" }
 ```
 
+## Updating Stuff
+
 IDBSideSync modifies `put()` so that it only updates the specific properties that you pass in instead of completely replacing objects (i.e., it now supports "partial" updates). This is out of necessity and can't be changed, (but you can always pass in a complete copy of an object to update all of its properties in the store).
 
 ```javascript
 todoStore.put({ title: "Buy cookies" }, todoId);
-todoStore.put({ priority: "high" }, todoId); 
+todoStore.put({ priority: "high" }, todoId);
 
 // In a separate transaction...
 todoStore.get(todoId).onsuccess = (event) => {
   console.log(event.target.result); // { id: 123, title: "Buy cookies", priority: "high" }
-}
+};
 ```
 
 ## Deleting stuff
@@ -73,23 +80,23 @@ todoStore.get(todoId).onsuccess = (event) => {
 For now, IDBSideSync doesn't support the deletion of things (although this might be a feature in the future). Don't do the following things, for example:
 
 ```javascript
-const todoStore = IDBSideSync.proxyStore(txRequest.objectStore('todos'));
+const todoStore = IDBSideSync.proxyStore(txRequest.objectStore("todos"));
 
 // Don't do this...
 todoStore.delete(todoId); // ❌
 
 // ...or this
-todoStore.openCursor().onsuccess = function(event) {
+todoStore.openCursor().onsuccess = function (event) {
   const cursor = event.target.result;
   cursor.delete(); // ❌
-}
+};
 
 // ...or this
-const todoIndex = todoStore.index('todos_indxed_by_title');
-todoIndex.openCursor().onsuccess = function(event) {
+const todoIndex = todoStore.index("todos_indxed_by_title");
+todoIndex.openCursor().onsuccess = function (event) {
   const cursor = event.target.result;
   cursor.delete(); // ❌
-}
+};
 ```
 
 In fact, IDBSideSync might be modified at some point to throw errors if you do any of the stuff shown above to help prevent problems.
@@ -129,22 +136,23 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
 
 # Roadmap
 
+- [ ] Investigate using Chrome's Native File System API and using the local file system as one option for testing/developing oplog entries being "sync'ed". In other words, instead of worrying about the details of the Google Drive API, for example, just have two windows open that are both reading/writing to the same local drive--so a "shared local folder" is being used to sync the files.
 - [ ] Test CRUD on store with keyPath that is an array.
-    - Modify todo example app so that todo_types store has keyPath: ["id", "name"] (since the name can't be edited).
+  - Modify todo example app so that todo_types store has keyPath: ["id", "name"] (since the name can't be edited).
 - [ ] Set up Cypress to run unit tests
-    - this will make it possible to run automated tests that are using the real IndexedDB API
+  - this will make it possible to run automated tests that are using the real IndexedDB API
 - [ ] Modify Rollup to bundle murmurhash and uuid _with_ the library
-    - see "https://www.mixmax.com/engineering/rollup-externals/" section of https://www.mixmax.com/engineering/rollup-externals/ for example of which rollup plugins to install and use
-    - see https://tsdx.io/customization#example-adding-postcss for example of how to customize tsdx's rollup config to use rollup plugins
+  - see "https://www.mixmax.com/engineering/rollup-externals/" section of https://www.mixmax.com/engineering/rollup-externals/ for example of which rollup plugins to install and use
+  - see https://tsdx.io/customization#example-adding-postcss for example of how to customize tsdx's rollup config to use rollup plugins
 - [ ] Incorporate Jared Forsyth's HLC string formatting improvements that allow for longer timestamp and counter strings:
-    - `physTime.toString().padStart(15, '0')` // 13 digits is enough for the next 100 years, so 15 is plenty
-    - `count.toString(36).padStart(5, '0') // 5 digits base 36 is enough for more than 6 million "out of order" changes
-    - https://jaredforsyth.com/posts/hybrid-logical-clocks/
+  - `physTime.toString().padStart(15, '0')` // 13 digits is enough for the next 100 years, so 15 is plenty
+  - `count.toString(36).padStart(5, '0') // 5 digits base 36 is enough for more than 6 million "out of order" changes
+  - https://jaredforsyth.com/posts/hybrid-logical-clocks/
 - [ ] Add full integration test/simulation of messages from multiple nodes being processed
-    - verify that event ordering is correct (i.e., that various table/row/column values end up with values specified by "most recent" corresponding operation)
-    - this will require implementation of in-memory data store
-    - how will this work without the use of the merkle tree for efficient diffing? is that even necessary?
-    - make sure to prevent the "many changes in same ~10sec window causes issue" problem (https://twitter.com/jaredforsyth/status/1228366315569565696)
+  - verify that event ordering is correct (i.e., that various table/row/column values end up with values specified by "most recent" corresponding operation)
+  - this will require implementation of in-memory data store
+  - how will this work without the use of the merkle tree for efficient diffing? is that even necessary?
+  - make sure to prevent the "many changes in same ~10sec window causes issue" problem (https://twitter.com/jaredforsyth/status/1228366315569565696)
 - [ ] Set up the project to work with [CodeSandbox CI](https://codesandbox.io/docs/ci).
 - [ ] Set up a simple sandbox app in a sub-directory that can be use to demo/test the library (from relative imports)
 
@@ -153,62 +161,67 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
 - [ ] Consider increasing the allowed difference for clock times coming from other systems; only allowing for a 1-minute difference between any other clock in the distributed system seems like it could be error prone...
 - [ ] Modify HLTime.parse() to do a better job of checking for issues with the passed-in string and throwing errors if necessary (e.g., throwing if an invalid month is specified)
 - [ ] Merkle tree:
-    - [ ] consider only allowing inserts to proceed for "full" 17-digit paths. This would prevent the possibility of setting hash value for non-leaf nodes (which would result in a node whose hash is, technically, not derived from the hashes of all its children). The downside of this is that it would make unit testing harder to easily understand (since you can't use "simple" testing trees with only a few nodes).
+  - [ ] consider only allowing inserts to proceed for "full" 17-digit paths. This would prevent the possibility of setting hash value for non-leaf nodes (which would result in a node whose hash is, technically, not derived from the hashes of all its children). The downside of this is that it would make unit testing harder to easily understand (since you can't use "simple" testing trees with only a few nodes).
 
 ## New features
 
 - [ ] Support custom _local_ data store APIs (i.e., support offline, PWA-friendly storage)
-    - Currently the "data store" is just a few arrays kept in memory (`_messages` and  `_data`)
-    - It should be possible to use other, more efficient data storage mechanisms (e.g., IndexedDB).
-    - Instead of accessing `_messages` and `_data` directly as arrays, the data store should be passed-in and manipulated through standard API functions for CRUD operations; the actual implementation for those operations should be a black-box.
-    - Example:
-        - `sync.js:mapIncomingToLocalMessagesForField()` needs to find the "most recent" message for specific fields. Currently it does this by sorting the big array of `_messages` and searching for the first element with a matching set of field identifier criteria, which clearly becomes less efficient as the array of `_messages` grows over time.
-        - Ideally, the data store API would have a `findMostRecentMessageForField()` method that, under the hood, would use pre-built indices for searching messages.
-    - `sidesync-store-indexeddb`
-    - `sidesync-store-inmemory`
+
+  - Currently the "data store" is just a few arrays kept in memory (`_messages` and `_data`)
+  - It should be possible to use other, more efficient data storage mechanisms (e.g., IndexedDB).
+  - Instead of accessing `_messages` and `_data` directly as arrays, the data store should be passed-in and manipulated through standard API functions for CRUD operations; the actual implementation for those operations should be a black-box.
+  - Example:
+    - `sync.js:mapIncomingToLocalMessagesForField()` needs to find the "most recent" message for specific fields. Currently it does this by sorting the big array of `_messages` and searching for the first element with a matching set of field identifier criteria, which clearly becomes less efficient as the array of `_messages` grows over time.
+    - Ideally, the data store API would have a `findMostRecentMessageForField()` method that, under the hood, would use pre-built indices for searching messages.
+  - `sidesync-store-indexeddb`
+  - `sidesync-store-inmemory`
 
 - [ ] Support _syncing_ with remote file storage services
-    - Once a standard API exists for the _local_ data store (which can be implemented with different adapters), modify the sync code so that it uses a standard API, which would allow for different remote storage providers to be plugged in.
-    - `sidesync-gdrive`, `sidesync-icloud`, etc.
-    - each node (e.g., user-owned device) uploads every oplog entry to the server
-    - each entry has a filename: the timestamp.toString() value
-        - since every timestamp is unique, there shouldn't be any filename collisions
-    - each node uploads (and updates) a JSONified version of their merkle tree
-        - these merkle tree files should all have a standard extension to be easily discovered by via filename pattern searching (e.g., {nodeId}.merkle.json)
-        - with GDrive API, you'd use a query like `name contains '.merkle.json.7z'`
-    - a node can download the merkle trees from other nodes and diff _locally_ to more efficiently determine a _time_ at which the merkle trees began to differ
-        - it can then download and ingest all oplog entries on/after that time
-    - each node updates and uploads an "index" file: an _ordered_ list of all the HLC timestamps (i.e., filenames) for events _that node_ has created
-        - these files should all have a standard extension to be easily discovered by via filename pattern searching (e.g., {nodeId}.index.txt)
-        - this file should be uploaded to the server on each sync (overwriting the existing file if one exists)
-        - other nodes can download this (pre-sorted) list and, after having compared merkle trees with this node to find a timestamp when they began to differ, iterate over (ordered) list of timestamps until it gets to the point where the divergence began--all filenames after that point in the list should be downloaded and processed.
-        - these files could get BIG; adding 1M timestamps resulted in a 45MB text file
-        - compression could help; this could be diferred to server and browser (assuming server compression is enabled), or _maybe_ done in the browser (JSZip compressed 45MB realistic text file to 134 KB in 1.2 sec)
-        - another option that adds complexity is to chunk the indices, maybe putting timestamp ranges in index filenames to help decide which index to download (e.g., `{nodeId}.{firstTimeStamp__lastTimeStamp}.index.txt`)
 
-    - Google Drive doesn't support searching/filtering by regex expressions, so it's probably necessary to:
-        1. retrieve a list of _all_ filenames (and just the names--so we know what to try to download)
-        2. parse/order that list and start downloading each file with filename after the diff time, OR
-        2. OR just iterate over the full list (without sorting) and download each file as necessary
-            - if there are thousands of files, this would more efficient since it's not necessary to load the entire list into memory (similar to using a DB cursor)
-        - this could be done by "searching" for files using a filename pattern that will exclude oplog entries before some time (see https://stackoverflow.com/a/11011934/62694)
-        - OR (maybe simpler but much less efficient), download all file _names_ (i.e., list dir), iterate over them (parsing each filename to an actual HLC time that can be compared to the reference HLC time), and download each one that occurs on/after the reference time.
+  - Once a standard API exists for the _local_ data store (which can be implemented with different adapters), modify the sync code so that it uses a standard API, which would allow for different remote storage providers to be plugged in.
+  - `sidesync-gdrive`, `sidesync-icloud`, etc.
+  - each node (e.g., user-owned device) uploads every oplog entry to the server
+  - each entry has a filename: the timestamp.toString() value
+    - since every timestamp is unique, there shouldn't be any filename collisions
+  - each node uploads (and updates) a JSONified version of their merkle tree
+    - these merkle tree files should all have a standard extension to be easily discovered by via filename pattern searching (e.g., {nodeId}.merkle.json)
+    - with GDrive API, you'd use a query like `name contains '.merkle.json.7z'`
+  - a node can download the merkle trees from other nodes and diff _locally_ to more efficiently determine a _time_ at which the merkle trees began to differ
+    - it can then download and ingest all oplog entries on/after that time
+  - each node updates and uploads an "index" file: an _ordered_ list of all the HLC timestamps (i.e., filenames) for events _that node_ has created
 
-    - [ ] Support sharing/collaboration with other users
+    - these files should all have a standard extension to be easily discovered by via filename pattern searching (e.g., {nodeId}.index.txt)
+    - this file should be uploaded to the server on each sync (overwriting the existing file if one exists)
+    - other nodes can download this (pre-sorted) list and, after having compared merkle trees with this node to find a timestamp when they began to differ, iterate over (ordered) list of timestamps until it gets to the point where the divergence began--all filenames after that point in the list should be downloaded and processed.
+    - these files could get BIG; adding 1M timestamps resulted in a 45MB text file
+    - compression could help; this could be diferred to server and browser (assuming server compression is enabled), or _maybe_ done in the browser (JSZip compressed 45MB realistic text file to 134 KB in 1.2 sec)
+    - another option that adds complexity is to chunk the indices, maybe putting timestamp ranges in index filenames to help decide which index to download (e.g., `{nodeId}.{firstTimeStamp__lastTimeStamp}.index.txt`)
 
-        To collaborate, the following is necessary:
+  - Google Drive doesn't support searching/filtering by regex expressions, so it's probably necessary to:
 
-        - all oplog entries have 0..1 remote location identifiers
-        - when you download oplog entries from a remote location, it will have that remote's identifier
-        - when you create an oplog entry, you will need to specify which remote it should be associated with
-            - if you haven't set up a remote, the entry won't have a remote identifier
-            - if you have set up 2+ remotes, you'll need to pick which remote it should be associated with
-        - the sync function will only upload oplog entries to their specified remote (if one is set)
-        - in a single-user app, the user will need to set up the same remote on each device to sync across devices
-        - in a collaborative app, each user will need to set up a remote to which all users have read access, and at least one user has write access
-            - example, a shared google drive folder
-        - when a user decides to share an object, a NEW set of oplog entries should be created for all props of the object, with the specified remote identifier.
-        - From that point on, all oplog entries for that destination are only uploaded to that destination.
-        - other users will download those entries and recreate the object
-        - the app on other users devices should know if the user has write access to the remote, and prevent the user from attempting to edit those objects (for good UX; note that permissions are enforced by remote storage service).
-        - if you download oplog entries associated with a shared remote, an object will be created locally.
+    1. retrieve a list of _all_ filenames (and just the names--so we know what to try to download)
+    2. parse/order that list and start downloading each file with filename after the diff time, OR
+    3. OR just iterate over the full list (without sorting) and download each file as necessary
+       - if there are thousands of files, this would more efficient since it's not necessary to load the entire list into memory (similar to using a DB cursor)
+
+    - this could be done by "searching" for files using a filename pattern that will exclude oplog entries before some time (see https://stackoverflow.com/a/11011934/62694)
+    - OR (maybe simpler but much less efficient), download all file _names_ (i.e., list dir), iterate over them (parsing each filename to an actual HLC time that can be compared to the reference HLC time), and download each one that occurs on/after the reference time.
+
+  - [ ] Support sharing/collaboration with other users
+
+    To collaborate, the following is necessary:
+
+    - all oplog entries have 0..1 remote location identifiers
+    - when you download oplog entries from a remote location, it will have that remote's identifier
+    - when you create an oplog entry, you will need to specify which remote it should be associated with
+      - if you haven't set up a remote, the entry won't have a remote identifier
+      - if you have set up 2+ remotes, you'll need to pick which remote it should be associated with
+    - the sync function will only upload oplog entries to their specified remote (if one is set)
+    - in a single-user app, the user will need to set up the same remote on each device to sync across devices
+    - in a collaborative app, each user will need to set up a remote to which all users have read access, and at least one user has write access
+      - example, a shared google drive folder
+    - when a user decides to share an object, a NEW set of oplog entries should be created for all props of the object, with the specified remote identifier.
+    - From that point on, all oplog entries for that destination are only uploaded to that destination.
+    - other users will download those entries and recreate the object
+    - the app on other users devices should know if the user has write access to the remote, and prevent the user from attempting to edit those objects (for good UX; note that permissions are enforced by remote storage service).
+    - if you download oplog entries associated with a shared remote, an object will be created locally.
