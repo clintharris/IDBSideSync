@@ -11,6 +11,8 @@ import {
   assertEntries,
 } from './utils';
 
+const defaultTodoItem: TodoItem = { id: 1, name: 'buy cookies', done: false };
+
 context('IDBObjectStoreProxy', () => {
   beforeEach(async () => {
     await clearDb();
@@ -25,11 +27,11 @@ context('IDBObjectStoreProxy', () => {
       let foundTodo;
       let foundEntries;
 
-      await txCompletion(TODO_ITEMS_STORE, (proxiedStore) => {
+      await transaction([TODO_ITEMS_STORE], (proxiedStore) => {
         proxiedStore.add(expectedTodo);
       });
 
-      await txCompletion(TODO_ITEMS_STORE, async (proxiedStore, oplogStore) => {
+      await transaction([TODO_ITEMS_STORE], async (proxiedStore, oplogStore) => {
         foundTodo = await onSuccess(proxiedStore.get(key));
         foundEntries = await onSuccess(oplogStore.getAll());
       });
@@ -54,11 +56,11 @@ context('IDBObjectStoreProxy', () => {
       const key = ['foo', 'bar'];
       const expected: ScopedSetting = { scope: 'foo', name: 'bar', value: 'baz' };
 
-      await txCompletion(ARR_KEYPATH_STORE, (proxiedStore) => {
+      await transaction([ARR_KEYPATH_STORE], (proxiedStore) => {
         proxiedStore.add(expected);
       });
 
-      await txCompletion(ARR_KEYPATH_STORE, async (store, oplogStore) => {
+      await transaction([ARR_KEYPATH_STORE], async (store, oplogStore) => {
         foundSetting = await onSuccess(store.get(key));
         foundEntries = await onSuccess(oplogStore.getAll());
       });
@@ -81,11 +83,11 @@ context('IDBObjectStoreProxy', () => {
       let foundValue;
       let foundEntries;
 
-      await txCompletion(NO_KEYPATH_STORE, (proxiedStore) => {
+      await transaction([NO_KEYPATH_STORE], (proxiedStore) => {
         proxiedStore.add(initialValue, key);
       });
 
-      await txCompletion(NO_KEYPATH_STORE, async (store, oplogStore) => {
+      await transaction([NO_KEYPATH_STORE], async (store, oplogStore) => {
         foundValue = await onSuccess(store.get(key));
         foundEntries = await onSuccess(oplogStore.getAll());
       });
@@ -102,6 +104,35 @@ context('IDBObjectStoreProxy', () => {
       const sharedWhere = { store: NO_KEYPATH_STORE, objectKey: key, prop: '' };
       assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, value: initialValue } });
     });
+
+    it(`aborts transaction w/error when called on store without keyPath if no "key" param specified`, async () => {
+      try {
+        await transaction([TODO_ITEMS_STORE, NO_KEYPATH_STORE], (todoItemsStore, noKeypathStore) => {
+          // Do more than one thing in the transaction... First add a thing to a store.
+          expect(() => todoItemsStore.add(defaultTodoItem)).to.not.throw();
+
+          // Then call put() without the key param, which should throw an error and abort the entire transaction.
+          expect(() => noKeypathStore.add('foo')).to.throw('specify the "key" param');
+        });
+      } catch (error) {
+        expect(error.message).to.contain('transaction was aborted');
+      }
+
+      let todoItems;
+      let noKeyPathItems;
+      let oplogItems;
+
+      await transaction([TODO_ITEMS_STORE, NO_KEYPATH_STORE], async (todoStore, noKeypathStore, oplogStore) => {
+        todoItems = await onSuccess(todoStore.getAll());
+        noKeyPathItems = await onSuccess(noKeypathStore.getAll());
+        oplogItems = await onSuccess(oplogStore.getAll());
+      });
+
+      // Verify that the entire transaction was rolled back and no objects were saved to any store
+      expect(todoItems).to.have.length(0);
+      expect(noKeyPathItems).to.have.length(0);
+      expect(oplogItems).to.have.length(0);
+    });
   });
 
   describe('store.put() proxy', () => {
@@ -113,15 +144,15 @@ context('IDBObjectStoreProxy', () => {
       const change: Partial<TodoItem> = { done: true };
       const finalTodo: TodoItem = { ...initialTodo, ...change };
 
-      await txCompletion(TODO_ITEMS_STORE, async (proxiedStore) => {
+      await transaction([TODO_ITEMS_STORE], async (proxiedStore) => {
         throwOnReqError(proxiedStore.put(initialTodo));
       });
 
-      await txCompletion(TODO_ITEMS_STORE, (proxiedStore) => {
+      await transaction([TODO_ITEMS_STORE], (proxiedStore) => {
         throwOnReqError(proxiedStore.put(change, key));
       });
 
-      await txCompletion(TODO_ITEMS_STORE, async (proxiedStore, oplogStore) => {
+      await transaction([TODO_ITEMS_STORE], async (proxiedStore, oplogStore) => {
         foundTodo = await onSuccess(proxiedStore.get(finalTodo.id));
         foundEntries = await onSuccess(oplogStore.getAll());
       });
@@ -150,15 +181,15 @@ context('IDBObjectStoreProxy', () => {
       let foundSetting;
       let foundEntries;
 
-      await txCompletion(ARR_KEYPATH_STORE, (proxiedStore) => {
+      await transaction([ARR_KEYPATH_STORE], (proxiedStore) => {
         proxiedStore.put(initial);
       });
 
-      await txCompletion(ARR_KEYPATH_STORE, (proxiedStore) => {
+      await transaction([ARR_KEYPATH_STORE], (proxiedStore) => {
         proxiedStore.put(change, key);
       });
 
-      await txCompletion(ARR_KEYPATH_STORE, async (store, oplogStore) => {
+      await transaction([ARR_KEYPATH_STORE], async (store, oplogStore) => {
         foundSetting = await onSuccess(store.get(key));
         foundEntries = await onSuccess(oplogStore.getAll());
       });
@@ -184,12 +215,12 @@ context('IDBObjectStoreProxy', () => {
       let foundEntries;
 
       // Add the initial value to the store...
-      await txCompletion(NO_KEYPATH_STORE, (proxiedStore) => {
+      await transaction([NO_KEYPATH_STORE], (proxiedStore) => {
         proxiedStore.put(initialValue, key);
       });
 
       // Read the initial value back from the store...
-      await txCompletion(NO_KEYPATH_STORE, async (store, oplogStore) => {
+      await transaction([NO_KEYPATH_STORE], async (store) => {
         foundValue = await onSuccess(store.get(key));
       });
 
@@ -197,12 +228,12 @@ context('IDBObjectStoreProxy', () => {
       expect(foundValue).to.deep.equal(initialValue);
 
       // Update the value...
-      await txCompletion(NO_KEYPATH_STORE, (proxiedStore) => {
+      await transaction([NO_KEYPATH_STORE], (proxiedStore) => {
         proxiedStore.put(finalValue, key);
       });
 
       // Read it back out...
-      await txCompletion(NO_KEYPATH_STORE, async (store, oplogStore) => {
+      await transaction([NO_KEYPATH_STORE], async (store) => {
         foundValue = await onSuccess(store.get(key));
       });
 
@@ -210,7 +241,7 @@ context('IDBObjectStoreProxy', () => {
       expect(foundValue).to.deep.equal(finalValue);
 
       // Get all the oplog entries...
-      await txCompletion(NO_KEYPATH_STORE, async (store, oplogStore) => {
+      await transaction([NO_KEYPATH_STORE], async (store, oplogStore) => {
         foundEntries = await onSuccess(oplogStore.getAll());
       });
 
@@ -225,12 +256,41 @@ context('IDBObjectStoreProxy', () => {
       assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, value: initialValue } });
       assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, value: finalValue } });
     });
+
+    it(`aborts transaction w/error when called on store without keyPath if no "key" param specified`, async () => {
+      try {
+        await transaction([TODO_ITEMS_STORE, NO_KEYPATH_STORE], (todoItemsStore, noKeypathStore) => {
+          // Do more than one thing in the transaction... First add a thing to a store.
+          expect(() => todoItemsStore.add(defaultTodoItem)).to.not.throw();
+
+          // Then call put() without the key param, which should throw an error and abort the entire transaction.
+          expect(() => noKeypathStore.put('foo')).to.throw('specify the "key" param');
+        });
+      } catch (error) {
+        expect(error.message).to.contain('transaction was aborted');
+      }
+
+      let todoItems;
+      let noKeyPathItems;
+      let oplogItems;
+
+      await transaction([TODO_ITEMS_STORE, NO_KEYPATH_STORE], async (todoStore, noKeypathStore, oplogStore) => {
+        todoItems = await onSuccess(todoStore.getAll());
+        noKeyPathItems = await onSuccess(noKeypathStore.getAll());
+        oplogItems = await onSuccess(oplogStore.getAll());
+      });
+
+      // Verify that the entire transaction was rolled back and no objects were saved to any store
+      expect(todoItems).to.have.length(0);
+      expect(noKeyPathItems).to.have.length(0);
+      expect(oplogItems).to.have.length(0);
+    });
   });
 });
 
-function txCompletion(storeName: string, callback: (proxiedStore: IDBObjectStore, oplogStore: IDBObjectStore) => void) {
-  return resolveOnTxComplete([storeName, IDBSideSync.OPLOG_STORE], 'readwrite', (store, oplogStore) => {
-    const proxiedStore = IDBSideSync.proxyStore(store);
-    callback(proxiedStore, oplogStore);
+function transaction(storeNames: string[], callback: (...stores: IDBObjectStore[]) => void) {
+  return resolveOnTxComplete([IDBSideSync.OPLOG_STORE, ...storeNames], 'readwrite', (oplogStore, ...otherStores) => {
+    const proxiedStores = otherStores.map((store) => IDBSideSync.proxyStore(store));
+    callback(...proxiedStores, oplogStore);
   });
 }

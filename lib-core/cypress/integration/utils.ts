@@ -56,8 +56,11 @@ export async function resolveOnTxComplete(
   return new Promise((resolve, reject) => {
     const txReq = db.transaction(storeNames, mode);
     txReq.oncomplete = () => resolve();
-    txReq.onabort = reject;
-    txReq.onerror = reject;
+    txReq.onabort = () => reject();
+    txReq.onerror = (event) => {
+      // @ts-ignore
+      reject(event.target.error);
+    };
     const stores = storeNames.map((storeName) => txReq.objectStore(storeName));
     callback(...stores);
   });

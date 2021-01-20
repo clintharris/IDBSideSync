@@ -57,7 +57,8 @@ export class IDBObjectStoreProxy {
 
   proxiedAdd = (value: any, key?: IDBValidKey): ReturnType<IDBObjectStore['add']> => {
     if (!this.target.keyPath && !key) {
-      throw new Error(`IDBSideSync: You must specify the "key" param when calling add() on a store without a keyPath.`);
+      this.target.transaction.abort();
+      throw new MissingKeyParamError('add');
     }
     this.recordOperation(value, key);
     return this.target.add(value, key);
@@ -67,7 +68,8 @@ export class IDBObjectStoreProxy {
     const keyPath = this.target.keyPath;
 
     if (!keyPath && !key) {
-      throw new Error(`IDBSideSync: You must specify the "key" param when calling put() on a store without a keyPath.`);
+      this.target.transaction.abort();
+      throw new MissingKeyParamError('put');
     }
     this.recordOperation(value, key);
 
@@ -282,5 +284,12 @@ export class FinalPutError extends Error {
   constructor(storeName: string, error: unknown) {
     super(`IDBSideSync: error while attempting to put() final/merged version of object into "${storeName}": ` + error);
     Object.setPrototypeOf(this, FinalPutError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+  }
+}
+
+export class MissingKeyParamError extends Error {
+  constructor(fcnName: string) {
+    super(`IDBSideSync: You must specify the "key" param when calling ${fcnName}() on a store without a keyPath.`);
+    Object.setPrototypeOf(this, MissingKeyParamError.prototype); // https://preview.tinyurl.com/y4jhzjgs
   }
 }

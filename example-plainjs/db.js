@@ -237,9 +237,6 @@ async function addTodoType({ name, color }) {
     // boolean (since you can't use bools as keys / index them).
     typeStore.add({ id: typeId, name, color, [DELETED_PROP]: 0 });
     typeSymlinkStore.add(typeId, typeId); // symlink ID -> target ID. We can re-use the target ID at first.
-    // TODO: the statement below is invalid and causes an error, which SHOULD cause the entire transaction to fail and
-    // we should NOT see the typeStore successfully modified. But it works for some reason. Need to figure out why.
-    // typeSymlinkStore.add({ symlinkId: typeId, targetId: typeId });
   });
   return typeId;
 }
