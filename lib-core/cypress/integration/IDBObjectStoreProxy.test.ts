@@ -2,7 +2,7 @@ import * as IDBSideSync from '../../src/index';
 import {
   clearDb,
   getDb,
-  onSuccess,
+  resolveRequest,
   TODO_ITEMS_STORE,
   ARR_KEYPATH_STORE,
   resolveOnTxComplete,
@@ -32,8 +32,8 @@ context('IDBObjectStoreProxy', () => {
       });
 
       await transaction([TODO_ITEMS_STORE], async (proxiedStore, oplogStore) => {
-        foundTodo = await onSuccess(proxiedStore.get(key));
-        foundEntries = await onSuccess(oplogStore.getAll());
+        foundTodo = await resolveRequest(proxiedStore.get(key));
+        foundEntries = await resolveRequest(oplogStore.getAll());
       });
 
       expect(foundTodo).to.deep.equal(expectedTodo);
@@ -61,8 +61,8 @@ context('IDBObjectStoreProxy', () => {
       });
 
       await transaction([ARR_KEYPATH_STORE], async (store, oplogStore) => {
-        foundSetting = await onSuccess(store.get(key));
-        foundEntries = await onSuccess(oplogStore.getAll());
+        foundSetting = await resolveRequest(store.get(key));
+        foundEntries = await resolveRequest(oplogStore.getAll());
       });
 
       expect(foundSetting).to.deep.equal(expected);
@@ -88,8 +88,8 @@ context('IDBObjectStoreProxy', () => {
       });
 
       await transaction([NO_KEYPATH_STORE], async (store, oplogStore) => {
-        foundValue = await onSuccess(store.get(key));
-        foundEntries = await onSuccess(oplogStore.getAll());
+        foundValue = await resolveRequest(store.get(key));
+        foundEntries = await resolveRequest(oplogStore.getAll());
       });
 
       // Verify that we found the initial value...
@@ -123,9 +123,9 @@ context('IDBObjectStoreProxy', () => {
       let oplogItems;
 
       await transaction([TODO_ITEMS_STORE, NO_KEYPATH_STORE], async (todoStore, noKeypathStore, oplogStore) => {
-        todoItems = await onSuccess(todoStore.getAll());
-        noKeyPathItems = await onSuccess(noKeypathStore.getAll());
-        oplogItems = await onSuccess(oplogStore.getAll());
+        todoItems = await resolveRequest(todoStore.getAll());
+        noKeyPathItems = await resolveRequest(noKeypathStore.getAll());
+        oplogItems = await resolveRequest(oplogStore.getAll());
       });
 
       // Verify that the entire transaction was rolled back and no objects were saved to any store
@@ -153,8 +153,8 @@ context('IDBObjectStoreProxy', () => {
       });
 
       await transaction([TODO_ITEMS_STORE], async (proxiedStore, oplogStore) => {
-        foundTodo = await onSuccess(proxiedStore.get(finalTodo.id));
-        foundEntries = await onSuccess(oplogStore.getAll());
+        foundTodo = await resolveRequest(proxiedStore.get(finalTodo.id));
+        foundEntries = await resolveRequest(oplogStore.getAll());
       });
 
       expect(foundTodo).to.deep.equal(finalTodo);
@@ -190,8 +190,8 @@ context('IDBObjectStoreProxy', () => {
       });
 
       await transaction([ARR_KEYPATH_STORE], async (store, oplogStore) => {
-        foundSetting = await onSuccess(store.get(key));
-        foundEntries = await onSuccess(oplogStore.getAll());
+        foundSetting = await resolveRequest(store.get(key));
+        foundEntries = await resolveRequest(oplogStore.getAll());
       });
 
       expect(foundSetting).to.deep.equal(final);
@@ -221,7 +221,7 @@ context('IDBObjectStoreProxy', () => {
 
       // Read the initial value back from the store...
       await transaction([NO_KEYPATH_STORE], async (store) => {
-        foundValue = await onSuccess(store.get(key));
+        foundValue = await resolveRequest(store.get(key));
       });
 
       // Verify that we found the initial value...
@@ -234,7 +234,7 @@ context('IDBObjectStoreProxy', () => {
 
       // Read it back out...
       await transaction([NO_KEYPATH_STORE], async (store) => {
-        foundValue = await onSuccess(store.get(key));
+        foundValue = await resolveRequest(store.get(key));
       });
 
       // Verify that it has the expected value...
@@ -242,7 +242,7 @@ context('IDBObjectStoreProxy', () => {
 
       // Get all the oplog entries...
       await transaction([NO_KEYPATH_STORE], async (store, oplogStore) => {
-        foundEntries = await onSuccess(oplogStore.getAll());
+        foundEntries = await resolveRequest(oplogStore.getAll());
       });
 
       let previousHlcTime = '';
@@ -275,9 +275,9 @@ context('IDBObjectStoreProxy', () => {
       let oplogItems;
 
       await transaction([TODO_ITEMS_STORE, NO_KEYPATH_STORE], async (todoStore, noKeypathStore, oplogStore) => {
-        todoItems = await onSuccess(todoStore.getAll());
-        noKeyPathItems = await onSuccess(noKeypathStore.getAll());
-        oplogItems = await onSuccess(oplogStore.getAll());
+        todoItems = await resolveRequest(todoStore.getAll());
+        noKeyPathItems = await resolveRequest(noKeypathStore.getAll());
+        oplogItems = await resolveRequest(oplogStore.getAll());
       });
 
       // Verify that the entire transaction was rolled back and no objects were saved to any store

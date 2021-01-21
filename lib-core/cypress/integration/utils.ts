@@ -66,7 +66,7 @@ export async function resolveOnTxComplete(
   });
 }
 
-export function onSuccess(request) {
+export function resolveRequest(request) {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = reject;

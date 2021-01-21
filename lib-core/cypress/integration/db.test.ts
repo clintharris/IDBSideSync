@@ -1,6 +1,6 @@
 import * as IDBSideSync from '../../src/index';
 import * as oplog_entries from '../fixtures/oplog_entries.json';
-import { clearDb, getDb, onSuccess, TODOS_DB } from './utils';
+import { clearDb, getDb, resolveRequest, TODOS_DB } from './utils';
 
 context('IDBSideSync:db', () => {
   beforeEach(clearDb);
@@ -26,17 +26,19 @@ context('IDBSideSync:db', () => {
     const txReq = db.transaction(IDBSideSync.STORE_NAME.META, 'readonly');
     const metaStore = txReq.objectStore(IDBSideSync.STORE_NAME.META);
     const getReq = metaStore.get('settings');
-    const settings: Settings = (await onSuccess(getReq)) as Settings;
+    const settings: Settings = (await resolveRequest(getReq)) as Settings;
     expect(settings).to.have.property('nodeId');
     expect(settings.nodeId).not.to.be.empty;
   });
 
-  // it.only('applyOplogEntries() works', async () => {
-  //   const db = await getDb();
+  it('applyOplogEntries() works', async () => {
+    //TODO
 
-  //   await IDBSideSync.init(db);
-  //   console.log('oplog_entries:', oplog_entries);
-  //   // await IDBSideSync.applyOplogEntries(oplog_entries);
-  //   expect(true).to.be.true;
-  // });
+    // const db = await getDb();
+
+    // await IDBSideSync.init(db);
+    // console.log('oplog_entries:', oplog_entries);
+    // // await IDBSideSync.applyOplogEntries(oplog_entries);
+    // expect(true).to.be.true;
+  });
 });
