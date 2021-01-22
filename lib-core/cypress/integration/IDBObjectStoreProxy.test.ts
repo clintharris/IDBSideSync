@@ -288,9 +288,17 @@ context('IDBObjectStoreProxy', () => {
   });
 });
 
-function transaction(storeNames: string[], callback: (...stores: IDBObjectStore[]) => void) {
-  return resolveOnTxComplete([IDBSideSync.OPLOG_STORE, ...storeNames], 'readwrite', (oplogStore, ...otherStores) => {
-    const proxiedStores = otherStores.map((store) => IDBSideSync.proxyStore(store));
-    callback(...proxiedStores, oplogStore);
-  });
+/**
+ * A convenience function that works the same as resolveOnTxComplete() but automatically includes the OpLog store
+ * in the transaction and ensures that it is passed as the first argument to the callback.
+ */
+function transaction(storeNames: string[], callback: (...stores: IDBObjectStore[]) => unknown): Promise<unknown> {
+  return resolveOnTxComplete(
+    [IDBSideSync.OPLOG_STORE, ...storeNames],
+    'readwrite',
+    async (oplogStore, ...otherStores) => {
+      const proxiedStores = otherStores.map((store) => IDBSideSync.proxyStore(store));
+      await callback(...proxiedStores, oplogStore);
+    }
+  );
 }

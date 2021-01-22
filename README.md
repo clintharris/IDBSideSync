@@ -2,7 +2,7 @@
 
 IDBSideSync is a JavaScript library that makes it possible to sync IndexedDB object stores using CRDT concepts. It works by intercepting the CRUD calls to IndexedDB objects and automatically logging all the operations "on the side" in a separate store--the operation log. The objects in the operation log can be uploaded somewhere, then downloaded and "replayed" somewhere else, in effect, synchronizing IndexedDB stores across devices without conflict.
 
-You can use this library to, for example, build a "[local first](https://www.inkandswitch.com/local-first.html)" [PWA](https://developer.mozilla.org/en-US/docs/Web/Apps/Progressive/) that also supports syncing across differenct devices without having to run a custom backend server. Once a user enables a remote storage service of their choosing via OAuth (e.g., Google Drive, Dropbox, iCloud), the application can use that to backup/sync data. The user owns their own data and decides where to store it, and the application developer never sees that data.
+You can use this library to, for example, build a "[local first](https://www.inkandswitch.com/local-first.html)" [PWA](https://developer.mozilla.org/en-US/docs/Web/Apps/Progressive/) that also supports syncing across different devices without having to run a custom backend server. Once a user enables a remote storage service of their choosing via OAuth (e.g., Google Drive, Dropbox, iCloud), the application can use that to backup/sync data. The user owns their own data and decides where to store it, and the application developer never sees that data.
 
 The idea for the library came from studying [James Long](https://twitter.com/jlongster)'s
 [crdt-example-app](https://github.com/jlongster/crdt-example-app), which offers a fantastic demonstration of how to use [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type), [hybrid logical clock](https://jaredforsyth.com/posts/hybrid-logical-clocks/), and merkle tree concepts to build a simple, ephemeral/in-memory data store (that relies on a custom server for synchronization across instances of the application). `IDBSideSync` is an attempt at applying those concepts (and in some cases, modified versions of James' code) to work with [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API), specifically. It also adds the ability for HTTP-accessible data storage APIs that users already have (or host themselves) as the means for syncing data instead of relying on a single, developer-owned, server application. `IDBSideSync` was deliberately forked from `crdt-example-app` to make that "heritage" literally part of this project's own history.
@@ -74,6 +74,14 @@ todoStore.get(todoId).onsuccess = (event) => {
   console.log(event.target.result); // { id: 123, title: "Buy cookies", priority: "high" }
 };
 ```
+
+### ⚠️ Make object you pass to put() as minimal as possible!
+
+If you pass an objet to `put()`, all of the properties in that object will become the _most recent_ properties/value for that object on all instances where the data is sync'ed. This is because OpLog entries are created for every property on the object you pass to `put(...)`.
+
+When possible, only pass in an object with props/values that you have actually changed. This helps ensure that your changes, and the changes that might be made somewhere else to other props on an object, are _merged_. (It also minimizes the number of OpLog entries that are created, reducing the amount of data that ends up being sync'ed.)
+
+In other words, if you pass in a "complete" version of an object with all the properties--including ones you didn't modify--you may end up overwriting changes that were made to a specific prop somewhere else.
 
 ## Deleting stuff
 

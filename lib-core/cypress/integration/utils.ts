@@ -45,25 +45,48 @@ export async function getDb(): Promise<IDBDatabase> {
 }
 
 /**
- * @return a Promise that resolves with when the transaction 'oncomplete' fires.
+ * A convenience function that makes it possible to write easier-to-read async code that awaits both the completion
+ * of async callback code that uses IndexedDB object stores, and the overall completion of the IndexedDB transaction.
+ * 
+ * @example
+ * ```
+ * let thing1;
+ * let thing2;
+ * 
+ * await resolveOnTxComplete(['myStore1', 'myStore2'], 'readwrite', async (myStore1, mystore2) => {
+ *    thing1 = await resolveRequest(myStore1.get(111));
+ *    thing2 = await resolveRequest(myStore2.get(222));
+ * }
+ * 
+ * // Do stuff with thing1 and thing2...
+ * ```
+ * 
+ * @return a Promise that resolves after both the passed-in 'callback' resolves AND the transaction 'oncomplete' fires.
  */
 export async function resolveOnTxComplete(
   storeNames: string[],
   mode: Exclude<IDBTransactionMode, 'versionchange'>,
-  callback: (...stores: IDBObjectStore[]) => void
-): Promise<void> {
+  callback: (...stores: IDBObjectStore[]) => Promise<void>
+): Promise<unknown> {
   const db = await getDb();
-  return new Promise((resolve, reject) => {
-    const txReq = db.transaction(storeNames, mode);
-    txReq.oncomplete = () => resolve();
-    txReq.onabort = () => reject();
+  const txReq = db.transaction(storeNames, mode);
+  const stores = storeNames.map((storeName) => txReq.objectStore(storeName));
+
+  const transactionCompletePromise = new Promise((resolve, reject) => {
+    txReq.oncomplete = () => {
+      resolve(txReq);
+    };
+    txReq.onabort = () => reject(new Error('Transaction aborted.'));
     txReq.onerror = (event) => {
       // @ts-ignore
       reject(event.target.error);
     };
-    const stores = storeNames.map((storeName) => txReq.objectStore(storeName));
-    callback(...stores);
   });
+
+  // Return a promise that won't resolve until both the callback() and transaction have resolved/completed. Note that
+  // callback() doesn't *have* to return a promise (e.g., it's possible that the callback won't be declared as "async";
+  // you can pass non-promises to Promise.all().
+  return Promise.all([callback(...stores), transactionCompletePromise]);
 }
 
 export function resolveRequest(request) {
