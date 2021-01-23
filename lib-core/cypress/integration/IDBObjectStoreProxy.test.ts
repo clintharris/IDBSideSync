@@ -1,4 +1,5 @@
 import * as IDBSideSync from '../../src/index';
+import { PutWithoutKeyError } from '../../src/index';
 import {
   clearDb,
   getDb,
@@ -131,6 +132,47 @@ context('IDBObjectStoreProxy', () => {
       // Verify that the entire transaction was rolled back and no objects were saved to any store
       expect(todoItems).to.have.length(0);
       expect(noKeyPathItems).to.have.length(0);
+      expect(oplogItems).to.have.length(0);
+    });
+
+    it(`throws, rolls back transaction if object lacks key props and no "key" arg is specified`, async () => {
+      const key = 1;
+      const initialTodo: TodoItem = { id: key, name: 'buy cookies', done: false };
+      const change: Partial<TodoItem> = { done: true };
+
+      let caughtPutError;
+      let caughtTransactionError;
+
+      try {
+        await transaction([TODO_ITEMS_STORE], (proxiedStore) => {
+          // Make a put() call that should succeed, but we expect to not persist because the deliberate error below
+          // should cause the transaction to be rolled back...
+          proxiedStore.add(initialTodo);
+
+          try {
+            // Deliberately call put() with an object that doesn't have all the props it needs, triggering an error...
+            proxiedStore.add(change);
+          } catch (error) {
+            caughtPutError = error;
+          }
+        });
+      } catch (error) {
+        caughtTransactionError = error;
+      }
+
+      expect(caughtTransactionError?.message).to.match(/transaction was aborted/);
+      assert(caughtPutError instanceof PutWithoutKeyError, `Should throw error of type PutWithoutKeyError`);
+
+      let todoItems;
+      let oplogItems;
+
+      await transaction([TODO_ITEMS_STORE], async (proxiedStore, oplogStore) => {
+        todoItems = await resolveRequest(proxiedStore.getAll());
+        oplogItems = await resolveRequest(oplogStore.getAll());
+      });
+
+      // Verify that the entire transaction was rolled back and no objects were saved to any store
+      expect(todoItems).to.have.length(0);
       expect(oplogItems).to.have.length(0);
     });
   });
@@ -283,6 +325,47 @@ context('IDBObjectStoreProxy', () => {
       // Verify that the entire transaction was rolled back and no objects were saved to any store
       expect(todoItems).to.have.length(0);
       expect(noKeyPathItems).to.have.length(0);
+      expect(oplogItems).to.have.length(0);
+    });
+
+    it(`throws, rolls back transaction if object lacks key props and no "key" arg is specified`, async () => {
+      const key = 1;
+      const initialTodo: TodoItem = { id: key, name: 'buy cookies', done: false };
+      const change: Partial<TodoItem> = { done: true };
+
+      let caughtPutError;
+      let caughtTransactionError;
+
+      try {
+        await transaction([TODO_ITEMS_STORE], (proxiedStore) => {
+          // Make a put() call that should succeed, but we expect to not persist because the deliberate error below
+          // should cause the transaction to be rolled back...
+          proxiedStore.put(initialTodo);
+
+          try {
+            // Deliberately call put() with an object that doesn't have all the props it needs, triggering an error...
+            proxiedStore.put(change);
+          } catch (error) {
+            caughtPutError = error;
+          }
+        });
+      } catch (error) {
+        caughtTransactionError = error;
+      }
+
+      expect(caughtTransactionError?.message).to.match(/transaction was aborted/);
+      assert(caughtPutError instanceof PutWithoutKeyError, `Should throw error of type PutWithoutKeyError`);
+
+      let todoItems;
+      let oplogItems;
+
+      await transaction([TODO_ITEMS_STORE], async (proxiedStore, oplogStore) => {
+        todoItems = await resolveRequest(proxiedStore.getAll());
+        oplogItems = await resolveRequest(oplogStore.getAll());
+      });
+
+      // Verify that the entire transaction was rolled back and no objects were saved to any store
+      expect(todoItems).to.have.length(0);
       expect(oplogItems).to.have.length(0);
     });
   });

@@ -60,7 +60,14 @@ export class IDBObjectStoreProxy {
       this.target.transaction.abort();
       throw new MissingKeyParamError('add');
     }
-    this.recordOperation(value, key);
+
+    try {
+      this.recordOperation(value, key);
+    } catch (error) {
+      this.target.transaction.abort();
+      throw error;
+    }
+
     return this.target.add(value, key);
   };
 
@@ -71,7 +78,13 @@ export class IDBObjectStoreProxy {
       this.target.transaction.abort();
       throw new MissingKeyParamError('put');
     }
-    this.recordOperation(value, key);
+
+    try {
+      this.recordOperation(value, key);
+    } catch (error) {
+      this.target.transaction.abort();
+      throw error;
+    }
 
     const existingObjKey = resolveKey(this.target, value, key);
     const existingObjReq = this.target.get(existingObjKey);
@@ -119,7 +132,7 @@ export class IDBObjectStoreProxy {
           const keyProp = keyPath[i];
           if (!(keyProp in tempValue) || tempValue[keyProp] === undefined) {
             if (!key) {
-              throw new PutWithoutKeyError(keyPath.join(', '));
+              throw new PutWithoutKeyError(this.target);
             } else if (!Array.isArray(key)) {
               throw new Error(`IDBSideSync: The "key" passed to "store.put(obj, key)" should be an array.`);
             }
@@ -128,7 +141,7 @@ export class IDBObjectStoreProxy {
         }
       } else if (!(keyPath in tempValue)) {
         if (!key) {
-          throw new PutWithoutKeyError(keyPath);
+          throw new PutWithoutKeyError(this.target);
         }
         tempValue[keyPath] = key;
       }
@@ -160,11 +173,13 @@ export class IDBObjectStoreProxy {
           tempPutCompleted = true;
         },
         onError: () => {
+          this.target.transaction.abort();
           throw new TempPutError(this.target.name, proxyPutReq.error);
         },
       });
       return proxyPutReq;
     } catch (error) {
+      this.target.transaction.abort();
       throw new TempPutError(this.target.name, error);
     }
   };
@@ -192,7 +207,19 @@ export class IDBObjectStoreProxy {
       }
     }
 
-    const objectKey = resolveKey(this.target, newValue, key);
+    let objectKey;
+    try {
+      objectKey = resolveKey(this.target, newValue, key);
+    } catch (error) {
+      if (error instanceof UnknownObjectKeyError) {
+        if (this.target.keyPath) {
+          throw new PutWithoutKeyError(this.target);
+        } else {
+          throw new MissingKeyParamError('add or put');
+        }
+      }
+      throw error;
+    }
 
     let entries: OpLogEntry[] = [];
 
@@ -257,17 +284,18 @@ export function resolveKey(store: IDBObjectStore, value: any, key?: IDBValidKey)
   }
 
   if (!resolvedKey || (Array.isArray(resolvedKey) && resolvedKey.length === 0)) {
-    throw new Error('IDBSideSync: failed to establish a key for retrieving object before updating it.');
+    throw new UnknownObjectKeyError();
   }
   return resolvedKey;
 }
 
 export class PutWithoutKeyError extends Error {
-  constructor(keyPropertyNames: string) {
+  constructor(store: IDBObjectStore) {
+    let formattedKeyNames = Array.isArray(store.keyPath) ? store.keyPath.join('", "') : `"${store.keyPath}"`;
     super(
-      `The object passed to store.put(...) is missing key properties with valid values, and no ` +
+      `IDBSideSync: The object passed to ${store.name}.put(...) lacks properties from ${store.name}.keyPath and no ` +
         `"key" arg was specified. Either call put() with a key arg (e.g., store.put(obj, key)) or make sure the ` +
-        `object has the following properties set to a VALID values (string, number, date, etc.): ${keyPropertyNames}`
+        `object has the following properties set to valid values: ${formattedKeyNames}`
     );
     Object.setPrototypeOf(this, PutWithoutKeyError.prototype); // https://preview.tinyurl.com/y4jhzjgs
   }
@@ -291,5 +319,12 @@ export class MissingKeyParamError extends Error {
   constructor(fcnName: string) {
     super(`IDBSideSync: You must specify the "key" param when calling ${fcnName}() on a store without a keyPath.`);
     Object.setPrototypeOf(this, MissingKeyParamError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+  }
+}
+
+export class UnknownObjectKeyError extends Error {
+  constructor() {
+    super(`IDBSideSync: failed to establish a key for retrieving object before updating it.'`);
+    Object.setPrototypeOf(this, UnknownObjectKeyError.prototype); // https://preview.tinyurl.com/y4jhzjgs
   }
 }
