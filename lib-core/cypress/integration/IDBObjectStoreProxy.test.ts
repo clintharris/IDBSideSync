@@ -21,6 +21,15 @@ context('IDBObjectStoreProxy', () => {
     await IDBSideSync.init(db);
   });
 
+  afterEach(async () => {
+    // By waiting a few milliseconds after each test, we ensure that all the IndexedDB operations finish before moving
+    // on to the next test and attempting to clear the database in beforeEach(). If we don't do this, then you will
+    // occasionally see the call to `clearDb()` in beforeEach() fail because a db connection is still open.
+    return new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+  });
+
   describe('store.add() proxy', () => {
     it(`works with single-value keyPath`, async () => {
       const key = 1;
