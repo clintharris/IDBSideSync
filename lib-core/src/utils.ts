@@ -42,6 +42,20 @@ export function isValidOplogEntry(thing: unknown): thing is OpLogEntry {
   return true;
 }
 
+export function isValidSideSyncSettings(thing: unknown): thing is Settings {
+  if (!thing) {
+    return false;
+  }
+
+  const candidate = thing as Settings;
+
+  if (typeof candidate.nodeId !== 'string') {
+    return false;
+  }
+
+  return true;
+}
+
 export const log = {
   warn(message: string, ...args: unknown[]): void {
     console.warn('[IDBSideSync:warn] ' + message, ...args);
@@ -57,3 +71,65 @@ export const log = {
     }
   },
 };
+
+/**
+ * Utility function for wrapping an IDB request with a promise so that the result/error can be `await`ed.
+ *
+ * @returns a promise that resolves (or throws) when the request's onsuccess/onerror callback runs.
+ */
+export function request(request: IDBRequest) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = (event) => {
+      // @ts-ignore
+      reject(event.target.error);
+    };
+  });
+}
+
+/**
+ * Utility function for initiating an IndexedDB transaction, getting a reference to an object store, and being able to
+ * `await` the completion of the transaction. Sort of a lightweight alternative to Jake Archibald's `idb` library.
+ * Initially copied from his `svgomg` app (https://preview.tinyurl.com/yaoxc9cl) but adds the ability await the
+ * completion of an async callback.
+ *
+ * @example
+ * ```
+ * let thing1;
+ * let thing2;
+ *
+ * await transaction(db, ['myStore1', 'myStore2'], 'readwrite', async (myStore1, mystore2) => {
+ *    thing1 = await resolveRequest(myStore1.get(111));
+ *    thing2 = await resolveRequest(myStore2.get(222));
+ * }
+ *
+ * // Do stuff with thing1 and thing2...
+ * ```
+ *
+ * @return a Promise that resolves after both the passed-in 'callback' resolves AND the transaction 'oncomplete' fires.
+ */
+export async function transaction(
+  db: IDBDatabase,
+  storeNames: string[],
+  mode: Exclude<IDBTransactionMode, 'versionchange'>,
+  callback: (...stores: IDBObjectStore[]) => Promise<void>
+): Promise<unknown> {
+  const txReq = db.transaction(storeNames, mode);
+  const stores = storeNames.map((storeName) => txReq.objectStore(storeName));
+
+  const transactionCompletePromise = new Promise((resolve, reject) => {
+    txReq.oncomplete = () => {
+      resolve(txReq);
+    };
+    txReq.onabort = () => reject(new Error('Transaction aborted.'));
+    txReq.onerror = (event) => {
+      // @ts-ignore
+      reject(event.target.error);
+    };
+  });
+
+  // Return a promise that won't resolve until both the callback() and transaction have resolved/completed. Note that
+  // callback() doesn't *have* to return a promise (e.g., it's possible that the callback won't be declared as "async";
+  // you can pass non-promises to Promise.all().
+  return Promise.all([callback(...stores), transactionCompletePromise]);
+}

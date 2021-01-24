@@ -1,6 +1,6 @@
 import * as IDBSideSync from '../../src/index';
 import * as oplog_entries from '../fixtures/oplog_entries.json';
-import { deleteDb, getDb, resolveRequest, TODOS_DB, waitForAFew } from './utils';
+import { deleteDb, getDb, TODOS_DB, waitForAFew } from './utils';
 
 context('IDBSideSync:db', () => {
   beforeEach(deleteDb);
@@ -32,8 +32,8 @@ context('IDBSideSync:db', () => {
 
     const txReq = db.transaction(IDBSideSync.STORE_NAME.META, 'readonly');
     const metaStore = txReq.objectStore(IDBSideSync.STORE_NAME.META);
-    const getReq = metaStore.get('settings');
-    const settings: Settings = (await resolveRequest(getReq)) as Settings;
+    const getReq = metaStore.get(IDBSideSync.CACHED_SETTINGS_OBJ_KEY);
+    const settings: Settings = (await IDBSideSync.utils.request(getReq)) as Settings;
     expect(settings).to.have.property('nodeId');
     expect(settings.nodeId).not.to.be.empty;
   });

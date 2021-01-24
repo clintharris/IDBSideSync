@@ -138,7 +138,7 @@ async function txWithStores(storeNames, mode, callback) {
 async function addTodo(todo) {
   let req;
   await txWithStore(TODO_ITEMS, 'readwrite', (store) => {
-    req = store.add({ id: IDBSideSync.uuid(), ...todo, [DELETED_PROP]: 0 });
+    req = store.add({ id: IDBSideSync.utils.uuid(), ...todo, [DELETED_PROP]: 0 });
   });
 
   return req.result;
@@ -231,7 +231,7 @@ async function getTodoTypes(includeDeleted = false) {
 }
 
 async function addTodoType({ name, color }) {
-  const typeId = IDBSideSync.uuid();
+  const typeId = IDBSideSync.utils.uuid();
   await txWithStores([TODO_TYPES, TODO_TYPE_SYMLINKS], 'readwrite', (typeStore, typeSymlinkStore) => {
     // Ensure that non-deleted objects have a "false" value for the "deleted" prop, and use numeric value instead of a
     // boolean (since you can't use bools as keys / index them).

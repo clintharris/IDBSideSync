@@ -1,6 +1,6 @@
 import { HLClock } from './HLClock';
 import { HLTime } from './HLTime';
-import { isValidOplogEntry, makeNodeId } from './utils';
+import { isValidOplogEntry, isValidSideSyncSettings, makeNodeId, request, transaction } from './utils';
 
 export enum STORE_NAME {
   META = 'IDBSideSync_MetaStore',
@@ -11,7 +11,7 @@ export const OPLOG_STORE = STORE_NAME.OPLOG;
 export const OPLOG_INDEX = 'Indexed by: store, objectKey, prop, hlcTime';
 export const CACHED_SETTINGS_OBJ_KEY = 'settings';
 
-let dbSingleton: IDBDatabase;
+let cachedDb: IDBDatabase;
 let cachedSettings: Settings;
 
 /**
@@ -71,7 +71,7 @@ export async function init(db: IDBDatabase): Promise<void> {
   if (!db || !db.createObjectStore) {
     throw new TypeError(`IDBSideSync.init(): 'db' arg must be an instance of IDBDatabase.`);
   }
-  dbSingleton = db;
+  cachedDb = db;
   const settings = await initSettings();
   HLClock.setTime(new HLTime(0, 0, settings.nodeId));
 }
@@ -84,22 +84,18 @@ export async function initSettings(): Promise<typeof cachedSettings> {
   if (cachedSettings) {
     return cachedSettings;
   }
-  if (process.env.NODE_ENV !== 'production') {
-    console.info('IDBSideSync: initSettings()');
-  }
 
-  await txWithStore([STORE_NAME.META], 'readwrite', (store) => {
-    const getReq = store.get(CACHED_SETTINGS_OBJ_KEY);
-    getReq.onsuccess = () => {
-      if (getReq.result) {
-        cachedSettings = getReq.result;
-      } else {
-        cachedSettings = {
-          nodeId: makeNodeId(),
-        };
-        store.put(cachedSettings, CACHED_SETTINGS_OBJ_KEY);
+  await transaction(cachedDb, [STORE_NAME.META], 'readwrite', async (store) => {
+    const result = await request(store.get(CACHED_SETTINGS_OBJ_KEY));
+    cachedSettings = isValidSideSyncSettings(result) ? result : { nodeId: makeNodeId() };
+    if (!result) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.info('IDBSideSync: no settings exist; created new settings.', cachedSettings);
       }
-    };
+      await request(store.put(cachedSettings, CACHED_SETTINGS_OBJ_KEY));
+    } else if (process.env.NODE_ENV !== 'production') {
+      console.info('IDBSideSync: found saved settings.', cachedSettings);
+    }
   });
 
   return cachedSettings;
@@ -128,7 +124,7 @@ export async function applyOplogEntries(candidates: OpLogEntry[]) {
  * transaction can be aborted and none of the operations will persist.
  */
 export async function applyOplogEntry(candidate: OpLogEntry) {
-  await txWithStore([STORE_NAME.OPLOG, candidate.store], 'readwrite', (oplogStore, targetStore) => {
+  await transaction(cachedDb, [STORE_NAME.OPLOG, candidate.store], 'readwrite', async (oplogStore, targetStore) => {
     const oplogIndex = oplogStore.index(OPLOG_INDEX);
 
     // Each key in the index (an array) must be "greater than or equal to" the following array (which, in effect, means
@@ -289,45 +285,6 @@ export async function applyOplogEntry(candidate: OpLogEntry) {
       console.error(errMsg, event);
       throw new Error(errMsg);
     };
-  });
-}
-
-/**
- * Utility function for initiating an IndexedDB transaction, getting a reference to an object store, and being able to
- * `await` the completion of the transaction (sort of a crude alternative to using alternative to Jake Archibald's `idb`
- * library, and mostly copied from his `svgomg` app here: https://preview.tinyurl.com/yaoxc9cl).
- *
- * @example
- * ```
- * let result;
- * await txWithStore('myStore', 'readwrite', (store) => {
- *   store.add(myThing).onsuccess = (event) => {
- *     result = event.target.result;
- *   };
- * });
- *
- * // Now do something else that may depend on the transaction having completed and 'myThing' having been added...
- * console.log('Your thing was added:', result);
- * ```
- *
- * @param storeName - name of object store to retrieve
- * @param mode - "readonly" | "readwrite"
- * @param callback - called immediately with object store
- *
- * @returns a Promise that will resolve once the transaction completes successfully.
- */
-async function txWithStore(
-  storeNames: string[],
-  mode: Exclude<IDBTransactionMode, 'versionchange'>,
-  callback: (...stores: IDBObjectStore[]) => void
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const txReq = dbSingleton.transaction(storeNames, mode);
-    txReq.oncomplete = () => resolve();
-    txReq.onabort = reject;
-    txReq.onerror = reject;
-    const stores = storeNames.map((storeName) => txReq.objectStore(storeName));
-    callback(...stores);
   });
 }
 
