@@ -17,6 +17,8 @@
     "node": ">=10"
   },
   "scripts": {
+    "build": "tsdx build --format umd --name IDBSideSync",
+    "build:watch": "tsdx watch --format umd --name IDBSideSync",
     "test": "npm run test:jest && npm run test:cy",
     "test:jest": "jest",
     "test:jest:watch": "jest --watch",
