@@ -1,9 +1,16 @@
 import * as IDBSideSync from '../../src/index';
 import * as oplog_entries from '../fixtures/oplog_entries.json';
-import { clearDb, getDb, resolveRequest, TODOS_DB } from './utils';
+import { deleteDb, getDb, resolveRequest, TODOS_DB, waitForAFew } from './utils';
 
 context('IDBSideSync:db', () => {
-  beforeEach(clearDb);
+  beforeEach(deleteDb);
+
+  afterEach(() => {
+    // By waiting a few milliseconds after each test, we ensure that all the IndexedDB operations finish before moving
+    // on to the next test and attempting to clear the database in beforeEach(). If we don't do this, then you will
+    // occasionally see the call to `clearDb()` in beforeEach() fail because a db connection is still open.
+    return waitForAFew();
+  });
 
   it(`onupgradeneeded() creates expected object stores and indices.`, async () => {
     const db = await getDb();

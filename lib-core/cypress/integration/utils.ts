@@ -7,7 +7,7 @@ export const SCOPED_SETTINGS_STORE = 'scoped-settings-store';
 export const GLOBAL_SETTINGS_STORE = 'global-settings-store';
 let dbPromise: Promise<IDBDatabase> | null = null;
 
-export async function clearDb() {
+export async function deleteDb() {
   // If a database connection is open, the attempt to delete it will fail. More specifically, the attempt to delete will
   // be "blocked" and the `onblocked` callback will run.
   if (dbPromise) {
@@ -134,4 +134,10 @@ export function assertEntries(entries: OpLogEntry[], { hasCount, where }: Verify
     filterEntries(entries, where).length === hasCount,
     `Exactly ${hasCount} OpLogEntry object(s) should exist where ${JSON.stringify(where)}`
   );
+}
+
+export function waitForAFew(msec = 50): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, msec);
+  });
 }
