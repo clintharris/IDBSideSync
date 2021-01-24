@@ -14,6 +14,11 @@ import {
 
 const defaultTodoItem: TodoItem = { id: 1, name: 'buy cookies', done: false };
 
+// A regex that can match the error message expected to be thrown when a transaction is aborted. Different browsers
+// have different versions of the error message; this one needs to match the messages used by Firefox and Chrome since
+// those are the two browsers Cypress supports (i.e., the only two browsers where these tests run).
+const CROSS_BROWSER_TX_ABORTED_MSG_SNIPPET = /was aborted/;
+
 context('IDBObjectStoreProxy', () => {
   beforeEach(async () => {
     await clearDb();
@@ -125,7 +130,7 @@ context('IDBObjectStoreProxy', () => {
           expect(() => noKeypathStore.add('foo')).to.throw('specify the "key" param');
         });
       } catch (error) {
-        expect(error.message).to.contain('transaction was aborted');
+        expect(error.message).to.match(CROSS_BROWSER_TX_ABORTED_MSG_SNIPPET);
       }
 
       let todoItems;
@@ -169,7 +174,7 @@ context('IDBObjectStoreProxy', () => {
         caughtTransactionError = error;
       }
 
-      expect(caughtTransactionError?.message).to.match(/transaction was aborted/);
+      expect(caughtTransactionError?.message).to.match(CROSS_BROWSER_TX_ABORTED_MSG_SNIPPET);
       assert(caughtPutError instanceof PutWithoutKeyError, `Should throw error of type PutWithoutKeyError`);
 
       let todoItems;
@@ -318,7 +323,7 @@ context('IDBObjectStoreProxy', () => {
           expect(() => noKeypathStore.put('foo')).to.throw('specify the "key" param');
         });
       } catch (error) {
-        expect(error.message).to.contain('transaction was aborted');
+        expect(error.message).to.match(CROSS_BROWSER_TX_ABORTED_MSG_SNIPPET);
       }
 
       let todoItems;
@@ -362,7 +367,7 @@ context('IDBObjectStoreProxy', () => {
         caughtTransactionError = error;
       }
 
-      expect(caughtTransactionError?.message).to.match(/transaction was aborted/);
+      expect(caughtTransactionError?.message).to.match(CROSS_BROWSER_TX_ABORTED_MSG_SNIPPET);
       assert(caughtPutError instanceof PutWithoutKeyError, `Should throw error of type PutWithoutKeyError`);
 
       let todoItems;
