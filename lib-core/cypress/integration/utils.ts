@@ -3,8 +3,8 @@ import * as deepEqual from 'deep-equal';
 
 export const TODOS_DB = 'todos-db';
 export const TODO_ITEMS_STORE = 'todos-store';
-export const ARR_KEYPATH_STORE = 'store_with_array_keypath';
-export const NO_KEYPATH_STORE = 'store_without_keypath';
+export const SCOPED_SETTINGS_STORE = 'scoped-settings-store';
+export const GLOBAL_SETTINGS_STORE = 'global-settings-store';
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 export async function clearDb() {
@@ -35,9 +35,10 @@ export async function getDb(): Promise<IDBDatabase> {
       openreq.onupgradeneeded = (event) => {
         const db = openreq.result;
         IDBSideSync.onupgradeneeded(event);
-        db.createObjectStore(TODO_ITEMS_STORE, { keyPath: 'id' });
-        db.createObjectStore(ARR_KEYPATH_STORE, { keyPath: ['scope', 'name'] });
-        db.createObjectStore(NO_KEYPATH_STORE);
+        db.createObjectStore(TODO_ITEMS_STORE, { keyPath: 'id' }); // For testing store with simple one-prop keyPath
+        // Tests store with compound keyPath
+        db.createObjectStore(SCOPED_SETTINGS_STORE, { keyPath: ['scope', 'name'] });
+        db.createObjectStore(GLOBAL_SETTINGS_STORE); // Tests store without any keyPath
       };
     });
   }
@@ -47,20 +48,20 @@ export async function getDb(): Promise<IDBDatabase> {
 /**
  * A convenience function that makes it possible to write easier-to-read async code that awaits both the completion
  * of async callback code that uses IndexedDB object stores, and the overall completion of the IndexedDB transaction.
- * 
+ *
  * @example
  * ```
  * let thing1;
  * let thing2;
- * 
+ *
  * await resolveOnTxComplete(['myStore1', 'myStore2'], 'readwrite', async (myStore1, mystore2) => {
  *    thing1 = await resolveRequest(myStore1.get(111));
  *    thing2 = await resolveRequest(myStore2.get(222));
  * }
- * 
+ *
  * // Do stuff with thing1 and thing2...
  * ```
- * 
+ *
  * @return a Promise that resolves after both the passed-in 'callback' resolves AND the transaction 'oncomplete' fires.
  */
 export async function resolveOnTxComplete(

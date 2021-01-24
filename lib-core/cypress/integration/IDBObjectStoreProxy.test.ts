@@ -5,10 +5,10 @@ import {
   getDb,
   resolveRequest,
   TODO_ITEMS_STORE,
-  ARR_KEYPATH_STORE,
+  SCOPED_SETTINGS_STORE,
   resolveOnTxComplete,
   throwOnReqError,
-  NO_KEYPATH_STORE,
+  GLOBAL_SETTINGS_STORE,
   assertEntries,
 } from './utils';
 
@@ -66,11 +66,11 @@ context('IDBObjectStoreProxy', () => {
       const key = ['foo', 'bar'];
       const expected: ScopedSetting = { scope: 'foo', name: 'bar', value: 'baz' };
 
-      await transaction([ARR_KEYPATH_STORE], (proxiedStore) => {
+      await transaction([SCOPED_SETTINGS_STORE], (proxiedStore) => {
         proxiedStore.add(expected);
       });
 
-      await transaction([ARR_KEYPATH_STORE], async (store, oplogStore) => {
+      await transaction([SCOPED_SETTINGS_STORE], async (store, oplogStore) => {
         foundSetting = await resolveRequest(store.get(key));
         foundEntries = await resolveRequest(oplogStore.getAll());
       });
@@ -81,7 +81,7 @@ context('IDBObjectStoreProxy', () => {
         expect(entry.objectKey).to.deep.equal([foundSetting.scope, foundSetting.name]);
       });
 
-      const sharedWhere = { store: ARR_KEYPATH_STORE, objectKey: key };
+      const sharedWhere = { store: SCOPED_SETTINGS_STORE, objectKey: key };
       assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'scope', value: expected.scope } });
       assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'name', value: expected.name } });
       assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'value', value: expected.value } });
@@ -93,11 +93,11 @@ context('IDBObjectStoreProxy', () => {
       let foundValue;
       let foundEntries;
 
-      await transaction([NO_KEYPATH_STORE], (proxiedStore) => {
+      await transaction([GLOBAL_SETTINGS_STORE], (proxiedStore) => {
         proxiedStore.add(initialValue, key);
       });
 
-      await transaction([NO_KEYPATH_STORE], async (store, oplogStore) => {
+      await transaction([GLOBAL_SETTINGS_STORE], async (store, oplogStore) => {
         foundValue = await resolveRequest(store.get(key));
         foundEntries = await resolveRequest(oplogStore.getAll());
       });
@@ -111,13 +111,13 @@ context('IDBObjectStoreProxy', () => {
         previousHlcTime = entry.hlcTime;
       });
 
-      const sharedWhere = { store: NO_KEYPATH_STORE, objectKey: key, prop: '' };
+      const sharedWhere = { store: GLOBAL_SETTINGS_STORE, objectKey: key, prop: '' };
       assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, value: initialValue } });
     });
 
     it(`aborts transaction w/error when called on store without keyPath if no "key" param specified`, async () => {
       try {
-        await transaction([TODO_ITEMS_STORE, NO_KEYPATH_STORE], (todoItemsStore, noKeypathStore) => {
+        await transaction([TODO_ITEMS_STORE, GLOBAL_SETTINGS_STORE], (todoItemsStore, noKeypathStore) => {
           // Do more than one thing in the transaction... First add a thing to a store.
           expect(() => todoItemsStore.add(defaultTodoItem)).to.not.throw();
 
@@ -132,7 +132,7 @@ context('IDBObjectStoreProxy', () => {
       let noKeyPathItems;
       let oplogItems;
 
-      await transaction([TODO_ITEMS_STORE, NO_KEYPATH_STORE], async (todoStore, noKeypathStore, oplogStore) => {
+      await transaction([TODO_ITEMS_STORE, GLOBAL_SETTINGS_STORE], async (todoStore, noKeypathStore, oplogStore) => {
         todoItems = await resolveRequest(todoStore.getAll());
         noKeyPathItems = await resolveRequest(noKeypathStore.getAll());
         oplogItems = await resolveRequest(oplogStore.getAll());
@@ -232,15 +232,15 @@ context('IDBObjectStoreProxy', () => {
       let foundSetting;
       let foundEntries;
 
-      await transaction([ARR_KEYPATH_STORE], (proxiedStore) => {
+      await transaction([SCOPED_SETTINGS_STORE], (proxiedStore) => {
         proxiedStore.put(initial);
       });
 
-      await transaction([ARR_KEYPATH_STORE], (proxiedStore) => {
+      await transaction([SCOPED_SETTINGS_STORE], (proxiedStore) => {
         proxiedStore.put(change, key);
       });
 
-      await transaction([ARR_KEYPATH_STORE], async (store, oplogStore) => {
+      await transaction([SCOPED_SETTINGS_STORE], async (store, oplogStore) => {
         foundSetting = await resolveRequest(store.get(key));
         foundEntries = await resolveRequest(oplogStore.getAll());
       });
@@ -251,7 +251,7 @@ context('IDBObjectStoreProxy', () => {
         expect(entry.objectKey).to.deep.equal([foundSetting.scope, foundSetting.name]);
       });
 
-      const sharedWhere = { store: ARR_KEYPATH_STORE, objectKey: key };
+      const sharedWhere = { store: SCOPED_SETTINGS_STORE, objectKey: key };
       assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'scope', value: initial.scope } });
       assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'name', value: initial.name } });
       assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'value', value: initial.value } });
@@ -266,12 +266,12 @@ context('IDBObjectStoreProxy', () => {
       let foundEntries;
 
       // Add the initial value to the store...
-      await transaction([NO_KEYPATH_STORE], (proxiedStore) => {
+      await transaction([GLOBAL_SETTINGS_STORE], (proxiedStore) => {
         proxiedStore.put(initialValue, key);
       });
 
       // Read the initial value back from the store...
-      await transaction([NO_KEYPATH_STORE], async (store) => {
+      await transaction([GLOBAL_SETTINGS_STORE], async (store) => {
         foundValue = await resolveRequest(store.get(key));
       });
 
@@ -279,12 +279,12 @@ context('IDBObjectStoreProxy', () => {
       expect(foundValue).to.deep.equal(initialValue);
 
       // Update the value...
-      await transaction([NO_KEYPATH_STORE], (proxiedStore) => {
+      await transaction([GLOBAL_SETTINGS_STORE], (proxiedStore) => {
         proxiedStore.put(finalValue, key);
       });
 
       // Read it back out...
-      await transaction([NO_KEYPATH_STORE], async (store) => {
+      await transaction([GLOBAL_SETTINGS_STORE], async (store) => {
         foundValue = await resolveRequest(store.get(key));
       });
 
@@ -292,7 +292,7 @@ context('IDBObjectStoreProxy', () => {
       expect(foundValue).to.deep.equal(finalValue);
 
       // Get all the oplog entries...
-      await transaction([NO_KEYPATH_STORE], async (store, oplogStore) => {
+      await transaction([GLOBAL_SETTINGS_STORE], async (store, oplogStore) => {
         foundEntries = await resolveRequest(oplogStore.getAll());
       });
 
@@ -303,14 +303,14 @@ context('IDBObjectStoreProxy', () => {
         previousHlcTime = entry.hlcTime;
       });
 
-      const sharedWhere = { store: NO_KEYPATH_STORE, objectKey: key, prop: '' };
+      const sharedWhere = { store: GLOBAL_SETTINGS_STORE, objectKey: key, prop: '' };
       assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, value: initialValue } });
       assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, value: finalValue } });
     });
 
     it(`aborts transaction w/error when called on store without keyPath if no "key" param specified`, async () => {
       try {
-        await transaction([TODO_ITEMS_STORE, NO_KEYPATH_STORE], (todoItemsStore, noKeypathStore) => {
+        await transaction([TODO_ITEMS_STORE, GLOBAL_SETTINGS_STORE], (todoItemsStore, noKeypathStore) => {
           // Do more than one thing in the transaction... First add a thing to a store.
           expect(() => todoItemsStore.add(defaultTodoItem)).to.not.throw();
 
@@ -325,7 +325,7 @@ context('IDBObjectStoreProxy', () => {
       let noKeyPathItems;
       let oplogItems;
 
-      await transaction([TODO_ITEMS_STORE, NO_KEYPATH_STORE], async (todoStore, noKeypathStore, oplogStore) => {
+      await transaction([TODO_ITEMS_STORE, GLOBAL_SETTINGS_STORE], async (todoStore, noKeypathStore, oplogStore) => {
         todoItems = await resolveRequest(todoStore.getAll());
         noKeyPathItems = await resolveRequest(noKeypathStore.getAll());
         oplogItems = await resolveRequest(oplogStore.getAll());
