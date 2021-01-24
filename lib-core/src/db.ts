@@ -9,6 +9,7 @@ export enum STORE_NAME {
 
 export const OPLOG_STORE = STORE_NAME.OPLOG;
 export const OPLOG_INDEX = 'Indexed by: store, objectKey, prop, hlcTime';
+export const CACHED_SETTINGS_OBJ_KEY = 'settings';
 
 let dbSingleton: IDBDatabase;
 let cachedSettings: Settings;
@@ -88,7 +89,7 @@ export async function initSettings(): Promise<typeof cachedSettings> {
   }
 
   await txWithStore([STORE_NAME.META], 'readwrite', (store) => {
-    const getReq = store.get('settings');
+    const getReq = store.get(CACHED_SETTINGS_OBJ_KEY);
     getReq.onsuccess = () => {
       if (getReq.result) {
         cachedSettings = getReq.result;
@@ -96,7 +97,7 @@ export async function initSettings(): Promise<typeof cachedSettings> {
         cachedSettings = {
           nodeId: makeNodeId(),
         };
-        store.put(cachedSettings, 'settings');
+        store.put(cachedSettings, CACHED_SETTINGS_OBJ_KEY);
       }
     };
   });
@@ -121,8 +122,10 @@ export async function applyOplogEntries(candidates: OpLogEntry[]) {
  * OpLogEntry store.
  *
  * Important: all of the IndexedDB operations performed by this function should happen in the same transaction. This
- * means that, once the transaction begins, no more promises should be used--all code should be written in a way that
- * ensures the transaction is not committed before all operations have finished.
+ * means that, once the transaction begins, no more promises should be used--all code should be written such that it
+ * can be run synchronously (with the exception of assigning 'onsuccess', etc. callbacks to IDB objects) to ensure that
+ * all operations are part of the same transaction. This also ensures that, if any one of those operations fails, the
+ * transaction can be aborted and none of the operations will persist.
  */
 export async function applyOplogEntry(candidate: OpLogEntry) {
   await txWithStore([STORE_NAME.OPLOG, candidate.store], 'readwrite', (oplogStore, targetStore) => {
