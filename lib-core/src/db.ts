@@ -80,25 +80,37 @@ export async function init(db: IDBDatabase): Promise<void> {
  * Ensures that IDBSideSync has required settings in its own IndexedDB store (e.g., a unique node ID that identifies
  * all the oplog entries created by the application instance).
  */
-export async function initSettings(): Promise<typeof cachedSettings> {
-  if (cachedSettings) {
-    return cachedSettings;
-  }
+export function initSettings(): Promise<typeof cachedSettings> {
+  return new Promise((resolve, reject) => {
+    const txReq = cachedDb.transaction([STORE_NAME.META], 'readwrite');
+    txReq.oncomplete = () => resolve(cachedSettings);
+    txReq.onabort = () => reject(new TransactionAbortedError(txReq.error));
+    txReq.onerror = () => reject(txReq.error);
 
-  await transaction(cachedDb, [STORE_NAME.META], 'readwrite', async (store) => {
-    const result = await request(store.get(CACHED_SETTINGS_OBJ_KEY));
-    cachedSettings = isValidSideSyncSettings(result) ? result : { nodeId: makeNodeId() };
-    if (!result) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.info('IDBSideSync: no settings exist; created new settings.', cachedSettings);
+    const metaStore = txReq.objectStore(STORE_NAME.META);
+    const getReq = metaStore.get(CACHED_SETTINGS_OBJ_KEY);
+
+    getReq.onsuccess = () => {
+      const result = getReq.result;
+      if (result && isValidSideSyncSettings(result)) {
+        if (process.env.NODE_ENV !== 'production') {
+          console.info('IDBSideSync: found saved settings.', result);
+        }
+        cachedSettings = result;
+      } else {
+        if (process.env.NODE_ENV !== 'production') {
+          console.info('IDBSideSync: no valid settings found in database; creating new settings...');
+        }
+        cachedSettings = { nodeId: makeNodeId() };
+        const putReq = metaStore.put(cachedSettings, CACHED_SETTINGS_OBJ_KEY);
+        putReq.onsuccess = () => {
+          if (process.env.NODE_ENV !== 'production') {
+            console.info('IDBSideSync: successfully persisted initial settings:', cachedSettings);
+          }
+        };
       }
-      await request(store.put(cachedSettings, CACHED_SETTINGS_OBJ_KEY));
-    } else if (process.env.NODE_ENV !== 'production') {
-      console.info('IDBSideSync: found saved settings.', cachedSettings);
-    }
+    };
   });
-
-  return cachedSettings;
 }
 
 export async function applyOplogEntries(candidates: OpLogEntry[]) {
