@@ -50,7 +50,7 @@ export function deleteDb(): Promise<void> {
     });
 }
 
-export async function getDb(): Promise<IDBDatabase> {
+export function getDb(): Promise<IDBDatabase> {
   if (!dbPromise) {
     dbPromise = new Promise((resolve, reject) => {
       const openreq = indexedDB.open(TODOS_DB, 1);
