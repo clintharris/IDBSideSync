@@ -9,6 +9,15 @@ context('IDBSideSync:db', () => {
     await IDBSideSync.init(db);
   });
 
+  afterEach(async () => {
+    // Always attempt to close the db after each test. If we don't do this and Cypress loads+runs another test file
+    // after this one, then this file would not have closed the database, and the next file has no way to access the
+    // same database reference--so it can't call db.close() either. That can happen because while the utils.ts caches
+    // the database reference using the `dbPromise` variable, Cypress running another test file means loading that
+    // utils.ts file a second time; a totally separate, second `dbPromise` variable is defined for that test file.
+    (await getDb())?.close();
+  });
+
   it(`onupgradeneeded() creates expected object stores and indices.`, async () => {
     const db = await getDb();
     expect(db.name).to.equal(TODOS_DB);

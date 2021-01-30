@@ -25,6 +25,15 @@ context('IDBObjectStoreProxy', () => {
     await IDBSideSync.init(db);
   });
 
+  afterEach(async () => {
+    // Always attempt to close the db after each test. If we don't do this and Cypress loads+runs another test file
+    // after this one, then this file would not have closed the database, and the next file has no way to access the
+    // same database reference--so it can't call db.close() either. That can happen because while the utils.ts caches
+    // the database reference using the `dbPromise` variable, Cypress running another test file means loading that
+    // utils.ts file a second time; a totally separate, second `dbPromise` variable is defined for that test file.
+    (await getDb())?.close();
+  });
+
   describe('store.add() proxy', () => {
     it(`works with single-value keyPath`, async () => {
       const key = 1;
@@ -386,7 +395,7 @@ function transaction(storeNames: string[], callback: (...stores: IDBObjectStore[
     async (oplogStore, ...otherStores) => {
       const proxiedStores = otherStores.map((store) => IDBSideSync.proxyStore(store));
       await callback(...proxiedStores, oplogStore);
-      console.log('2. resolveOnTxComplete() callback finished.')
+      console.log('2. resolveOnTxComplete() callback finished.');
     }
   );
 }
