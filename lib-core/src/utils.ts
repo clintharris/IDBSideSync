@@ -77,13 +77,10 @@ export const log = {
  *
  * @returns a promise that resolves (or throws) when the request's onsuccess/onerror callback runs.
  */
-export function request(request: IDBRequest) {
+export function request(request: IDBRequest): Promise<unknown> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
-    request.onerror = (event) => {
-      // @ts-ignore
-      reject(event.target.error);
-    };
+    request.onerror = () => reject(request.error);
   });
 }
 
