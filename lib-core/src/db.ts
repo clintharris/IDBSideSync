@@ -1,6 +1,8 @@
+/// <reference types="../../types/common" />
+
 import { HLClock } from './HLClock';
 import { HLTime } from './HLTime';
-import { isValidOplogEntry, isValidSideSyncSettings, makeNodeId, request, transaction } from './utils';
+import { isEventWithTargetError, isValidOplogEntry, isValidSideSyncSettings, makeNodeId } from './utils';
 
 export enum STORE_NAME {
   META = 'IDBSideSync_MetaStore',
@@ -135,8 +137,15 @@ export async function applyOplogEntries(candidates: OpLogEntry[]) {
  * all operations are part of the same transaction. This also ensures that, if any one of those operations fails, the
  * transaction can be aborted and none of the operations will persist.
  */
-export async function applyOplogEntry(candidate: OpLogEntry) {
-  await transaction(cachedDb, [STORE_NAME.OPLOG, candidate.store], 'readwrite', async (oplogStore, targetStore) => {
+export function applyOplogEntry(candidate: OpLogEntry) {
+  return new Promise((resolve, reject) => {
+    const txReq = cachedDb.transaction([STORE_NAME.OPLOG, candidate.store], 'readwrite');
+    txReq.oncomplete = () => resolve(txReq);
+    txReq.onabort = () => reject(new TransactionAbortedError(txReq.error));
+    txReq.onerror = () => reject(txReq.error);
+
+    const oplogStore = txReq.objectStore(STORE_NAME.OPLOG);
+    const targetStore = txReq.objectStore(candidate.store);
     const oplogIndex = oplogStore.index(OPLOG_INDEX);
 
     // Each key in the index (an array) must be "greater than or equal to" the following array (which, in effect, means
@@ -207,11 +216,14 @@ export async function applyOplogEntry(candidate: OpLogEntry) {
         // store/objectKey/prop values. That said, doing some extra checks can't hurt--especially while the code hasn't
         // been thoroughly tested in more than one "production" environment.
         if (existing.store !== candidate.store) {
-          throw new UnexpectedOpLogEntryError('store', candidate.store, existing.store);
+          txReq.abort();
+          reject(new UnexpectedOpLogEntryError('store', candidate.store, existing.store));
         } else if (expectedObjectKey !== actualObjectKey) {
-          throw new UnexpectedOpLogEntryError('objectKey', expectedObjectKey, actualObjectKey);
+          txReq.abort();
+          reject(new UnexpectedOpLogEntryError('objectKey', expectedObjectKey, actualObjectKey));
         } else if (existing.prop !== candidate.prop) {
-          throw new UnexpectedOpLogEntryError('prop', candidate.prop, cursor.value.prop);
+          txReq.abort();
+          reject(new UnexpectedOpLogEntryError('prop', candidate.prop, cursor.value.prop));
         }
 
         // If we found an existing entry whose HLC timestamp is more recent than the candidate's, then the candidate
@@ -243,7 +255,7 @@ export async function applyOplogEntry(candidate: OpLogEntry) {
       oplogPutReq.onerror = (event) => {
         const errMsg = `IDBSideSync: encountered an error while attempting to add an object to "${OPLOG_STORE}".`;
         console.error(errMsg, event);
-        throw new Error(errMsg);
+        reject(new Error(errMsg));
       };
 
       const existingObjReq = targetStore.get(candidate.objectKey);
@@ -260,17 +272,31 @@ export async function applyOplogEntry(candidate: OpLogEntry) {
             ? { ...existingValue, [candidate.prop]: candidate.value } // "Merge" the new object with the existing object
             : candidate.value;
 
-        // When calling the target object store's `put()` method it's important to NOT include a `key` param if that
-        // store has a `keyPath`. Doing this causes an error (e.g., "[...] object store uses in-line keys and the key
-        // parameter was provided" in Chrome).
-        const mergedPutReq = targetStore.keyPath
-          ? targetStore.put(newValue)
-          : targetStore.put(newValue, candidate.objectKey);
+        let mergedPutReq: IDBRequest;
+
+        try {
+          // When calling the target object store's `put()` method it's important to NOT include a `key` param if that
+          // store has a `keyPath`. Doing this causes an error (e.g., "[...] object store uses in-line keys and the key
+          // parameter was provided" in Chrome).
+          mergedPutReq = targetStore.keyPath
+            ? targetStore.put(newValue)
+            : targetStore.put(newValue, candidate.objectKey);
+        } catch (error) {
+          const putError = new ApplyPutError(targetStore.name, error);
+          console.error(putError, error);
+          txReq.abort();
+          // Note that by calling reject() here, we are preventing txReq.onabort or txReq.onerror from rejecting. We do
+          // this to ensure that the calling code gets our custom error that adds helpful context to the error we just
+          // caught, vs. only the DOMException that IDB creates (which is usually pretty geeric).
+          reject(putError);
+          return;
+        }
 
         mergedPutReq.onerror = (event) => {
-          const errMsg = `IDBSideSync: encountered error while attempting to update object in "${targetStore.name}".`;
-          console.error(errMsg, event);
-          throw new Error(errMsg);
+          const error = isEventWithTargetError(event) ? event.target.error : mergedPutReq.error;
+          const putError = new ApplyPutError(targetStore.name, error);
+          console.error(putError);
+          reject(putError);
         };
 
         if (process.env.NODE_ENV !== 'production') {
@@ -288,14 +314,14 @@ export async function applyOplogEntry(candidate: OpLogEntry) {
           `IDBSideSync: encountered an error while trying to retrieve an object from "${targetStore.name}"  as part ` +
           `of applying an oplog entry change to that object.`;
         console.error(errMsg, event);
-        throw new Error(errMsg);
+        reject(new Error(errMsg));
       };
     };
 
     idxCursorReq.onerror = (event) => {
       const errMsg = `IDBSideSync: encountered an error while trying to open a cursor on the "${OPLOG_INDEX}" index.`;
       console.error(errMsg, event);
-      throw new Error(errMsg);
+      reject(new Error(errMsg));
     };
   });
 }
@@ -307,5 +333,19 @@ class UnexpectedOpLogEntryError extends Error {
         `'${actual}'. (This might mean there's a problem with the IDBKeyRange used to iterate over ${OPLOG_INDEX}.)`
     );
     Object.setPrototypeOf(this, UnexpectedOpLogEntryError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+  }
+}
+
+export class ApplyPutError extends Error {
+  constructor(storeName: string, error: unknown) {
+    super(`IDBSideSync: error on attempt to apply oplog entry that adds/updates object in "${storeName}": ` + error);
+    Object.setPrototypeOf(this, ApplyPutError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+  }
+}
+
+export class TransactionAbortedError extends Error {
+  constructor(error: unknown) {
+    super(`IDBSideSync: transaction aborted with error: ` + error);
+    Object.setPrototypeOf(this, TransactionAbortedError.prototype); // https://preview.tinyurl.com/y4jhzjgs
   }
 }
