@@ -9,7 +9,6 @@ import {
   throwOnReqError,
   GLOBAL_SETTINGS_STORE,
   assertEntries,
-  waitForAFew,
 } from './utils';
 
 const defaultTodoItem: TodoItem = { id: 1, name: 'buy cookies', done: false };
@@ -24,13 +23,6 @@ context('IDBObjectStoreProxy', () => {
     await deleteDb();
     const db = await getDb();
     await IDBSideSync.init(db);
-  });
-
-  afterEach(() => {
-    // By waiting a few milliseconds after each test, we ensure that all the IndexedDB operations finish before moving
-    // on to the next test and attempting to clear the database in beforeEach(). If we don't do this, then you will
-    // occasionally see the call to `clearDb()` in beforeEach() fail because a db connection is still open.
-    return waitForAFew();
   });
 
   describe('store.add() proxy', () => {

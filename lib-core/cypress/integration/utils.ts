@@ -7,22 +7,47 @@ export const SCOPED_SETTINGS_STORE = 'scoped-settings-store';
 export const GLOBAL_SETTINGS_STORE = 'global-settings-store';
 let dbPromise: Promise<IDBDatabase> | null = null;
 
-export async function deleteDb() {
-  // If a database connection is open, the attempt to delete it will fail. More specifically, the attempt to delete will
-  // be "blocked" and the `onblocked` callback will run.
-  if (dbPromise) {
-    (await dbPromise).close();
-    dbPromise = null;
-  }
+/**
+ * A convenience function for deleting the IndexedDB database used by the tests.
+ *
+ * 👉 Note that this function is deliberately NOT written with async/await, such as follows:
+ * @example
+ * ```
+ * const db = await dbPromise; // Syntax sugar for Promise.resolve(dbPromise).then(...)
+ * db?.close();
+ * return new Promise((resolve, reject) => {
+ *   // promise "executor" function that resolves once the db is deleted
+ * })
+ * ```
+ * This is because the executor function passed to `new Promise(...)` runs immediately; in effect, the code for deleting
+ * the database would run _before_ the code for closing the database.
+ * 
+ * In reality that would still work because, according to the IndexedDB docs for `deleteDatabase()`, it will _wait_
+ * until all connections have closed (i.e., it will wait until the `db.close()` code eventually runs). But for the sake
+ * of clarity, we're structuring the code to so that things run in the correct order and there's less invisible magic.
+ */
+export function deleteDb(): Promise<void> {
+  // Use promise chain to ensure that db is closed before we attempt to delete it.
+  return Promise.resolve(dbPromise)
+    .then((db) => {
+      // "then()" will enqueue this callback function as a microtask
 
-  return new Promise((resolve, reject) => {
-    const delReq = indexedDB.deleteDatabase(TODOS_DB);
-    delReq.onsuccess = () => resolve(delReq.result);
-    delReq.onerror = () => reject(new Error(`Couldn't delete "${TODOS_DB}" DB between tests; 'onerror' event fired`));
-    delReq.onblocked = () => {
-      reject(new Error(`Couldn't delete "${TODOS_DB}" DB between tests; This could mean a db conn is still open.`));
-    };
-  });
+      // If the database is open an attempt to delete it will fail with a "blocked" error, so close it if necessary.
+      db?.close();
+      dbPromise = null;
+    })
+    .then(() => {
+      // this next "then(callback)" isn't enqueued as a microtask until the preceeding one finishes
+      return new Promise((resolve, reject) => {
+        const delReq = indexedDB.deleteDatabase(TODOS_DB);
+        delReq.onsuccess = () => resolve();
+        delReq.onerror = () =>
+          reject(new Error(`Couldn't delete "${TODOS_DB}" DB between tests; 'onerror' event fired`));
+        delReq.onblocked = () => {
+          reject(new Error(`Couldn't delete "${TODOS_DB}" DB between tests; This could mean a db conn is still open.`));
+        };
+      });
+    });
 }
 
 export async function getDb(): Promise<IDBDatabase> {

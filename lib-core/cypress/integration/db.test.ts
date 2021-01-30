@@ -1,15 +1,12 @@
 import * as IDBSideSync from '../../src/index';
 import * as oplog_entries from '../fixtures/oplog_entries.json';
-import { deleteDb, getDb, TODOS_DB, waitForAFew } from './utils';
+import { deleteDb, getDb, TODOS_DB, TODO_ITEMS_STORE } from './utils';
 
 context('IDBSideSync:db', () => {
-  beforeEach(deleteDb);
-
-  afterEach(() => {
-    // By waiting a few milliseconds after each test, we ensure that all the IndexedDB operations finish before moving
-    // on to the next test and attempting to clear the database in beforeEach(). If we don't do this, then you will
-    // occasionally see the call to `clearDb()` in beforeEach() fail because a db connection is still open.
-    return waitForAFew();
+  beforeEach(async () => {
+    await deleteDb();
+    const db = await getDb();
+    await IDBSideSync.init(db);
   });
 
   it(`onupgradeneeded() creates expected object stores and indices.`, async () => {
@@ -25,15 +22,15 @@ context('IDBSideSync:db', () => {
   });
 
   it('init() initializes all settings', async () => {
-    const db = await getDb();
-
-    await IDBSideSync.init(db);
     expect(IDBSideSync.HLClock.time).to.exist;
 
+    const db = await getDb();
     const txReq = db.transaction(IDBSideSync.STORE_NAME.META, 'readonly');
     const metaStore = txReq.objectStore(IDBSideSync.STORE_NAME.META);
     const getReq = metaStore.get(IDBSideSync.CACHED_SETTINGS_OBJ_KEY);
+
     const settings: Settings = (await IDBSideSync.utils.request(getReq)) as Settings;
+    expect(settings).to.exist;
     expect(settings).to.have.property('nodeId');
     expect(settings.nodeId).not.to.be.empty;
   });
