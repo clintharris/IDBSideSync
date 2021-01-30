@@ -4,7 +4,7 @@
   "compilerOptions": {
     "target": "es6",
     "module": "ES2015",
-    "lib": ["DOM", "es2015"],
+    "lib": ["DOM", "es2015", "es2018.promise"],
     "importHelpers": true,
     // output .d.ts declaration files for consumers
     "declaration": true,

@@ -1,7 +1,8 @@
 {
+  // "extends": "../tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
-    "lib": ["DOM", "es2015"],
+    "lib": ["DOM", "es2015", "es2018.promise"],
 
     // Note that we don't have to include "../node_modules/@types"; the compiler will automagically find it (see
     // https://www.typescriptlang.org/tsconfig#typeRoots). We do have to add the path to the directory that contains our
