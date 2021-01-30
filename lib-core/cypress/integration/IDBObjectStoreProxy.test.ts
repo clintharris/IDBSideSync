@@ -16,7 +16,7 @@ const defaultTodoItem: TodoItem = { id: 1, name: 'buy cookies', done: false };
 // A regex that can match the error message expected to be thrown when a transaction is aborted. Different browsers
 // have different versions of the error message; this one needs to match the messages used by Firefox and Chrome since
 // those are the two browsers Cypress supports (i.e., the only two browsers where these tests run).
-const CROSS_BROWSER_TX_ABORTED_MSG_SNIPPET = /was aborted/;
+const CROSS_BROWSER_TX_ABORTED_MSG_SNIPPET = /aborted/;
 
 context('IDBObjectStoreProxy', () => {
   beforeEach(async () => {
@@ -386,6 +386,7 @@ function transaction(storeNames: string[], callback: (...stores: IDBObjectStore[
     async (oplogStore, ...otherStores) => {
       const proxiedStores = otherStores.map((store) => IDBSideSync.proxyStore(store));
       await callback(...proxiedStores, oplogStore);
+      console.log('2. resolveOnTxComplete() callback finished.')
     }
   );
 }

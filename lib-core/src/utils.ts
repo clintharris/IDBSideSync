@@ -141,18 +141,13 @@ export async function transaction(
   const stores = storeNames.map((storeName) => txReq.objectStore(storeName));
 
   const transactionCompletePromise = new Promise((resolve, reject) => {
-    txReq.oncomplete = () => {
-      resolve(txReq);
-    };
+    txReq.oncomplete = () => resolve(txReq);
     txReq.onabort = () => reject(new Error('Transaction aborted.'));
-    txReq.onerror = (event) => {
-      // @ts-ignore
-      reject(event.target.error);
-    };
+    txReq.onerror = (event) => reject(isEventWithTargetError(event) ? event.target.error : txReq.error);
   });
 
   // Return a promise that won't resolve until both the callback() and transaction have resolved/completed. Note that
-  // callback() doesn't *have* to return a promise (e.g., it's possible that the callback won't be declared as "async";
-  // you can pass non-promises to Promise.all().
+  // callback() doesn't *have* to return a promise. Also note that Promise.all() will reject immediately upon any of the
+  // input promises rejecting.
   return Promise.all([callback(...stores), transactionCompletePromise]);
 }

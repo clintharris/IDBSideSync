@@ -21,7 +21,7 @@ let dbPromise: Promise<IDBDatabase> | null = null;
  * ```
  * This is because the executor function passed to `new Promise(...)` runs immediately; in effect, the code for deleting
  * the database would run _before_ the code for closing the database.
- * 
+ *
  * In reality that would still work because, according to the IndexedDB docs for `deleteDatabase()`, it will _wait_
  * until all connections have closed (i.e., it will wait until the `db.close()` code eventually runs). But for the sake
  * of clarity, we're structuring the code to so that things run in the correct order and there's less invisible magic.
@@ -30,8 +30,6 @@ export function deleteDb(): Promise<void> {
   // Use promise chain to ensure that db is closed before we attempt to delete it.
   return Promise.resolve(dbPromise)
     .then((db) => {
-      // "then()" will enqueue this callback function as a microtask
-
       // If the database is open an attempt to delete it will fail with a "blocked" error, so close it if necessary.
       db?.close();
       dbPromise = null;
