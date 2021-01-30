@@ -56,6 +56,32 @@ export function isValidSideSyncSettings(thing: unknown): thing is Settings {
   return true;
 }
 
+interface EventTargetWithError extends EventTarget {
+  error?: DOMException;
+}
+
+interface EventWithTargetError extends Event {
+  readonly target: EventTargetWithError;
+}
+
+export function isEventWithTargetError(thing: unknown): thing is EventWithTargetError {
+  if (!thing) {
+    return false;
+  }
+
+  const candidate = thing as EventWithTargetError;
+
+  if (candidate.target === null || candidate.target === undefined || typeof candidate.target !== 'object') {
+    return false;
+  }
+
+  if (!('error' in candidate.target)) {
+    return false;
+  }
+
+  return true;
+}
+
 export const log = {
   warn(message: string, ...args: unknown[]): void {
     console.warn('[IDBSideSync:warn] ' + message, ...args);
