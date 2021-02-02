@@ -16,6 +16,30 @@ export function makeNodeId(): string {
 }
 
 /**
+ * Utility / type guard function for verifying that something is both a valid IDB object key and a key supported by
+ * IDBSideSync.
+ */
+export function isSupportedObjectKey(thing: unknown): thing is IDBValidKey {
+  const thingType = typeof thing;
+
+  //TODO https://github.com/clintharris/IDBSideSync/issues/1
+  if (thingType === 'string' || thingType === 'number') {
+    return true;
+  }
+
+  if (Array.isArray(thing)) {
+    for (const item of thing) {
+      if (!isSupportedObjectKey(item)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Type guard for safely asserting that something is an OpLogEntry.
  */
 export function isValidOplogEntry(thing: unknown): thing is OpLogEntry {
@@ -36,6 +60,10 @@ export function isValidOplogEntry(thing: unknown): thing is OpLogEntry {
   }
 
   if (!HLTime.parse(candidate.hlcTime)) {
+    return false;
+  }
+
+  if (!isSupportedObjectKey(candidate.objectKey)) {
     return false;
   }
 
