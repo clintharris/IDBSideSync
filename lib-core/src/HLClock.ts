@@ -48,13 +48,11 @@ export class HLClock {
   }
 
   /**
-   * Use this function to advance the time of the passed-in hybrid logical clock (i.e., our local HLC clock singleton),
-   * and return the next time as a new HLC timestamp.
+   * Use this function to advance the HLC clock. Normally this results in the "physical" time part of the HLC being
+   * advanced to the current system date/time. If, in theory, it were to be called more than once in the same msec, then
+   * the "logical" part of the HLC (i.e., the counter) will be incremented.
    *
-   * For context, this function should normally be called in cases when we are creating a new oplog entry as part of
-   * local data changes (i.e., not in response to processing oplog entries received from another node). In other words,
-   * whenever the local node initiates a CRUD operation, we need to create a new journal entry, which means we need to
-   * create a new HLC timestamp for that entry--and that implies advancing the clock.
+   * @returns the current hybrid logical clock time after it was advanced.
    */
   public static tick(): HLTime {
     if (!HLClock._time) {
@@ -63,10 +61,9 @@ export class HLClock {
     const systemTime = Date.now();
     const ourHlcTime = HLClock._time.millis();
 
-    // If our local system clock has been ticking away correctly since the last time we updated our local HLC, then the
-    // local HLC singleton's physical time should either be in the past, or _maybe_ "now" if we happened to _just_
-    // update it. If the HLC's time is somehow ahead of ours, something could be off (e.g., perhaps our local system
-    // clock is messed up).
+    // If our local system clock has been ticking away correctly since the last time we updated the HLC, then the HLC's
+    // physical time should either be in the past, or _maybe_ "now" if we happened to _just_ update it. If the HLC's
+    // time is somehow ahead of ours, something could be off (e.g., perhaps our local system clock is messed up).
     if (ourHlcTime - systemTime > HLClock.maxDrift) {
       const hlcTimeStr = new Date(ourHlcTime).toISOString();
       const sysTimeStr = new Date(systemTime).toISOString();
@@ -76,7 +73,7 @@ export class HLClock {
       );
     }
 
-    // Calculate the next physical time, ensuring that it only moves forward.
+    // Calculate the next time, ensuring that it only moves forward.
     const nextTime = Math.max(ourHlcTime, systemTime);
 
     // Determine the next counter value. The counter only needs to increment if the physical time did NOT change;
@@ -94,31 +91,8 @@ export class HLClock {
   }
 
   /**
-   * Use this function to advance the time of the passed-in hybrid logical clock (i.e., our local HLC clock singleton),
-   * such that the next time occurs _after_ both that of the local HLC _and_ the passed-in HLC timestamp.
-   *
-   * This function will always update the passed-in HLC to the most recent physical time that we know about (i.e., given
-   * the local system time, local HLC, and passed-in timestamp, pick the the most recent physical time.
-   *
-   * If our local HLC or the passed-in timestamp has a physical time more recent than our local system (CPU) time, one
-   * of those physical times will be used as the new "current" HLC physical time. In that case, however, the physical
-   * time hasn't actually changed (e.g., if the passed-in timestamp has the most recent phys. time, we'll reuse it) so
-   * we would have to increment the HLC's counter to ensure that the logical time is moved forward.
-   *
-   * Normally, this function should only be called when we are receiving oplog entries from other nodes. In that
-   * scenario the goal is to ensure that the local node's HLC is always set to a time that occurs _after_ all HLC event
-   * times we have encountered. In other words, we are "syncing" our clock with the other nodes in the distributed
-   * system (since, conceptually, they are all trying to "share" an HLC and can advance that clock's time--for
-   * everyone--whenever a new event is recorded).
-   *
-   * So whenever we counter an event that was published from some other node, we need to update our own HLC so that it
-   * is set to a time that occurs _after_ all previous "clock ticks" made by other nodes. This way, if we create a new
-   * oplog entry recording some new data change, we can trust that the timestamp for that event occurs after all the
-   * other events we know about. In effect, this is how all the data change messages/events can be consistently ordered
-   * across the distributed system.
-   *
-   * Note: at some point this function's logic might be integrated into to the `send()` function (e.g., with the second
-   * "external timestamp" arg being optioanl).
+   * Use this function to advance the hybrid logical clock. The new HLC time will be greater than both the current HLC
+   * time _and_ the passed-in HLC time (i.e., this function will always advance the clock).
    */
   public static tickPast(theirTimestamp: HLTime): HLTime {
     if (!HLClock._time) {
@@ -168,10 +142,9 @@ export class HLClock {
       );
     }
 
-    // Given our HLC time, the incoming timestamp's time, and the current system time, pick whichever is most recent. If
-    // our local device time is older than either of these, it means we'll end up _re-using_ a physical time from either
-    // our HLC or the passed-in timestamp (i.e., we didn't move time forward)--so we'll have to make sure to increment
-    // the counter.
+    // Given our HLC time, the incoming HLC time, and the current system time, pick whichever is most recent. If our
+    // local device time is older than either of these, it means we'll end up _re-using_ either the incoming HLC time or
+    // our local HLC time. In that scenario, we're not actually advancing the time, so we must increment the counter.
     const nextTime = Math.max(Math.max(ourHlcTime, systemTime), theirHlcTime);
 
     // By default, assume the physical time is changing (i.e., that the counter will "reset" to zero).
