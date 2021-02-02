@@ -21,6 +21,15 @@ function getDB() {
       const openreq = indexedDB.open('todo-app', 1);
 
       openreq.onerror = () => {
+        let errorMsg = `🦖 Whoopsie, the app can't run if it can't open an IndexedDB database!`;
+        if (navigator.userAgent.includes('Firefox') && openreq.error.name === 'InvalidStateError') {
+          errorMsg += `\n\nFirefox disables IndexedDB in private browsing mode to help prevent user tracking `;
+          errorMsg += `(see https://bugzilla.mozilla.org/show_bug.cgi?id=781982 for more info).`;
+        } else {
+          errorMsg += `\n\n${openreq.error}\n\n`;
+          errorMsg += `You might want to verify that IndexedDB is enabled in your browser.`;
+        }
+        alert(errorMsg);
         reject(openreq.error);
       };
 
