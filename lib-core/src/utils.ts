@@ -49,13 +49,15 @@ export function isValidOplogEntry(thing: unknown): thing is OpLogEntry {
 
   const candidate = thing as OpLogEntry;
 
-  if (
-    typeof candidate.hlcTime !== 'string' ||
-    typeof candidate.store !== 'string' ||
-    typeof candidate.objectKey !== 'string' ||
-    (typeof candidate.prop !== 'string' && candidate.prop !== null) ||
-    !('value' in candidate)
-  ) {
+  if (typeof candidate.store !== 'string' || candidate.store.trim() === '') {
+    return false;
+  }
+
+  if (typeof candidate.prop !== 'string') {
+    return false;
+  }
+
+  if (!('value' in candidate)) {
     return false;
   }
 
