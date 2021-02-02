@@ -5,10 +5,10 @@ import {
   getDb,
   TODO_ITEMS_STORE,
   SCOPED_SETTINGS_STORE,
-  resolveOnTxComplete,
   throwOnReqError,
   GLOBAL_SETTINGS_STORE,
   assertEntries,
+  transaction,
 } from './utils';
 
 const defaultTodoItem: TodoItem = { id: 1, name: 'buy cookies', done: false };
@@ -383,19 +383,3 @@ context('IDBObjectStoreProxy', () => {
     });
   });
 });
-
-/**
- * A convenience function that works the same as resolveOnTxComplete() but automatically includes the OpLog store
- * in the transaction and ensures that it is passed as the first argument to the callback.
- */
-function transaction(storeNames: string[], callback: (...stores: IDBObjectStore[]) => unknown): Promise<unknown> {
-  return resolveOnTxComplete(
-    [IDBSideSync.OPLOG_STORE, ...storeNames],
-    'readwrite',
-    async (oplogStore, ...otherStores) => {
-      const proxiedStores = otherStores.map((store) => IDBSideSync.proxyStore(store));
-      await callback(...proxiedStores, oplogStore);
-      console.log('2. resolveOnTxComplete() callback finished.');
-    }
-  );
-}
