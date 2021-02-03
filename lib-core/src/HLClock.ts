@@ -107,13 +107,6 @@ export class HLClock {
     const theirHlcTime = theirTimestamp.millis();
     const theirCounter = theirTimestamp.counter();
 
-    // We only expect this function to be called with `theirTimestamp` values whose node ID is different from ours
-    // (i.e., as part of processing oplog entries from _other_ nodes). With that in mind, we expect all nodes to have
-    // unique IDs; encountering one that matches ours is an error.
-    if (theirTimestamp.node() === HLClock._time.node()) {
-      throw new HLClock.DuplicateNodeError(HLClock._time.node());
-    }
-
     // Check to see if the physical time associated with another node's event is more recent that our _current_ system
     // time. If we encounter this, it's a sign that a device's clock is probably set incorrectly (i.e., how could an
     // event that was already created have happened at a time "in the future"?).
@@ -205,13 +198,6 @@ export class HLClock {
     constructor() {
       super(`${libName}: timestamp counter overflow`);
       Object.setPrototypeOf(this, OverflowError.prototype); // https://preview.tinyurl.com/y4jhzjgs
-    }
-  };
-
-  static DuplicateNodeError = class DuplicateNodeError extends Error {
-    constructor(node: unknown) {
-      super(`${libName}: duplicate node identifier ` + JSON.stringify(node));
-      Object.setPrototypeOf(this, DuplicateNodeError.prototype); // https://preview.tinyurl.com/y4jhzjgs
     }
   };
 }

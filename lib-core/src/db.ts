@@ -135,6 +135,41 @@ export async function applyOplogEntries(candidates: OpLogEntry[]) {
  */
 export function applyOplogEntry(candidate: OpLogEntry) {
   return new Promise((resolve, reject) => {
+    if (!isValidOplogEntry(candidate)) {
+      reject(new InvalidOpLogEntryError(candidate));
+      return;
+    }
+    const candidateHLTime = HLTime.parse(candidate.hlcTime);
+
+    // A bit redundant since isValidOplogEntry() validates the hlcTime, but allows tsc to trust that HLTime.parse()
+    // didn't return null...
+    if (!candidateHLTime) {
+      reject(new InvalidOpLogEntryError(candidate, 'Invalid .hlcTime value.'));
+      return;
+    } else if (candidateHLTime.node() === HLClock.time().node()) {
+      log.warn(`Encountered oplog entry with the same node ID:`, candidateHLTime.node());
+    }
+
+    // Ensure that our HLClock is set to a time that occurs after any other time we encounter (even if we end up not
+    // applying the oplog entry).
+    const currentHLTime = HLClock.time().toString();
+    if (candidateHLTime.toString() > currentHLTime) {
+      debug &&
+        log.debug(`Encountered oplog entry with more recent HLTime; updating time.`, {
+          currentTime: currentHLTime,
+          oplogEntryTime: candidate.hlcTime,
+        });
+
+      // Note that this will throw if the oplog entry's time is too far in the future...
+      HLClock.tickPast(candidateHLTime);
+
+      debug &&
+        log.debug(`Updated local HL time.`, {
+          previousTime: currentHLTime,
+          currentTime: HLClock.time().toString(),
+        });
+    }
+
     const txReq = cachedDb.transaction([STORE_NAME.OPLOG, candidate.store], 'readwrite');
     txReq.oncomplete = () => resolve(txReq);
     txReq.onabort = () => reject(new TransactionAbortedError(txReq.error));
@@ -265,10 +300,45 @@ export function applyOplogEntry(candidate: OpLogEntry) {
           debug && log.debug(`no existing object found in "${candidate.store}" with key: ${candidate.objectKey}`);
         }
 
-        const newValue =
-          existingValue && typeof existingValue === 'object' && candidate.prop !== ''
-            ? { ...existingValue, [candidate.prop]: candidate.value } // "Merge" the new object with the existing object
-            : candidate.value;
+        let newValue: any;
+
+        if (candidate.prop === '') {
+          // If the OpLogEntry doesn't reference an _object property_, then we're not setting a prop on an object; the
+          // candidate value _is_ the new value.
+          newValue = candidate.value;
+        } else if (existingValue && typeof existingValue === 'object') {
+          // "Merge" the existing object with the new object.
+          newValue = { ...existingValue, [candidate.prop]: candidate.value };
+        } else {
+          // No existing value exists. Since the oplog entry specifies an _object property_ (i.e., candidate.prop), we
+          // know that the final value needs to be an object.
+          newValue = { [candidate.prop]: candidate.value };
+
+          // Ensure that the new value object we just created has the required keyPath props if necessary
+          if (targetStore.keyPath) {
+            if (Array.isArray(targetStore.keyPath)) {
+              if (Array.isArray(candidate.objectKey)) {
+                for (let i = 0; i < targetStore.keyPath.length; i++) {
+                  const keyProp = targetStore.keyPath[i];
+                  newValue[keyProp] = candidate.objectKey[i];
+                }
+              } else {
+                const putError = new ApplyPutError(
+                  targetStore.name,
+                  `The oplog entry's ".objectKey" property should be an array but isn't: ` + JSON.stringify(candidate)
+                );
+                log.error(putError);
+                txReq.abort();
+                // By calling reject() here we are preventing txReq.onabort or txReq.onerror from rejecting; this allows
+                // the calling code to catch our custom error vs. a generic the DOMException from IDB
+                reject(putError);
+                return;
+              }
+            } else {
+              newValue[targetStore.keyPath] = candidate.objectKey;
+            }
+          }
+        }
 
         let mergedPutReq: IDBRequest;
 
@@ -346,5 +416,12 @@ export class TransactionAbortedError extends Error {
   constructor(error: unknown) {
     super(`${libName}: transaction aborted with error: ` + error);
     Object.setPrototypeOf(this, TransactionAbortedError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+  }
+}
+
+export class InvalidOpLogEntryError extends Error {
+  constructor(object: unknown, message = '') {
+    super(`${libName}: object is not a valid OpLogEntry: ` + JSON.stringify(object) + '. ' + message);
+    Object.setPrototypeOf(this, InvalidOpLogEntryError.prototype); // https://preview.tinyurl.com/y4jhzjgs
   }
 }

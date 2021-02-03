@@ -171,24 +171,6 @@ describe('HLClock', () => {
       expect(time.millis()).toEqual(systemTime);
       expect(time.counter()).toEqual(theirInitialCounter + 1);
     });
-
-    it('throws an error if the local clock and passed-in timestamp are associated with the same node', () => {
-      // Create a local clock associated with a node ID
-      HLClock.setTime(new HLTime(Date.parse('2020-01-01T00:00:02Z'), 123, 'node1'));
-
-      // Create a timestamp associated with the _same_ node ID
-      const timestamp = new HLTime(Date.now(), 1, HLClock.time().node());
-
-      // Verify that recv() throws an error when we ask it to advance the clock time using this timestamp. This is
-      // desired behavior because if the timestamp has the same node ID, that implies we have _already_ processed
-      // that event (and already adjusted our HLC time for that event).
-      expect(() => {
-        // The attempt to advance the passed-in clock's time should fail due to its time occuring _after_ the local
-        // system's current time by a substantial amount (i.e., this simulates an oplog message from a system whose
-        // clock is really out of whack--or possibly the local system's clock being really off).
-        HLClock.tickPast(timestamp);
-      }).toThrow(HLClock.DuplicateNodeError);
-    });
   });
 });
 
