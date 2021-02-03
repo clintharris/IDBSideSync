@@ -2,7 +2,15 @@
 
 import { HLClock } from './HLClock';
 import { HLTime } from './HLTime';
-import { isEventWithTargetError, isValidOplogEntry, isValidSideSyncSettings, makeNodeId } from './utils';
+import {
+  debug,
+  isEventWithTargetError,
+  isValidOplogEntry,
+  isValidSideSyncSettings,
+  libName,
+  log,
+  makeNodeId,
+} from './utils';
 
 export enum STORE_NAME {
   META = 'IDBSideSync_MetaStore',
@@ -21,9 +29,8 @@ let cachedSettings: Settings;
  * every time an app starts up--only when the database version changes).
  */
 export function onupgradeneeded(event: IDBVersionChangeEvent): void {
-  if (process.env.NODE_ENV !== 'production') {
-    console.info('IDBSideSync: onupgradeneeded()');
-  }
+  debug && log.debug('onupgradeneeded()');
+
   const db = (event.target as IDBOpenDBRequest).result;
 
   // Create an object store where we can put IDBSideSync settings that won't be sync'ed. Note the lack of a keypath.
@@ -67,11 +74,9 @@ export function onupgradeneeded(event: IDBVersionChangeEvent): void {
  * Allow IDBSideSync to initialize itself with the provided IndexedDB database.
  */
 export async function init(db: IDBDatabase): Promise<void> {
-  if (process.env.NODE_ENV !== 'production') {
-    console.info('IDBSideSync: init()');
-  }
+  debug && log.debug('init()');
   if (!db || !db.createObjectStore) {
-    throw new TypeError(`IDBSideSync.init(): 'db' arg must be an instance of IDBDatabase.`);
+    throw new TypeError(`${libName}.init(): 'db' arg must be an instance of IDBDatabase.`);
   }
   cachedDb = db;
   const settings = await initSettings();
@@ -95,20 +100,14 @@ export function initSettings(): Promise<typeof cachedSettings> {
     getReq.onsuccess = () => {
       const result = getReq.result;
       if (result && isValidSideSyncSettings(result)) {
-        if (process.env.NODE_ENV !== 'production') {
-          console.info('IDBSideSync: found saved settings.', result);
-        }
+        debug && log.debug('found saved settings.', result);
         cachedSettings = result;
       } else {
-        if (process.env.NODE_ENV !== 'production') {
-          console.info('IDBSideSync: no valid settings found in database; creating new settings...');
-        }
+        debug && log.debug('no valid settings found in database; creating new settings...');
         cachedSettings = { nodeId: makeNodeId() };
         const putReq = metaStore.put(cachedSettings, CACHED_SETTINGS_OBJ_KEY);
         putReq.onsuccess = () => {
-          if (process.env.NODE_ENV !== 'production') {
-            console.info('IDBSideSync: successfully persisted initial settings:', cachedSettings);
-          }
+          debug && log.debug('successfully persisted initial settings:', cachedSettings);
         };
       }
     };
@@ -198,9 +197,9 @@ export function applyOplogEntry(candidate: OpLogEntry) {
       // The purpose of this block is to see if an existing oplog entry exists that is "newer" than the candidate entry.
       if (cursor && cursor.value) {
         if (!isValidOplogEntry(cursor.value)) {
-          console.warn(
-            `IDBSideSync: encountered an invalid oplog entry in its "${OPLOG_STORE}" store. This might mean that an` +
-              `oplog entry was manually edited or created in an invalid way somewhere. The entry will be ignored.`,
+          log.warn(
+            `encountered an invalid oplog entry in its "${OPLOG_STORE}" store. This might mean that an oplog entry` +
+              `was manually edited or created in an invalid way somewhere. The entry will be ignored.`,
             JSON.stringify(cursor.value)
           );
           cursor.continue();
@@ -217,6 +216,8 @@ export function applyOplogEntry(candidate: OpLogEntry) {
         // been thoroughly tested in more than one "production" environment.
         if (existing.store !== candidate.store) {
           txReq.abort();
+          // By calling reject() here we are preventing txReq.onabort or txReq.onerror from rejecting; this allows
+          // the calling code to catch our custom error vs. a generic the DOMException from IDB
           reject(new UnexpectedOpLogEntryError('store', candidate.store, existing.store));
         } else if (expectedObjectKey !== actualObjectKey) {
           txReq.abort();
@@ -229,17 +230,13 @@ export function applyOplogEntry(candidate: OpLogEntry) {
         // If we found an existing entry whose HLC timestamp is more recent than the candidate's, then the candidate
         // entry is obsolete and we'll ignore it.
         if (candidate.hlcTime < existing.hlcTime) {
-          if (process.env.NODE_ENV !== 'production') {
-            console.log(`IDBSideSync: WON'T apply oplog entry; found existing that's newer:`, { candidate, existing });
-          }
+          debug && log.debug(`WON'T apply oplog entry; found existing that's newer:`, { candidate, existing });
           return;
         }
       }
 
       // If the thread of execution makes it this far, it means we didn't find an existing entry with a newer timestamp.
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`IDBSideSync: applying oplog entry; didn't find a newer one with matching store/key/prop.`);
-      }
+      log.debug(`applying oplog entry; didn't find a newer one with matching store/key/prop.`);
 
       // Add the entry to the oplog store. Note that, in theory, it may already exist there (e.g., it's possible for a
       // sync to happen in which known oplog entries received again). Instead of attempting to check first, we'll just
@@ -248,13 +245,15 @@ export function applyOplogEntry(candidate: OpLogEntry) {
 
       if (process.env.NODE_ENV !== 'production') {
         oplogPutReq.onsuccess = () => {
-          console.info(`IDBSideSync: successfully added oplog entry to "${OPLOG_STORE}".`, candidate);
+          debug && log.debug(`successfully added oplog entry to "${OPLOG_STORE}".`, candidate);
         };
       }
 
       oplogPutReq.onerror = (event) => {
-        const errMsg = `IDBSideSync: encountered an error while attempting to add an object to "${OPLOG_STORE}".`;
-        console.error(errMsg, event);
+        const errMsg = `${libName} encountered an error while attempting to add an object to "${OPLOG_STORE}".`;
+        log.error(errMsg, event);
+        // By calling reject() here we are preventing txReq.onabort or txReq.onerror from rejecting; this allows
+        // the calling code to catch our custom error vs. a generic the DOMException from IDB
         reject(new Error(errMsg));
       };
 
@@ -263,8 +262,10 @@ export function applyOplogEntry(candidate: OpLogEntry) {
       existingObjReq.onsuccess = () => {
         const existingValue = existingObjReq.result;
 
-        if (process.env.NODE_ENV !== 'production') {
-          console.info(`IDBSideSync: retrieved existing object from "${candidate.store}".`, existingValue);
+        if (existingValue) {
+          debug && log.debug(`retrieved existing object from "${candidate.store}":`, existingValue);
+        } else {
+          debug && log.debug(`no existing object found in "${candidate.store}" with key: ${candidate.objectKey}`);
         }
 
         const newValue =
@@ -283,11 +284,10 @@ export function applyOplogEntry(candidate: OpLogEntry) {
             : targetStore.put(newValue, candidate.objectKey);
         } catch (error) {
           const putError = new ApplyPutError(targetStore.name, error);
-          console.error(putError, error);
+          log.error(putError, error);
           txReq.abort();
-          // Note that by calling reject() here, we are preventing txReq.onabort or txReq.onerror from rejecting. We do
-          // this to ensure that the calling code gets our custom error that adds helpful context to the error we just
-          // caught, vs. only the DOMException that IDB creates (which is usually pretty geeric).
+          // By calling reject() here we are preventing txReq.onabort or txReq.onerror from rejecting; this allows
+          // the calling code to catch our custom error vs. a generic the DOMException from IDB
           reject(putError);
           return;
         }
@@ -295,13 +295,15 @@ export function applyOplogEntry(candidate: OpLogEntry) {
         mergedPutReq.onerror = (event) => {
           const error = isEventWithTargetError(event) ? event.target.error : mergedPutReq.error;
           const putError = new ApplyPutError(targetStore.name, error);
-          console.error(putError);
+          log.error(putError);
+          // By calling reject() here we are preventing txReq.onabort or txReq.onerror from rejecting; this allows
+          // the calling code to catch our custom error vs. a generic the DOMException from IDB
           reject(putError);
         };
 
-        if (process.env.NODE_ENV !== 'production') {
+        if (debug) {
           mergedPutReq.onsuccess = () => {
-            console.log(`IDBSideSync: successfully applied oplog entry to ${targetStore.name}.`, {
+            log.debug(`successfully applied oplog entry to ${targetStore.name}.`, {
               existingValue,
               newValue,
             });
@@ -311,16 +313,16 @@ export function applyOplogEntry(candidate: OpLogEntry) {
 
       existingObjReq.onerror = (event) => {
         const errMsg =
-          `IDBSideSync: encountered an error while trying to retrieve an object from "${targetStore.name}"  as part ` +
+          `${libName} encountered an error while trying to retrieve an object from "${targetStore.name}"  as part ` +
           `of applying an oplog entry change to that object.`;
-        console.error(errMsg, event);
+        log.error(errMsg, event);
         reject(new Error(errMsg));
       };
     };
 
     idxCursorReq.onerror = (event) => {
-      const errMsg = `IDBSideSync: encountered an error while trying to open a cursor on the "${OPLOG_INDEX}" index.`;
-      console.error(errMsg, event);
+      const errMsg = `${libName} encountered an error while trying to open a cursor on the "${OPLOG_INDEX}" index.`;
+      log.error(errMsg, event);
       reject(new Error(errMsg));
     };
   });
@@ -329,7 +331,7 @@ export function applyOplogEntry(candidate: OpLogEntry) {
 class UnexpectedOpLogEntryError extends Error {
   constructor(noun: keyof OpLogEntry, expected: string, actual: string) {
     super(
-      `IDBSideSync: invalid "most recent oplog entry"; expected '${noun}' value of '${expected}' but got ` +
+      `${libName}: invalid "most recent oplog entry"; expected '${noun}' value of '${expected}' but got ` +
         `'${actual}'. (This might mean there's a problem with the IDBKeyRange used to iterate over ${OPLOG_INDEX}.)`
     );
     Object.setPrototypeOf(this, UnexpectedOpLogEntryError.prototype); // https://preview.tinyurl.com/y4jhzjgs
@@ -338,14 +340,14 @@ class UnexpectedOpLogEntryError extends Error {
 
 export class ApplyPutError extends Error {
   constructor(storeName: string, error: unknown) {
-    super(`IDBSideSync: error on attempt to apply oplog entry that adds/updates object in "${storeName}": ` + error);
+    super(`${libName}: error on attempt to apply oplog entry that adds/updates object in "${storeName}": ` + error);
     Object.setPrototypeOf(this, ApplyPutError.prototype); // https://preview.tinyurl.com/y4jhzjgs
   }
 }
 
 export class TransactionAbortedError extends Error {
   constructor(error: unknown) {
-    super(`IDBSideSync: transaction aborted with error: ` + error);
+    super(`${libName}: transaction aborted with error: ` + error);
     Object.setPrototypeOf(this, TransactionAbortedError.prototype); // https://preview.tinyurl.com/y4jhzjgs
   }
 }

@@ -1,11 +1,12 @@
 import { STORE_NAME } from './db';
 import { HLClock } from './HLClock';
 import { proxyPutRequest } from './IDBUpsertRequestProxy';
+import { libName } from './utils';
 
 export function proxyStore(target: IDBObjectStore): IDBObjectStore {
   const storeNames = target.transaction.objectStoreNames;
   if (storeNames && !storeNames.contains(STORE_NAME.OPLOG)) {
-    throw new Error(`Transaction was opened without including IDBSideSync.OPLOG_STORE as one of the stores.`);
+    throw new Error(`Transaction was opened without including ${libName}.OPLOG_STORE as one of the stores.`);
   }
   const proxy = new IDBObjectStoreProxy(target);
   return new Proxy(target, proxy);
@@ -20,12 +21,12 @@ export class IDBObjectStoreProxy {
       // keys. In that scenario, there's no safe way to share and apply oplog entries (i.e., CRDT messages) since they
       // might describe mutations that _appear_ to be relevant to the same object but actually could refer to different
       // objects that have the same key/ID.
-      throw new Error(`IDBSideSync can't work with object stores whose .autoIncrement property is set to true.`);
+      throw new Error(`${libName} can't work with object stores whose .autoIncrement property is set to true.`);
     } else if (target.keyPath) {
       for (const keyPath of Array.isArray(target.keyPath) ? target.keyPath : [target.keyPath]) {
         if (keyPath.includes('.')) {
           throw new Error(
-            `IDBSideSync doesn't support stores with a nested keyPath values (i.e., keyPath with dot-notation strings)`
+            `${libName} doesn't support stores with a nested keyPath values (i.e., keyPath with dot-notation strings)`
           );
         }
       }
@@ -113,7 +114,7 @@ export class IDBObjectStoreProxy {
           // This is sort of a crude way of trying to verify that `mergedPutReq` finishes last (i.e., the "merged" value
           // of the object is what ends up being persisted when the transaction is complete).
           if (!tempPutCompleted) {
-            throw new Error(`IDBSideSync: "final" put() with merged value ran BEFORE the "temp" put.`);
+            throw new Error(`${libName}: "final" put() with merged value ran BEFORE the "temp" put.`);
           }
         };
       } catch (error) {
@@ -134,7 +135,7 @@ export class IDBObjectStoreProxy {
             if (!key) {
               throw new PutWithoutKeyError(this.target);
             } else if (!Array.isArray(key)) {
-              throw new Error(`IDBSideSync: The "key" passed to "store.put(obj, key)" should be an array.`);
+              throw new Error(`${libName}: The key passed to "${this.target.name}.put(obj, key)" should be an array.`);
             }
             tempValue[keyProp] = key[i];
           }
@@ -257,7 +258,7 @@ export class IDBObjectStoreProxy {
       oplogStore = this.target.transaction.objectStore(STORE_NAME.OPLOG);
     } catch (error) {
       const errorMsg =
-        `IDBSideSync: Error ocurred when attempting to get reference to the "${STORE_NAME.OPLOG}" store (this may ` +
+        `${libName}: Error ocurred when attempting to get reference to the "${STORE_NAME.OPLOG}" store (this may ` +
         `have happened because "${STORE_NAME.OPLOG}" wasn't included when the transaction was created): ` +
         error.toString();
       throw new Error(errorMsg);
@@ -293,7 +294,7 @@ export class PutWithoutKeyError extends Error {
   constructor(store: IDBObjectStore) {
     let formattedKeyNames = Array.isArray(store.keyPath) ? store.keyPath.join('", "') : `"${store.keyPath}"`;
     super(
-      `IDBSideSync: The object passed to ${store.name}.put(...) lacks properties from ${store.name}.keyPath and no ` +
+      `${libName}: The object passed to ${store.name}.put(...) lacks properties from ${store.name}.keyPath and no ` +
         `"key" arg was specified. Either call put() with a key arg (e.g., store.put(obj, key)) or make sure the ` +
         `object has the following properties set to valid values: ${formattedKeyNames}`
     );
@@ -303,28 +304,28 @@ export class PutWithoutKeyError extends Error {
 
 export class TempPutError extends Error {
   constructor(storeName: string, error: unknown) {
-    super(`IDBSideSync: error while attempting to "temporarily" put() something into "${storeName}": ` + error);
+    super(`${libName}: error while attempting to "temporarily" put() something into "${storeName}": ` + error);
     Object.setPrototypeOf(this, TempPutError.prototype); // https://preview.tinyurl.com/y4jhzjgs
   }
 }
 
 export class FinalPutError extends Error {
   constructor(storeName: string, error: unknown) {
-    super(`IDBSideSync: error while attempting to put() final/merged version of object into "${storeName}": ` + error);
+    super(`${libName}: error while attempting to put() final/merged version of object into "${storeName}": ` + error);
     Object.setPrototypeOf(this, FinalPutError.prototype); // https://preview.tinyurl.com/y4jhzjgs
   }
 }
 
 export class MissingKeyParamError extends Error {
   constructor(fcnName: string) {
-    super(`IDBSideSync: You must specify the "key" param when calling ${fcnName}() on a store without a keyPath.`);
+    super(`${libName}: You must specify the "key" param when calling ${fcnName}() on a store without a keyPath.`);
     Object.setPrototypeOf(this, MissingKeyParamError.prototype); // https://preview.tinyurl.com/y4jhzjgs
   }
 }
 
 export class UnknownObjectKeyError extends Error {
   constructor() {
-    super(`IDBSideSync: failed to establish a key for retrieving object before updating it.'`);
+    super(`${libName}: failed to establish a key for retrieving object before updating it.'`);
     Object.setPrototypeOf(this, UnknownObjectKeyError.prototype); // https://preview.tinyurl.com/y4jhzjgs
   }
 }

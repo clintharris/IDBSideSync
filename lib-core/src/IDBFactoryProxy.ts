@@ -1,3 +1,5 @@
+import { debug, log } from './utils';
+
 /**
  * Instances of this class can intercept and modify calls to the IndexedDB API if used as a Proxy handler, wrapping
  * window.indexedDB.
@@ -14,7 +16,7 @@ export class IDBFactoryProxy {
   }
 
   open(name: string, version?: number): IDBOpenDBRequest {
-    console.log('🥸 IDBFactoryProxy.open()');
+    debug && log.debug('🥸 IDBFactoryProxy.open()');
     const request = indexedDB.open(name, version);
 
     // The code calling our proxy will likely attempt to assign a function to `request.onupgradeneeded`. For example:
@@ -56,7 +58,7 @@ class IDBOpenDBRequestProxy {
   }
 
   upgradeOpLoggyDb(event: IDBVersionChangeEvent, theirOnUpgradeHandler: unknown) {
-    console.log('🥸 🎉  IDBOpenDBRequestProxy.oploggyOnUpgradeNeeded()');
+    debug && log.debug('🥸 🎉  IDBOpenDBRequestProxy.oploggyOnUpgradeNeeded()');
 
     // @ts-ignore
     const db: IDBDatabase = event.target.result;

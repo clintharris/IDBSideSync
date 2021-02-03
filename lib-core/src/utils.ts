@@ -3,6 +3,14 @@ import { HLTime } from './HLTime';
 
 export { v4 as uuid } from 'uuid';
 
+export const libName = 'IDBSideSync';
+export let debug = process.env.NODE_ENV !== 'production';
+export function setDebug(isEnabled: boolean) {
+  debug = isEnabled === true;
+}
+
+export function noOp() {}
+
 /**
  * Use this function to create a presumably unique string that can be used to identify a client/node/agent. This just
  * uses the last 16 chars of a UUID (e.g., `37c2877f-fbf4-40f3-bdb7-87f4536dc989` => `bdb787f4536dc989`);
@@ -112,21 +120,15 @@ export function isEventWithTargetError(thing: unknown): thing is EventWithTarget
   return true;
 }
 
+/* eslint-disable no-console */
+export const logPrefix = '[' + libName + ']';
 export const log = {
-  warn(message: string, ...args: unknown[]): void {
-    console.warn('[IDBSideSync:warn] ' + message, ...args);
-  },
-
-  error(message: string, ...args: unknown[]): void {
-    console.error('[IDBSideSync:error] ' + message, ...args);
-  },
-
-  debug(message: string, ...args: unknown[]): void {
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[IDBSideSync:debug] ' + message, ...args);
-    }
-  },
+  log: console.log.bind(console, logPrefix),
+  debug: debug ? console.log.bind(console, logPrefix) : noOp,
+  warn: console.warn.bind(console, logPrefix),
+  error: console.error.bind(console, logPrefix),
 };
+/* eslint-enable no-console */
 
 /**
  * Utility function for wrapping an IDB request with a promise so that the result/error can be `await`ed.

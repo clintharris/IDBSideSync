@@ -1,4 +1,5 @@
 import { HLTime } from './HLTime';
+import { libName } from './utils';
 
 export class HLClock {
   private static _time: HLTime | null = null;
@@ -188,28 +189,28 @@ export class HLClock {
 
   static TimeNotSetError = class TimeNotSetError extends Error {
     constructor() {
-      super('Clock time has not been set.');
+      super(libName + ': Clock time has not been set.');
       Object.setPrototypeOf(this, TimeNotSetError.prototype); // https://preview.tinyurl.com/y4jhzjgs
     }
   };
 
   static ClockDriftError = class ClockDriftError extends Error {
     constructor(message: unknown) {
-      super(JSON.stringify(message));
+      super(libName + ': ' + JSON.stringify(message));
       Object.setPrototypeOf(this, ClockDriftError.prototype); // https://preview.tinyurl.com/y4jhzjgs
     }
   };
 
   static OverflowError = class OverflowError extends Error {
     constructor() {
-      super('timestamp counter overflow');
+      super(`${libName}: timestamp counter overflow`);
       Object.setPrototypeOf(this, OverflowError.prototype); // https://preview.tinyurl.com/y4jhzjgs
     }
   };
 
   static DuplicateNodeError = class DuplicateNodeError extends Error {
     constructor(node: unknown) {
-      super('duplicate node identifier ' + JSON.stringify(node));
+      super(`${libName}: duplicate node identifier ` + JSON.stringify(node));
       Object.setPrototypeOf(this, DuplicateNodeError.prototype); // https://preview.tinyurl.com/y4jhzjgs
     }
   };
