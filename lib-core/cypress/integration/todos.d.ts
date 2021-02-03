@@ -7,5 +7,5 @@ interface TodoItem {
 interface ScopedSetting {
   scope: string;
   name: string;
-  value: string;
+  [k: string]: unknown;
 }

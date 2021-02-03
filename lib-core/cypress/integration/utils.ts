@@ -79,7 +79,6 @@ export async function transaction(storeNames: string[], callback: (...stores: ID
     async (oplogStore, ...otherStores) => {
       const proxiedStores = otherStores.map((store) => IDBSideSync.proxyStore(store));
       await callback(...proxiedStores, oplogStore);
-      console.log('2. resolveOnTxComplete() callback finished.');
     }
   );
 }

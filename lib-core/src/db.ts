@@ -121,27 +121,24 @@ export async function applyOplogEntries(candidates: OpLogEntry[]) {
 }
 
 /**
- * Attempt to apply an oplog entry. In other words, check to see if the oplog entry (which we'll call the "candidate
- * entry") is actually the most recent entry (based on the `hlcTime` value) for the specified store + objectKey + prop
- * that it is attempting to mutate. If no other oplog entries exist with that criteria, or if they do and the candidate
- * has an `hlcTime` value that occurs _after_ the existing entries, then update (or create) the object specified by the
- * candidate entry's `objectKey` and ensure that it has the prop and value specified by the candidate.
+ * Attempt to apply an oplog entry to a specified store + objectKey + prop. In other words, update an existing object in
+ * the appropriate object store, or create a new one, per the _operation_ represented by an oplog entry object. Then add
+ * the entry to the local oplog entries store.
  *
- * After the candidate entry has been used to create/update the appropriate target object, add it to the local
- * OpLogEntry store.
+ * If the referenced objectKey + prop already exists, it will only be updated if the oplog entry is the most recent one
+ * we know about for that store + objectKey + prop. If an oplog entry with a more recent `hlcTime` is found in the local
+ * oplog store, the passed-in entry will not be applied or added to the local oplog store.
  *
  * Important: all of the IndexedDB operations performed by this function should happen in the same transaction. This
- * means that, once the transaction begins, no more promises should be used--all code should be written such that it
- * can be run synchronously (with the exception of assigning 'onsuccess', etc. callbacks to IDB objects) to ensure that
- * all operations are part of the same transaction. This also ensures that, if any one of those operations fails, the
- * transaction can be aborted and none of the operations will persist.
+ * ensures that, if any one of those operations fails, the transaction can be aborted and none of the operations will
+ * persist.
  */
 export function applyOplogEntry(candidate: OpLogEntry) {
   return new Promise((resolve, reject) => {
     const txReq = cachedDb.transaction([STORE_NAME.OPLOG, candidate.store], 'readwrite');
     txReq.oncomplete = () => resolve(txReq);
     txReq.onabort = () => reject(new TransactionAbortedError(txReq.error));
-    txReq.onerror = () => reject(txReq.error);
+    txReq.onerror = (event) => reject(isEventWithTargetError(event) ? event.target.error : txReq.error);
 
     const oplogStore = txReq.objectStore(STORE_NAME.OPLOG);
     const targetStore = txReq.objectStore(candidate.store);
