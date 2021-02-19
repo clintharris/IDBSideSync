@@ -17,8 +17,11 @@
     "node": ">=10"
   },
   "scripts": {
-    "build": "tsdx build --format umd --name IDBSideSync",
-    "build:watch": "tsdx watch --format umd --name IDBSideSync",
+    "clean": "del dist",
+    "build": "npm run tsdx -- build",
+    "watch": "npm run tsdx -- watch",
+    "pretsdx": "npm run clean",
+    "tsdx": "tsdx --format umd --name IDBSideSync",
     "test": "npm run test:jest && npm run test:cy",
     "test:jest": "jest",
     "test:jest:watch": "jest --watch --verbose",
@@ -58,6 +61,7 @@
     "@types/uuid": "^8.3.0",
     "cypress": "^6.4.0",
     "deep-equal": "^2.0.5",
+    "del-cli": "^3.0.1",
     "husky": "^4.3.6",
     "jest": "26.1.0",
     "nodemon": "^2.0.7",
