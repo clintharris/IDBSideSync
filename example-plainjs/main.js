@@ -46,12 +46,22 @@ function getColor(name) {
   return 'bg-gray-100';
 }
 
+const buttonClasses = 'h-12 sm:h-10 rounded focus:ring-2 focus:ring-blue-600 text-white';
+const classes = {
+  buttonPrimary: `${buttonClasses} bg-blue-600`,
+  buttonSecondary: `${buttonClasses} bg-gray-400`,
+  buttonDanger: `${buttonClasses} bg-red-600`,
+  textInput: 'h-12 px-4 shadow-sm border border-gray-300 rounded',
+  select: 'h-12 rounded shadow-sm border border-gray-300 text-gray-500',
+}
+
 let uiState = {
   offline: false,
   editingTodo: null,
   isAddingType: false,
   isDeletingType: false,
   activeProfileName: null,
+  showingStyleSettings: false,
 };
 
 let _syncTimer = null;
@@ -103,12 +113,20 @@ function saveActiveElement() {
   _activeElement = el.id
     ? '#' + el.id
     : el.className
-    ? '.' + el.className.replace(/ ?hover\:[^ ]*/g, '').replace(/ /g, '.')
+    ? '.' +
+      el.className
+        .replace(/ ?hover\:[^ ]*/g, '')
+        .replace(/ /g, '.')
+        .replace(/:/g, '\\:')
+        .replace(/.$/, '')
     : null;
 }
 
 function restoreActiveElement() {
-  if (_activeElement) {
+  const autofocusElements = qsa('[autofocus]');
+  if (autofocusElements && autofocusElements.length === 1) {
+    autofocusElements[0].focus();
+  } else if (_activeElement) {
     let elements = qsa(_activeElement);
     // Cheap focus management: only re-focus if there's a single
     // element, otherwise we don't know which one was focused
@@ -118,24 +136,32 @@ function restoreActiveElement() {
   }
 }
 
-async function renderTodoTypes({ className = '', showBlank } = {}) {
+async function renderTodoTypes({ className = '', showBlank = true } = {}) {
   return `
-    <label for="types">Type:</label>
-    <select name="types" class="${className} mr-2 bg-transparent shadow border border-gray-300">
-      ${showBlank ? '<option value=""></option>' : ''}
+    <select
+      name="types"
+      class="flex-grow ${classes.select} mx-1 sm:mx-2 mb-3 ${className}"
+    >
+      ${showBlank ? '<option value="">Select type...</option>' : ''}
       ${(await getTodoTypes()).map((type) => `<option value="${type.id}">${type.name}</option>`)}
+      <option value="add-type">Add type...</option>
+      <option value="delete-type">Delete type...</option>
     </select>
   `;
 }
 
 async function renderProfileNames() {
   return `
-    <label for="profiles">Profile:</label>
-    <select name="profiles">
-      ${(await getAllProfileNames()).map(
-        (profile) => `<option ${uiState.activeProfileName === profile.name ? 'selected' : ''}>${profile.name}</option>`
-      )}
-    </select>
+    <label for="profiles" class="flex justify-between items-center mb-4 w-32 mr-7">
+      <span class="text-gray-500">Profile:</span>
+      <select name="profiles" onchange="onStyleProfileChange()" class="${classes.select}">
+        ${(await getAllProfileNames()).map(
+          (profile) => `<option ${uiState.activeProfileName === profile.name ? 'selected' : ''}>${profile.name}</option>`
+        )}
+        <option value="add-new-profile">Add new profile...</option>
+      </select>
+    </label>
+    
   `;
 }
 
@@ -144,14 +170,22 @@ function renderTodos({ root, todos, isDeleted = false }) {
     append(
       // prettier-ignore
       `
-        <div class="todo-item bg-gray-100 p-4 mb-4 rounded flex" data-id="${todo.id}">
-          <input type="checkbox" ${todo.done ? 'checked' : ''} class="checkbox mr-4 h-6 w-6" data-id="${todo.id}" />
+        <div class="todo-item p-2 rounded flex" data-id="${todo.id}">
+          <input type="checkbox" ${todo.done ? 'checked' : ''} class="checkbox mr-4 h-6 w-6 rounded" data-id="${todo.id}" />
           <div class="flex-grow flex items-center">
             <div class="${isDeleted ? 'line-through' : ''}">${sanitize(todo.name)}</div>
             <div class="text-sm rounded ${todo.type ? getColor(todo.type.color) : ''} px-2 ml-3">
               ${todo.type ? sanitize(todo.type.name) : ''}
             </div>
           </div>
+          <select
+            class="p-0 focus:outline-none border-0"
+            style="background-image: url(&quot;./img/options-icon.svg&quot;);"
+          >
+            <option value=""></option>
+            <option value="edit-todo">Edit</option>
+            <option value="delete-todo">Delete</option>
+          </select>
           <button class="btn-edit hover:bg-gray-400 px-2 rounded" data-id="${todo.id}">✏️</button>
           <button class="btn-delete ml-1 hover:bg-gray-400 px-2 rounded" data-id="${todo.id}">${isDeleted ? '♻️' : '🗑'}</button>
         </div>
@@ -171,55 +205,74 @@ async function render() {
   let root = qs('#root');
   root.style.height = '100%';
 
-  let { offline, editingTodo, isAddingType, isDeletingType } = uiState;
+  let { offline, editingTodo, isAddingType, isDeletingType, showingStyleSettings } = uiState;
 
   clear();
 
   // prettier-ignore
   append(`
     <div class="flex flex-col h-full">
+      <div
+        class="fixed w-screen p-2 z-10 bg-gradient-to-br from-green-400 to-blue-500 font-sans text-lg font-bold text-white shadow-md flex justify-center"
+      >
+        <div class="max-w-screen-md flex items-center flex-grow justify-between">
+          <div class="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" stroke-width="1.5" stroke="#fff" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+              <path d="M3.5 5.5l1.5 1.5l2.5 -2.5" />
+              <path d="M3.5 11.5l1.5 1.5l2.5 -2.5" />
+              <path d="M3.5 17.5l1.5 1.5l2.5 -2.5" />
+              <line x1="11" y1="6" x2="20" y2="6" />
+              <line x1="11" y1="12" x2="20" y2="12" />
+              <line x1="11" y1="18" x2="20" y2="18" />
+            </svg>
+            <h3 class="ml-1">SideSync To-Do Demo</h3>
+          </div>
+          <button id="btn-show-style-modal">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" stroke-width="1.5" stroke="#fff" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+              <path d="M12 21a9 9 0 1 1 0 -18a9 8 0 0 1 9 8a4.5 4 0 0 1 -4.5 4h-2.5a2 2 0 0 0 -1 3.75a1.3 1.3 0 0 1 -1 2.25" />
+              <circle cx="7.5" cy="10.5" r=".5" fill="currentColor" />
+              <circle cx="12" cy="7.5" r=".5" fill="currentColor" />
+              <circle cx="16.5" cy="10.5" r=".5" fill="currentColor" />
+            </svg>
+          </button>
+        </div>
+      </div>
 
-      <div id="scroller" class="flex flex-col flex-grow items-center pt-8 overflow-auto px-4 relative">
-        <div style="width: 100%; max-width: 600px">
-          <form id="add-form" class="flex">
-            <input placeholder="Add todo..." class="shadow border border-gray-300 mr-2 flex-grow p-2 rounded" />
+      <div id="scroller" class="flex flex-col flex-grow items-center pt-4 px-4 mt-12 relative">
+        <div class="w-full max-w-screen-md">
+          <form id="add-form" class="flex flex-wrap">
+            <input
+              type="text"
+              placeholder="Enter todo..."
+              class="flex-grow mb-3 mx-1 sm:mx-2 ${classes.textInput}"
+            />
             ${await renderTodoTypes()}
-            <button id="btn-add-todo" class="bg-green-600 text-white rounded p-2">Add</button>
+            <button
+              id="btn-add-todo"
+              class="flex-grow sm:flex-grow-0 h-12 mx-1 sm:mx-2 px-4 sm:px-8 bg-green-600 text-white rounded shadow 
+                focus:outline-none focus:ring-2 focus:ring-blue-600"
+            >Add</button>
           </form>
 
-          <div class="mt-8" id="todos">
-          </div>
+          <div class="px-2">
+            <h2 class="text-lg mt-2">To Do:</h2>
+            <div id="todos"></div>
 
-          <h2 class="text-lg mt-24">Deleted todos</h2>
-          <div class="mt-8" id="deleted-todos">
-          </div>
-        </div>
-
-        <div id="up-to-date" class="fixed flex items-center mb-2 rounded bg-gray-800 px-4 py-3" style="opacity: 0; bottom: 80px">
-          <div class="flex flex-row items-center text-green-200 text-sm">
-            <img src="check.svg" class="mr-1" style="width: 13px; height: 13px;" /> Up to date
+            <h2 class="text-lg mt-6">Deleted:</h2>
+            <div class="mt-8" id="deleted-todos"></div>
           </div>
         </div>
       </div>
 
-      <div class="flex flex-col items-center relative border-t">
-        <div class="relative">
-          <button id="btn-sync" class="m-4 mr-6 ${offline ? 'bg-red-600' : 'bg-blue-600'} text-white rounded p-2">
-            Sync ${offline ? '(offline)' : ''}
-          </button>
-        </div>
-
-        <div class="absolute left-0 top-0 bottom-0 flex items-center pr-4 text-sm">
-          ${await renderProfileNames()}
-          <button id="btn-add-profile" class="text-sm hover:bg-gray-300 px-2 py-1 rounded">Add Profile</button>
-          <button id="btn-set-bgcolor" class="text-sm hover:bg-gray-300 px-2 py-1 rounded">Set BG Color</button>
-          <button id="btn-set-fontsize" class="text-sm hover:bg-gray-300 px-2 py-1 rounded">Set Font Size</button>
+      <div class="fixed w-screen bottom-0 flex justify-center bg-gray-200 border-gray-400 border-t">
+        <div class="max-w-screen-md">
           <button id="btn-offline-simulate" class="text-sm hover:bg-gray-300 px-2 py-1 rounded ${offline ? 'text-blue-700' : 'text-red-700'}">${offline ? 'Go online' : 'Simulate offline'}</button>
-        </div>
 
-        <div class="absolute right-0 top-0 bottom-0 flex items-center pr-4 text-sm">
-          <button id="btn-add-type" class="text-sm hover:bg-gray-300 px-2 py-1 rounded">Add type</button>
-          <button id="btn-delete-type" class="text-sm hover:bg-gray-300 px-2 py-1 rounded">Delete type</button>
+          <button id="btn-sync" class="m-4 mr-6 ${offline ? 'bg-red-600' : 'bg-blue-600'} text-white rounded p-2">
+          Sync ${offline ? '(offline)' : ''}
+          </button>
         </div>
       </div>
     </div>
@@ -241,8 +294,8 @@ async function render() {
             <input value="${sanitize(
               editingTodo.name
             )}" class="shadow border border-gray-300 mr-2 flex-grow p-2 rounded" />
-            <button id="btn-edit-save" class="rounded p-2 bg-blue-600 text-white mr-2">Save</button>
-            <button id="btn-edit-cancel" class="rounded p-2 bg-gray-200">Cancel</button>
+            <button id="btn-edit-save" class="rounded p-2 bg-blue-600 text-white mr-2focus:ring-2 focus:ring-blue-600 ">Save</button>
+            <button id="btn-edit-cancel" class="rounded p-2 bg-gray-200 focus:ring-2 focus:ring-blue-600">Cancel</button>
           </div>
 
           ${editingTodo.tombstone === 1 ? '<button id="btn-edit-undelete" class="pt-4 text-sm">Undelete</button>' : ''}
@@ -253,13 +306,25 @@ async function render() {
 
   if (isAddingType) {
     append(`
-      <div class="absolute bottom-0 left-0 right-0 top-0 flex items-center justify-center" style="background-color: rgba(.2, .2, .2, .4)">
-        <div class="bg-white p-8" style="width: 500px">
-          <h2 class="text-lg font-bold mb-4">Add todo type</h2>
-          <div class="flex">
-            <input placeholder="Name..." autofocus class="shadow border border-gray-300 mr-2 flex-grow p-2 rounded" />
-            <button id="btn-edit-save" class="rounded p-2 bg-blue-600 text-white mr-2">Save</button>
-            <button id="btn-edit-cancel" class="rounded p-2 bg-gray-200">Cancel</button>
+      <div class="absolute bottom-0 left-0 right-0 top-0 pt-16 flex justify-center items-start bg-gray-500 bg-opacity-40">
+        <div class="flex-grow max-w-sm mx-4 p-4 bg-white rounded shadow-xl">
+          <h2 class="text-lg font-bold mb-4">Add To-Do Type</h2>
+          <div class="flex flex-col">
+            <input
+              autofocus
+              type="text"
+              placeholder="Enter type (e.g., &quot;Groceries&quot;)..."
+              class="${classes.textInput} flex-grow mx-2 mb-4 p-2" />
+              <div class="mx-2 flex justify-end">
+                <button
+                  id="btn-edit-cancel"
+                  class="${classes.buttonSecondary} px-8"
+                >Cancel</button>
+                <button
+                  id="btn-edit-save"
+                  class="${classes.buttonPrimary} ml-4 px-8"
+                >Save</button>
+              </div>
           </div>
         </div>
       </div>
@@ -268,8 +333,8 @@ async function render() {
 
   if (isDeletingType) {
     append(`
-      <div class="absolute bottom-0 left-0 right-0 top-0 flex items-center justify-center" style="background-color: rgba(.2, .2, .2, .4)">
-        <div class="bg-white p-8" style="width: 500px">
+      <div class="absolute bottom-0 left-0 right-0 top-0 flex items-center justify-center>
+        <div class="bg-white p-8">
           <h2 class="text-lg font-bold mb-4">Delete todo type</h2>
           <div class="pb-2">
             Delete ${await renderTodoTypes({ className: 'selected' })} and
@@ -280,8 +345,47 @@ async function render() {
           </div>
 
           <div class="flex mt-2">
-            <button id="btn-edit-delete" class="rounded p-2 bg-red-600 text-white mr-2">Delete</button>
-            <button id="btn-edit-cancel" class="rounded p-2 bg-gray-200">Cancel</button>
+            <button id="btn-edit-delete" class="${classes.buttonDanger}  p-2 mr-2">Delete</button>
+            <button id="btn-edit-cancel" class="${classes.buttonSecondary} p-2">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (showingStyleSettings) {
+    append(`
+      <div class="absolute bottom-0 left-0 right-0 top-0 pt-16 flex justify-center items-start bg-gray-500 bg-opacity-40">
+        <div class="flex-grow max-w-sm mx-4 p-4 bg-white rounded shadow-xl">
+          <h2 class="text-lg font-bold mb-4">Preferences</h2>
+          <div class="flex flex-col">
+            ${await renderProfileNames()}
+            <label for="bg-color-setting" class="flex justify-between items-center mb-4">
+              <span class="text-gray-500 flex-grow">Background Color:</span>
+              <input
+                type="text"
+                name="bg-color-setting"
+                value="${qs('#root').style.backgroundColor}"
+                class="${classes.select} w-32"
+                disabled
+              />
+              <span class="ml-2" onclick="onBgColorSettingClick()">✏️</span>
+            </label>
+            <label for="font-size-setting" class="flex justify-between items-center mb-4">
+              <span class="text-gray-500 flex-grow">Font Size:</span>
+              <input
+                type="text"
+                name="font-size-setting"
+                value="${qs('html').style.fontSize}"
+                class="${classes.select} w-32"
+                disabled
+              />
+              <span class="ml-2" onclick="onFontSizeSettingClick()">✏️</span>
+            </label>
+            <button
+              onClick="closeStyleSettings()"
+              class="${classes.buttonPrimary} mt-4 px-8"
+            >Done</button>
           </div>
         </div>
       </div>
@@ -299,6 +403,10 @@ function addEventHandlers() {
     let [nameNode, typeNode] = e.target.elements;
     let name = nameNode.value;
     let type = typeNode.selectedOptions[0].value;
+
+    if (type.includes('-type')) {
+      return;
+    }
 
     nameNode.value = '';
     typeNode.selectedIndex = 0;
@@ -324,16 +432,6 @@ function addEventHandlers() {
       setOffline(true);
       clearInterval(_syncTimer);
     }
-  });
-
-  qs('#btn-add-type').addEventListener('click', () => {
-    uiState.isAddingType = true;
-    render();
-  });
-
-  qs('#btn-delete-type').addEventListener('click', () => {
-    uiState.isDeletingType = true;
-    render();
   });
 
   for (let editBtn of qsa('.todo-item .btn-edit')) {
@@ -368,7 +466,6 @@ function addEventHandlers() {
     qs('#btn-edit-save').addEventListener('click', (e) => {
       let input = e.target.parentNode.querySelector('input');
       let value = input.value;
-
       updateTodo({ name: value }, uiState.editingTodo.id);
       uiState.editingTodo = null;
       render();
@@ -386,7 +483,7 @@ function addEventHandlers() {
     }
   } else if (uiState.isAddingType) {
     qs('#btn-edit-save').addEventListener('click', (e) => {
-      let input = e.target.parentNode.querySelector('input');
+      let input = e.target.parentNode.parentNode.querySelector('input');
       let value = input.value;
 
       let colors = ['green', 'blue', 'red', 'orange', 'yellow', 'teal', 'purple', 'pink'];
@@ -426,45 +523,69 @@ function addEventHandlers() {
     });
   }
 
-  qs('#btn-add-profile').addEventListener('click', async (e) => {
+  qs('select[name=types]').addEventListener('change', async (e) => {
+    if (e.target.value === 'add-type') {
+      uiState.isAddingType = true;
+      render();
+    } else if (e.target.value === 'delete-type') {
+      uiState.isDeletingType = true;
+      render();
+    }
+  });
+
+  qs('#btn-show-style-modal').addEventListener('click', async (e) => {
+    uiState.showingStyleSettings = true;
+    render();
+  });
+}
+
+async function onStyleProfileChange(e) {
+  const selection = qs('select[name=profiles]').value;
+  if (selection === 'add-new-profile') {
     const newVal = prompt('ADD PROFILE\n(shared across devices if syncing enabled)\n\nProfile name:');
     if (newVal.trim() === '') {
       alert(`Ignoring invalid profile name. Please specify a non-empty value.`);
+      return;
     } else {
       await addProfileName(newVal);
-      render();
     }
-  });
-
-  qs('select[name=profiles]').addEventListener('change', async (e) => {
-    await updateActiveProfileName(e.target.value);
-    uiState.activeProfileName = e.target.value;
+  } else {
+    await updateActiveProfileName(selection);
+    uiState.activeProfileName = selection;
     await loadAndApplyProfileSettings();
+  }
+
+  render();
+}
+
+
+
+async function onBgColorSettingClick() {
+  const currentVal = qs('#root').style.backgroundColor;
+  const newVal = prompt('BACKGROUND COLOR\n(applies to all devices if syncing enabled)\n\nColor:', currentVal);
+  if (newVal) {
+    await updateBgColorSetting(uiState.activeProfileName, newVal);
+    setBgColor(newVal);
     render();
-  });
+  }
+}
 
-  qs('#btn-set-bgcolor').addEventListener('click', async (e) => {
-    const currentVal = qs('#root').style.backgroundColor;
-    const newVal = prompt('BACKGROUND COLOR\n(applies to all devices if syncing enabled)\n\nColor:', currentVal);
-    if (newVal) {
-      await updateBgColorSetting(uiState.activeProfileName, newVal);
-      setBgColor(newVal);
-      render();
-    }
-  });
+async function onFontSizeSettingClick() {
+  const currentVal = parseFloat(qs('html').style.fontSize || 16);
+  const newVal = parseFloat(
+    prompt('BASE FONT SIZE\n(only applies to current device)\n\nPlease specify number (e.g., "12.5"):', currentVal)
+  );
+  if (!newVal || newVal === NaN) {
+    alert(`Ignoring invalid font size. Please specify a floating point number (e.g., 12.5).`);
+  } else {
+    await updateFontSizeSetting(uiState.activeProfileName, newVal);
+    setFontSize(newVal);
+  }
+}
 
-  qs('#btn-set-fontsize').addEventListener('click', async (e) => {
-    const currentVal = parseFloat(qs('html').style.fontSize || 16);
-    const newVal = parseFloat(
-      prompt('BASE FONT SIZE\n(only applies to current device)\n\nPlease specify number (e.g., "12.5"):', currentVal)
-    );
-    if (!newVal || newVal === NaN) {
-      alert(`Ignoring invalid font size. Please specify a floating point number (e.g., 12.5).`);
-    } else {
-      await updateFontSizeSetting(uiState.activeProfileName, newVal);
-      setFontSize(newVal);
-    }
-  });
+function closeStyleSettings() {
+  uiState.showingStyleSettings = false;
+  render();
 }
 
 function setBgColor(color) {
@@ -476,7 +597,7 @@ function setFontSize(size) {
 }
 
 async function loadAndApplyProfileSettings(profileName) {
-  setBgColor(await getBgColorSetting(uiState.activeProfileName) || 'white');
+  setBgColor((await getBgColorSetting(uiState.activeProfileName)) || 'white');
   setFontSize(await getFontSizeSetting(uiState.activeProfileName));
 }
 
@@ -498,6 +619,29 @@ async function loadAndApplyProfileSettings(profileName) {
 
 let _syncMessageTimer = null;
 
+let gdriveSyncProvider = null;
+
+function setupSync() {
+  // This will check local storage for Google Drive access token, etc. If none
+  // exists, it'll dynamically add a <script> element to the document for loading
+  // the Google API JavaScript client, and then proceed to launch the OAuth login
+  // pop-up.
+  if (IDBSideSync.plugins.googledrive.needsSetup()) {
+    console.warn('todo: setup google sync...');
+  }
+  // IDBSideSync.plugins.googledrive.setup((syncProvider) => {
+  //   gdriveSyncProvider = syncProvider;
+  //   sync();
+  // });
+}
+
+function sync() {
+  if (gdriveSyncProvider) {
+    // IDBSideSync.sync(gdriveSyncProvider);
+  } else {
+    setupSync();
+  }
+}
 // onSync(hasChanged => {
 //   render();
 

@@ -3,14 +3,24 @@
   <head>
     <title>IDBSideSync Todo Example</title>
     <meta http-equiv="content-type" content="text/html; charset=utf-8" />
-    <link href="tailwind.min.css" rel="stylesheet" />
-    <script src="deps/murmurhash.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="shortcut icon" href="img/checklist-icon.svg" type="image/x-icon">
+    <link href="./tailwind/base.min.css" rel="stylesheet" />
+    <link href="./tailwind/forms.min.css" rel="stylesheet" />
+    <link href="./tailwind/components.min.css" rel="stylesheet" />
+    <link href="./tailwind/utilities.min.css" rel="stylesheet" />
+    <!-- <link rel="stylesheet" href="https://unpkg.com/tailwindcss@next/dist/base.min.css"> -->
+    <!-- <link rel="stylesheet" href="https://tailwindcss-forms.vercel.app/dist/forms.min.css"> -->
+    <!-- <link rel="stylesheet" href="https://unpkg.com/tailwindcss@next/dist/components.min.css"> -->
+    <!-- <link rel="stylesheet" href="https://unpkg.com/tailwindcss@next/dist/utilities.min.css"> -->
     <script src="https://unpkg.com/murmurhash@0.0.2/murmurhash.js"></script>
     <script src="https://unpkg.com/uuid@8.3.2/dist/umd/uuid.min.js"></script>
-    <script src="../lib-core/dist/idbsidesync.umd.development.js"></script>
+    <script src="./dist/idbsidesync.umd.development.js"></script>
+    <script src="./dist/idbsidesync.plugins.googledrive.umd.development.js"></script>
   </head>
   <body>
-    <div id="root" style="position: relative; background-color: white"></div>
+    <!-- Ensure "style" is used to set bg-color; user can edit this using the app. -->
+    <div id="root" class="relative" style="background-color: white"></div>
     <script src="db.js"></script>
     <script src="main.js"></script>
   </body>

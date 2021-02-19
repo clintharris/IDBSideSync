@@ -9,6 +9,10 @@ const TODO_ITEMS_BY_DELETED_INDEX = 'todo_items-index_by_deleted';
 const DELETED_PROP = 'deleted';
 let db;
 
+if(!indexedDB) {
+  alert(`💔 Your browser doesn't seem to support IndexedDB! This app can't work without it.`)
+}
+
 /**
  * Convenience function for getting a (cached/singleton) reference to an IndexedDB database via Promise. Mostly copied
  * from https://preview.tinyurl.com/yaoxc9cl).
