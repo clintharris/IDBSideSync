@@ -133,6 +133,12 @@ However, it would "corrupt" the Merkle tree (if the tree weren't set up to preve
 
 Yes. You can pass a sidesync'ed object store to idb's `wrap()` function. Since `IDBSideSync` works as an invisible Proxy, idb won't know the difference.
 
+### Q: Why does it add `IDBSideSync_*` object stores to my app's IndexedDB database?
+
+IDBSideSync uses these stores to record all of the change operations (operation log entries) and keep track of internal things like information about how to sync with any remote storage services your app sets up (e.g., Google Drive).
+
+These object stores need to live in your application's database so that the library can easily read and write to your app's object stores. More specifically, IDBSideSync needs to be able to include both its own stores _and_ your app's stores in the same IndexedDB transactions; this can only be done if the stores are in the same database.
+
 # Contributing
 
 Want to submit a PR for adding a new feature or bugfix? Or maybe you just want to create a new fork that demonstrates an issue? Do all this and more with just a few clicks using the amazing Contrib-o-matic™️ process (_actual clicks and results may vary_):
@@ -144,11 +150,24 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
 
 # Roadmap
 
+- [ ] Find a way to add support for increment and array insert operations (currently only "set" is supported).
+  - There's no good way to do this without deviating from the IndexedDB API (which really only supports "set" ops)
+  - It would involve modifying the oplog entry objects to specify the _type_ of operation (set/increment/insert). Example:
+      ```
+      {
+        hlcTime: '2021-01-24T13:23:14.203Z-0002-testnode',
+        store: TODO_ITEMS_STORE,
+        objectKey: defaultTodo.id,
+        operation: 'increment' // 'set' | 'arrayInsert'
+        prop: 'someCounter',
+        value: -1
+      }
+      ```
+  - Note that supporting array operations (i.e., insert, mutate at index, etc.) is not a pre-requisite! A feasible (and possibly simpler) solution is to normalize objects. Instead of `{ id: 1, things: [thing1, thing 2] }`, create a separate object collection for things and associate them with the parent object.
+- [ ] Add Cypress tests that run against the example app UI
+  - This would both help ensure that example app isn't broken with some changes and (bonus) also tests the library.
+- [ ] Publish to NPM; take a look at [np](https://github.com/sindresorhus/np) (recommended by tsdx)
 - [ ] Investigate using Chrome's Native File System API and using the local file system as one option for testing/developing oplog entries being "sync'ed". In other words, instead of worrying about the details of the Google Drive API, for example, just have two windows open that are both reading/writing to the same local drive--so a "shared local folder" is being used to sync the files.
-- [ ] Test CRUD on store with keyPath that is an array.
-  - Modify todo example app so that todo_types store has keyPath: ["id", "name"] (since the name can't be edited).
-- [ ] Set up Cypress to run unit tests
-  - this will make it possible to run automated tests that are using the real IndexedDB API
 - [ ] Modify Rollup to bundle murmurhash and uuid _with_ the library
   - see "https://www.mixmax.com/engineering/rollup-externals/" section of https://www.mixmax.com/engineering/rollup-externals/ for example of which rollup plugins to install and use
   - see https://tsdx.io/customization#example-adding-postcss for example of how to customize tsdx's rollup config to use rollup plugins
@@ -163,29 +182,7 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
   - make sure to prevent the "many changes in same ~10sec window causes issue" problem (https://twitter.com/jaredforsyth/status/1228366315569565696)
 - [ ] Set up the project to work with [CodeSandbox CI](https://codesandbox.io/docs/ci).
 - [ ] Set up a simple sandbox app in a sub-directory that can be use to demo/test the library (from relative imports)
-
-## Refactoring
-
-- [ ] Consider increasing the allowed difference for clock times coming from other systems; only allowing for a 1-minute difference between any other clock in the distributed system seems like it could be error prone...
-- [ ] Modify HLTime.parse() to do a better job of checking for issues with the passed-in string and throwing errors if necessary (e.g., throwing if an invalid month is specified)
-- [ ] Merkle tree:
-  - [ ] consider only allowing inserts to proceed for "full" 17-digit paths. This would prevent the possibility of setting hash value for non-leaf nodes (which would result in a node whose hash is, technically, not derived from the hashes of all its children). The downside of this is that it would make unit testing harder to easily understand (since you can't use "simple" testing trees with only a few nodes).
-
-## New features
-
-- [ ] Support custom _local_ data store APIs (i.e., support offline, PWA-friendly storage)
-
-  - Currently the "data store" is just a few arrays kept in memory (`_messages` and `_data`)
-  - It should be possible to use other, more efficient data storage mechanisms (e.g., IndexedDB).
-  - Instead of accessing `_messages` and `_data` directly as arrays, the data store should be passed-in and manipulated through standard API functions for CRUD operations; the actual implementation for those operations should be a black-box.
-  - Example:
-    - `sync.js:mapIncomingToLocalMessagesForField()` needs to find the "most recent" message for specific fields. Currently it does this by sorting the big array of `_messages` and searching for the first element with a matching set of field identifier criteria, which clearly becomes less efficient as the array of `_messages` grows over time.
-    - Ideally, the data store API would have a `findMostRecentMessageForField()` method that, under the hood, would use pre-built indices for searching messages.
-  - `sidesync-store-indexeddb`
-  - `sidesync-store-inmemory`
-
 - [ ] Support _syncing_ with remote file storage services
-
   - Once a standard API exists for the _local_ data store (which can be implemented with different adapters), modify the sync code so that it uses a standard API, which would allow for different remote storage providers to be plugged in.
   - `sidesync-gdrive`, `sidesync-icloud`, etc.
   - each node (e.g., user-owned device) uploads every oplog entry to the server
@@ -197,14 +194,12 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
   - a node can download the merkle trees from other nodes and diff _locally_ to more efficiently determine a _time_ at which the merkle trees began to differ
     - it can then download and ingest all oplog entries on/after that time
   - each node updates and uploads an "index" file: an _ordered_ list of all the HLC timestamps (i.e., filenames) for events _that node_ has created
-
     - these files should all have a standard extension to be easily discovered by via filename pattern searching (e.g., {nodeId}.index.txt)
     - this file should be uploaded to the server on each sync (overwriting the existing file if one exists)
     - other nodes can download this (pre-sorted) list and, after having compared merkle trees with this node to find a timestamp when they began to differ, iterate over (ordered) list of timestamps until it gets to the point where the divergence began--all filenames after that point in the list should be downloaded and processed.
     - these files could get BIG; adding 1M timestamps resulted in a 45MB text file
     - compression could help; this could be diferred to server and browser (assuming server compression is enabled), or _maybe_ done in the browser (JSZip compressed 45MB realistic text file to 134 KB in 1.2 sec)
     - another option that adds complexity is to chunk the indices, maybe putting timestamp ranges in index filenames to help decide which index to download (e.g., `{nodeId}.{firstTimeStamp__lastTimeStamp}.index.txt`)
-
   - Google Drive doesn't support searching/filtering by regex expressions, so it's probably necessary to:
 
     1. retrieve a list of _all_ filenames (and just the names--so we know what to try to download)
@@ -233,3 +228,13 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
     - other users will download those entries and recreate the object
     - the app on other users devices should know if the user has write access to the remote, and prevent the user from attempting to edit those objects (for good UX; note that permissions are enforced by remote storage service).
     - if you download oplog entries associated with a shared remote, an object will be created locally.
+
+
+## Refactoring
+
+- [ ] Consider increasing the allowed difference for clock times coming from other systems; only allowing for a 1-minute difference between any other clock in the distributed system seems like it could be error prone...
+- [ ] Modify HLTime.parse() to do a better job of checking for issues with the passed-in string and throwing errors if necessary (e.g., throwing if an invalid month is specified)
+- [ ] Merkle tree:
+  - [ ] consider only allowing inserts to proceed for "full" 17-digit paths. This would prevent the possibility of setting hash value for non-leaf nodes (which would result in a node whose hash is, technically, not derived from the hashes of all its children). The downside of this is that it would make unit testing harder to easily understand (since you can't use "simple" testing trees with only a few nodes).
+
+
