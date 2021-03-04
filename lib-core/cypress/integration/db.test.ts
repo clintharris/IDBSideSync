@@ -1,7 +1,6 @@
 import { HLTime } from '../../src/HLTime';
 import * as IDBSideSync from '../../src/index';
-import { HLClock } from '../../src/index';
-import * as oplog_entries from '../fixtures/oplog_entries.json';
+import { HLClock, OPLOG_STORE } from '../../src/index';
 import {
   assertEntries,
   deleteDb,
@@ -269,6 +268,53 @@ context('db', () => {
       expect(foundObj).to.deep.equal({ meaning: 42, foo: 'baz' });
       assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'meaning' } });
       assertEntries(foundEntries, { hasCount: 2, where: { ...sharedWhere, prop: 'foo' } });
+    });
+  });
+
+  describe('getEntries()', async () => {
+    const dummyEntryCount = 50;
+    const firstEntryTime = Date.parse('2021-03-01T20:00:00.000Z');
+
+    function firstEntryTimePlus(msec: number): Date {
+      return new Date(firstEntryTime + msec);
+    }
+
+    beforeEach(async () => {
+      console.log(`Inserting ${dummyEntryCount} dummy objects into ${OPLOG_STORE}.`);
+      await transaction([], (oplogStore) => {
+        for (let i = 1; i <= dummyEntryCount; i++) {
+          oplogStore.add({
+            hlcTime: `${new Date(firstEntryTime + i - 1).toISOString()}-0000-testnode`,
+            objectKey: i,
+            prop: 'foo',
+            store: TODO_ITEMS_STORE,
+            value: 'bar',
+          });
+        }
+      });
+    });
+
+    it('returns expected when no parameters are specified', async () => {
+      let entries = await IDBSideSync.getEntries();
+      expect(entries).to.have.lengthOf(5);
+    });
+
+    it('paginates results correctly', async () => {
+      const pageSize = 10;
+      for (let page = 0; page < 5; page++) {
+        let entries = await IDBSideSync.getEntries({ page, pageSize });
+        expect(entries).to.have.lengthOf(10);
+        let absolutePosition = page * pageSize;
+        expect(entries[0].hlcTime).contains(firstEntryTimePlus(absolutePosition).toISOString());
+        expect(entries[9].hlcTime).contains(firstEntryTimePlus(absolutePosition + pageSize - 1).toISOString());
+      }
+    });
+
+    it('returns expected when min date is specified', async () => {
+      const minDate = firstEntryTimePlus(10);
+      let entries = await IDBSideSync.getEntries({ afterTime: minDate, page: 0, pageSize: 5 });
+      expect(entries).to.have.lengthOf(5);
+      expect(entries[0].hlcTime).contains(minDate.toISOString());
     });
   });
 });

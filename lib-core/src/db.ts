@@ -21,6 +21,10 @@ export const OPLOG_STORE = STORE_NAME.OPLOG;
 export const OPLOG_INDEX = 'Indexed by: store, objectKey, prop, hlcTime';
 export const CACHED_SETTINGS_OBJ_KEY = 'settings';
 
+// This is technically unnecessary, but a nice way to help make sure we're always referencing a valid OpLogEntry
+// property name when defining a `keyPath` for the object store.
+const OPLOG_ENTRY_HLC_TIME_PROP_NAME: keyof OpLogEntry = 'hlcTime';
+
 let cachedDb: IDBDatabase;
 let cachedSettings: Settings;
 
@@ -37,11 +41,7 @@ export function onupgradeneeded(event: IDBVersionChangeEvent): void {
   // This means that a "key" arg will need to be specified when calling `add()` or `put()`.
   db.createObjectStore(STORE_NAME.META);
 
-  // This is technically unnecessary, but a nice way to help make sure we're always referencing a valid OpLogEntry
-  // property name when defining a `keyPath` for the object store.
-  const storeKeyPath: keyof OpLogEntry = 'hlcTime';
-
-  const oplogStore = db.createObjectStore(STORE_NAME.OPLOG, { keyPath: storeKeyPath });
+  const oplogStore = db.createObjectStore(STORE_NAME.OPLOG, { keyPath: OPLOG_ENTRY_HLC_TIME_PROP_NAME });
 
   // Create an index tailored to finding the most recent oplog entry for a given store + object key + prop. Note:
   //
@@ -109,6 +109,86 @@ export function initSettings(): Promise<typeof cachedSettings> {
         putReq.onsuccess = () => {
           debug && log.debug('successfully persisted initial settings:', cachedSettings);
         };
+      }
+    };
+  });
+}
+
+export function getSyncProfiles(): SyncProfile[] {
+  return Array.isArray(cachedSettings?.syncProfiles) ? cachedSettings.syncProfiles : [];
+}
+
+/**
+ * Use this function to retrieve pages of oplog entries from the IndexedDB object store.
+ *
+ * Pagination is used instead of something like an async generator because it's not possible to perform async operations
+ * within an IndexedDB transaction. This function could, technically, return an async generator (using the idb library,
+ * for example: https://git.io/JqfQq). However, that would mislead callers into thinking that the following is possible:
+ *
+ * @example
+ * ```
+ * for await (const entry of IDBSideSync.getEntries()) {
+ *    await uploadEntry(entry); // ❌ This will cause IndexedDB to throw a "transaction has finished" error
+ * }
+ * ```
+ *
+ * By using pagination we avoid doing anything async during the IndexedDB transaction. Some number of objects are read
+ * from the database, the transaction finishes, and the caller can take as much time as desired working on the returned
+ * set of entries before requesting another page.
+ *
+ * Note that the pagination algorithm is a modified version of an example shared by Raymond Camden at
+ * https://www.raymondcamden.com/2016/09/02/pagination-and-indexeddb/.
+ */
+export function getEntries(
+  params: { afterTime?: Date; page: number; pageSize: number } = { page: 0, pageSize: 5 }
+): Promise<OpLogEntry[]> {
+  let query: IDBKeyRange | null = null;
+  if (params?.afterTime instanceof Date) {
+    // Set a lower bound for the cursor (e.g., "2021-03-01T20:33:14.080Z"). Keep in mind that the OpLogEntry store uses
+    // each object's `.hlcTime` prop as the keyPath (e.g., "2021-02-08T11:01:15.142Z-0000-afd67a3799189eaa"). This means
+    // that the objects are sorted by those strings. By specifying an ISO-formatted date string as the lower bound for
+    // the cursor we are saying "move the cursor to the first key that is >= this string".
+    query = IDBKeyRange.lowerBound(params.afterTime.toISOString());
+  }
+
+  return new Promise(function(resolve, reject) {
+    const txReq = cachedDb.transaction([STORE_NAME.OPLOG], 'readonly');
+    txReq.onabort = () => reject(new TransactionAbortedError(txReq.error));
+    txReq.onerror = (event) => reject(isEventWithTargetError(event) ? event.target.error : txReq.error);
+
+    const store = txReq.objectStore(STORE_NAME.OPLOG);
+
+    if (store.keyPath !== OPLOG_ENTRY_HLC_TIME_PROP_NAME) {
+      throw new Error(
+        `${libName} getEntries() can't return oplog entries in reliable order; ${OPLOG_STORE} isn't using ` +
+          `${OPLOG_ENTRY_HLC_TIME_PROP_NAME} as its keyPath and therefore entries aren't sorted by HLC time.`
+      );
+    }
+
+    const cursorReq = store.openCursor(query);
+
+    const entries: OpLogEntry[] = [];
+    let cursorWasAdvanced = false;
+
+    cursorReq.onsuccess = function() {
+      const cursor = cursorReq.result;
+      if (!cursor) {
+        resolve(entries);
+        return;
+      }
+
+      if (!cursorWasAdvanced && params.page > 0) {
+        cursorWasAdvanced = true;
+        cursor.advance(params.page * params.pageSize);
+        return;
+      }
+
+      entries.push(cursor.value);
+
+      if (entries.length < params.pageSize) {
+        cursor.continue();
+      } else {
+        resolve(entries);
       }
     };
   });
