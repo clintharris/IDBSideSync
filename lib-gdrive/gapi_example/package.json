@@ -1,0 +1,10 @@
+{
+  "name": "gapi_example",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "serve --listen 8080 --no-clipboard"
+  },
+  "devDependencies": {
+    "serve": "^11.3.2"
+  }
+}

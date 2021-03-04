@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+  <body>
+    <p>Drive API Quickstart</p>
+
+    <!--Add buttons to initiate auth sequence and sign out-->
+    <button id="authorize_button" style="display: none;">Authorize</button>
+    <button id="signout_button" style="display: none;">Sign Out</button>
+    <button id="create_folder_btn" style="display: none;">Create Folder</button>
+
+    <pre id="content" style="white-space: pre-wrap;"></pre>
+
+    <script type="text/javascript">
+      const authorizeButton = document.getElementById('authorize_button');
+      const signoutButton = document.getElementById('signout_button');
+      const createFolderBtn = document.getElementById('create_folder_btn');
+      let authResponse;
+
+      function handleClientLoad() {
+        // Make a GET request for the 'client' AND 'auth2' libraries (~105 KB)
+        gapi.load('client:auth2', initClient);
+      }
+
+      function initClient() {
+        // Note that init() returns a custom "thenable" object, NOT a Promise.
+        gapi.client
+          .init({
+            clientId: '1004853515655-8qhi3kf64cllut2no4trescfq3p6jknm.apps.googleusercontent.com',
+            discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+            // Authorization scopes required by the API; multiple scopes can be included, separated by spaces.
+            // scope: 'https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/drive.file',
+            scope: 'https://www.googleapis.com/auth/drive.file',
+          })
+          .then(
+            function() {
+              console.log('is signed in?', gapi.auth2.getAuthInstance().isSignedIn.get());
+              // Listen for sign-in state changes.
+              gapi.auth2.getAuthInstance().isSignedIn.listen(updateSigninStatus);
+
+              // Handle the initial sign-in state.
+              updateSigninStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
+
+              authorizeButton.onclick = handleAuthClick;
+              signoutButton.onclick = handleSignoutClick;
+              createFolderBtn.onclick = onCreateFolderBtnClick;
+            },
+
+            function(error) {
+              appendPre(JSON.stringify(error, null, 2));
+            }
+          );
+      }
+
+      /**
+       *  Called when the signed in status changes, to update the UI appropriately. After a sign-in, the API is called.
+       */
+      function updateSigninStatus(isSignedIn) {
+        if (isSignedIn) {
+          authResponse = gapi.auth2
+            .getAuthInstance()
+            .currentUser.get()
+            .getAuthResponse(true);
+          authorizeButton.style.display = 'none';
+          signoutButton.style.display = 'block';
+          createFolderBtn.style.display = 'block';
+          listFolders();
+        } else {
+          authResponse = null;
+          authorizeButton.style.display = 'block';
+          signoutButton.style.display = 'none';
+          createFolderBtn.style.display = 'none';
+        }
+      }
+
+      /**
+       *  Sign in the user upon button click.
+       */
+      function handleAuthClick(event) {
+        gapi.auth2.getAuthInstance().signIn();
+      }
+
+      /**
+       *  Sign out the user upon button click.
+       */
+      function handleSignoutClick(event) {
+        gapi.auth2.getAuthInstance().signOut();
+      }
+
+      function onCreateFolderBtnClick() {
+        const folderName = prompt('Enter folder name:');
+        console.log('gapi.client.drive.files:', gapi.client.drive.files);
+        console.log('folderName:', folderName);
+        gapi.client.drive.files
+          .create({
+            resource: {
+              name: folderName,
+              // For full list of drive's supported MIME types: https://developers.google.com/drive/api/v3/mime-types
+              mimeType: 'application/vnd.google-apps.folder',
+            },
+            fields: 'id',
+          })
+          .then(function(response) {
+            switch (response.status) {
+              case 200:
+                var file = response.result;
+                console.log('Created Folder Id: ', file.id);
+                break;
+              default:
+                console.log('Error creating the folder, ' + response);
+                break;
+            }
+          });
+      }
+
+      /**
+       * Append a pre element to the body containing the given message
+       * as its text node. Used to display the results of the API call.
+       *
+       * @param {string} message Text to be placed in pre element.
+       */
+      function appendPre(message) {
+        var pre = document.getElementById('content');
+        var textContent = document.createTextNode(message + '\n');
+        pre.appendChild(textContent);
+      }
+
+      /**
+       * Print files.
+       */
+      function listFolders() {
+        gapi.client.drive.files
+          .list({
+            q: "mimeType='application/vnd.google-apps.folder'",
+            pageSize: 10,
+            // See https://developers.google.com/drive/api/v3/reference/files for list of all the file properties
+            fields: 'nextPageToken, files(*)',
+          })
+          .then(function(response) {
+            appendPre('Folders (see JS console log for more info):\n');
+            var files = response.result.files;
+            if (files && files.length > 0) {
+              for (var i = 0; i < files.length; i++) {
+                var file = files[i];
+                appendPre('  ' + file.name + ' (' + file.id + ')');
+                console.log('folder:', file);
+              }
+            } else {
+              appendPre('  No files found.');
+            }
+          });
+      }
+    </script>
+
+    <script
+      async
+      defer
+      src="https://apis.google.com/js/api.js"
+      onload="this.onload=function(){};handleClientLoad()"
+      onreadystatechange="if (this.readyState === 'complete') this.onload()"
+    ></script>
+  </body>
+</html>

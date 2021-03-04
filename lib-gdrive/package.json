@@ -17,8 +17,11 @@
     "node": ">=10"
   },
   "scripts": {
-    "start": "tsdx watch",
-    "build": "tsdx build",
+    "clean": "del dist",
+    "build": "npm run tsdx -- build",
+    "watch": "npm run tsdx -- watch",
+    "pretsdx": "npm run clean",
+    "tsdx": "tsdx --format umd --name IDBSideSync.plugins.googledrive",
     "test": "tsdx test",
     "lint": "tsdx lint",
     "prepare": "tsdx build",
@@ -43,6 +46,10 @@
   "peerDependencies": {},
   "devDependencies": {
     "@size-limit/preset-small-lib": "^4.9.1",
+    "@types/gapi": "0.0.39",
+    "@types/gapi.auth2": "0.0.53",
+    "@types/gapi.client.drive": "^3.0.13",
+    "del-cli": "^3.0.1",
     "husky": "^4.3.6",
     "size-limit": "^4.9.1",
     "tsdx": "^0.14.1",
