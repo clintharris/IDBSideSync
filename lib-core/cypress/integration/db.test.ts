@@ -6,6 +6,7 @@ import {
   assertEntries,
   deleteDb,
   getDb,
+  GLOBAL_SETTINGS_STORE,
   SCOPED_SETTINGS_STORE,
   TODOS_DB,
   TODO_ITEMS_STORE,
@@ -167,7 +168,6 @@ context('db', () => {
         assert(oplogEntry.hlcTime < hlNow.toString(), `Expected HL clock time to have been moved beyond entry time`);
       };
 
-
       await applyEntryTest();
 
       await waitForAFew();
@@ -206,7 +206,6 @@ context('db', () => {
       let foundEntries;
       const sharedWhere = { store: TODO_ITEMS_STORE, objectKey: expectedTodo.id };
 
-      // Apply the first set of oplog entries, doing tests after each entry is applied
       for (let i = 0; i < todoOplogEntries.length; i++) {
         const entry = todoOplogEntries[i];
 
@@ -226,6 +225,50 @@ context('db', () => {
         foundTodo = await IDBSideSync.utils.request(proxiedStore.get(expectedTodo.id));
       });
       expect(foundTodo).to.deep.equal(expectedTodo);
+    });
+
+    it('works when multiple entries affect same object in store without a keyPath', async () => {
+      const objectKey = [111, 222];
+      const sharedWhere = { store: GLOBAL_SETTINGS_STORE, objectKey: objectKey };
+      let foundObj;
+      let foundEntries;
+
+      const oplogEntries = [
+        {
+          hlcTime: '2021-01-24T13:23:14.203Z-0000-testnode',
+          objectKey: objectKey,
+          prop: 'foo',
+          store: GLOBAL_SETTINGS_STORE,
+          value: 'bar',
+        },
+        {
+          hlcTime: '2021-01-24T13:23:14.203Z-0001-testnode',
+          objectKey: objectKey,
+          prop: 'meaning',
+          store: GLOBAL_SETTINGS_STORE,
+          value: 42,
+        },
+        {
+          hlcTime: '2021-01-24T13:23:14.203Z-0002-testnode',
+          objectKey: objectKey,
+          prop: 'foo',
+          store: GLOBAL_SETTINGS_STORE,
+          value: 'baz',
+        },
+      ];
+
+      for (const entry of oplogEntries) {
+        await IDBSideSync.applyOplogEntry(entry);
+      }
+
+      await transaction([GLOBAL_SETTINGS_STORE], async (proxiedStore, oplogStore) => {
+        foundObj = await IDBSideSync.utils.request(proxiedStore.get(objectKey));
+        foundEntries = await IDBSideSync.utils.request(oplogStore.getAll());
+      });
+
+      expect(foundObj).to.deep.equal({ meaning: 42, foo: 'baz' });
+      assertEntries(foundEntries, { hasCount: 1, where: { ...sharedWhere, prop: 'meaning' } });
+      assertEntries(foundEntries, { hasCount: 2, where: { ...sharedWhere, prop: 'foo' } });
     });
   });
 });
