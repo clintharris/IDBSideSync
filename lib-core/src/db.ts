@@ -104,7 +104,7 @@ export function initSettings(): Promise<typeof cachedSettings> {
         cachedSettings = result;
       } else {
         debug && log.debug('no valid settings found in database; creating new settings...');
-        cachedSettings = { nodeId: makeNodeId() };
+        cachedSettings = { nodeId: makeNodeId(), syncProfiles: [] };
         const putReq = metaStore.put(cachedSettings, CACHED_SETTINGS_OBJ_KEY);
         putReq.onsuccess = () => {
           debug && log.debug('successfully persisted initial settings:', cachedSettings);

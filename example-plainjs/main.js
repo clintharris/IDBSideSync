@@ -46,23 +46,20 @@ function getColor(name) {
   return 'bg-gray-100';
 }
 
-const buttonClasses = 'h-12 sm:h-10 rounded focus:ring-2 focus:ring-blue-600 text-white';
+const buttonClasses = 'h-12 sm:h-10 px-8 rounded focus:ring-2 focus:ring-blue-600 text-white';
 const classes = {
   buttonPrimary: `${buttonClasses} bg-blue-600`,
   buttonSecondary: `${buttonClasses} bg-gray-400`,
   buttonDanger: `${buttonClasses} bg-red-600`,
   textInput: 'h-12 px-4 shadow-sm border border-gray-300 rounded',
   select: 'h-12 rounded shadow-sm border border-gray-300 text-gray-500',
-}
-
-let uiState = {
-  offline: false,
-  editingTodo: null,
-  isAddingType: false,
-  isDeletingType: false,
-  activeProfileName: null,
-  showingStyleSettings: false,
+  modalBackground:
+    'absolute bottom-0 left-0 right-0 top-0 pt-16 flex justify-center items-start bg-gray-500 bg-opacity-40',
+  modalContainer: 'flex-grow max-w-sm mx-4 p-4 bg-white rounded shadow-xl',
+  modalTitle: 'text-lg font-bold mb-4 ext-lg font-bold mb-4',
 };
+
+let uiState = defaultUiState();
 
 let _syncTimer = null;
 function backgroundSync() {
@@ -156,7 +153,8 @@ async function renderProfileNames() {
       <span class="text-gray-500">Profile:</span>
       <select name="profiles" onchange="onStyleProfileChange()" class="${classes.select}">
         ${(await getAllProfileNames()).map(
-          (profile) => `<option ${uiState.activeProfileName === profile.name ? 'selected' : ''}>${profile.name}</option>`
+          (profile) =>
+            `<option ${uiState.activeProfileName === profile.name ? 'selected' : ''}>${profile.name}</option>`
         )}
         <option value="add-new-profile">Add new profile...</option>
       </select>
@@ -205,7 +203,7 @@ async function render() {
   let root = qs('#root');
   root.style.height = '100%';
 
-  let { offline, editingTodo, isAddingType, isDeletingType, showingStyleSettings } = uiState;
+  let { offline, editingTodo } = uiState;
 
   clear();
 
@@ -270,9 +268,10 @@ async function render() {
         <div class="max-w-screen-md">
           <button id="btn-offline-simulate" class="text-sm hover:bg-gray-300 px-2 py-1 rounded ${offline ? 'text-blue-700' : 'text-red-700'}">${offline ? 'Go online' : 'Simulate offline'}</button>
 
-          <button id="btn-sync" class="m-4 mr-6 ${offline ? 'bg-red-600' : 'bg-blue-600'} text-white rounded p-2">
-          Sync ${offline ? '(offline)' : ''}
-          </button>
+          <button 
+            onclick="onSyncSettingsBtnClick()" 
+            class="m-4 mr-6 ${offline ? 'bg-red-600' : 'bg-blue-600'} text-white rounded p-2"
+          >Sync Settings</button>
         </div>
       </div>
     </div>
@@ -287,28 +286,44 @@ async function render() {
 
   if (editingTodo) {
     append(`
-      <div class="absolute bottom-0 left-0 right-0 top-0 flex items-center justify-center" style="background-color: rgba(.2, .2, .2, .4)">
-        <div class="bg-white p-8">
-          <h2 class="text-lg font-bold mb-4">Edit todo</h2>
-          <div class="flex">
-            <input value="${sanitize(
-              editingTodo.name
-            )}" class="shadow border border-gray-300 mr-2 flex-grow p-2 rounded" />
-            <button id="btn-edit-save" class="rounded p-2 bg-blue-600 text-white mr-2focus:ring-2 focus:ring-blue-600 ">Save</button>
-            <button id="btn-edit-cancel" class="rounded p-2 bg-gray-200 focus:ring-2 focus:ring-blue-600">Cancel</button>
+      <div class="${classes.modalBackground}">
+        <div class="${classes.modalContainer}">
+          <h2 class="${classes.modalTitle}">Edit To-Do</h2>
+          <div class="flex flex-col">
+            <input value="${sanitize(editingTodo.name)}" class="${classes.textInput}" />
+            <button id="btn-edit-save" class="${classes.buttonPrimary} mt-4 mb-4">Save</button>
+            <button id="btn-edit-cancel" class="${classes.buttonSecondary}">Cancel</button>
           </div>
-
-          ${editingTodo.tombstone === 1 ? '<button id="btn-edit-undelete" class="pt-4 text-sm">Undelete</button>' : ''}
         </div>
-      <div>
+      </div>
     `);
   }
 
-  if (isAddingType) {
+  if (uiState.modal === 'please-wait') {
     append(`
-      <div class="absolute bottom-0 left-0 right-0 top-0 pt-16 flex justify-center items-start bg-gray-500 bg-opacity-40">
-        <div class="flex-grow max-w-sm mx-4 p-4 bg-white rounded shadow-xl">
-          <h2 class="text-lg font-bold mb-4">Add To-Do Type</h2>
+      <div class="${classes.modalBackground}">
+        <div class="${classes.modalContainer}">
+          <div class="flex flex-col items-center">
+            <svg
+              class="animate-spin h-8 w-8 my-4 text-green-500"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            ${uiState.waitModalMessage ? `<div class="my-4">${uiState.waitModalMessage}</div>` : ''}
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (uiState.modal === 'add-todo-type') {
+    append(`
+      <div class="${classes.modalBackground}">
+        <div class="${classes.modalContainer}">
+          <h2 class="${classes.modalTitle}">Add To-Do Type</h2>
           <div class="flex flex-col">
             <input
               autofocus
@@ -316,14 +331,8 @@ async function render() {
               placeholder="Enter type (e.g., &quot;Groceries&quot;)..."
               class="${classes.textInput} flex-grow mx-2 mb-4 p-2" />
               <div class="mx-2 flex justify-end">
-                <button
-                  id="btn-edit-cancel"
-                  class="${classes.buttonSecondary} px-8"
-                >Cancel</button>
-                <button
-                  id="btn-edit-save"
-                  class="${classes.buttonPrimary} ml-4 px-8"
-                >Save</button>
+                <button id="btn-edit-cancel" class="${classes.buttonSecondary}">Cancel</button>
+                <button id="btn-edit-save" class="${classes.buttonPrimary} ml-4">Save</button>
               </div>
           </div>
         </div>
@@ -331,11 +340,98 @@ async function render() {
     `);
   }
 
-  if (isDeletingType) {
+  if (uiState.modal === 'sync-settings/main-menu') {
     append(`
-      <div class="absolute bottom-0 left-0 right-0 top-0 flex items-center justify-center>
-        <div class="bg-white p-8">
-          <h2 class="text-lg font-bold mb-4">Delete todo type</h2>
+      <div class="${classes.modalBackground}">
+        <div class="${classes.modalContainer}">
+          <h2 class="${classes.modalTitle}">Sync Settings</h2>
+          <p class="mb-4">
+            At least one of the services below needs to be enabled for syncing to work.
+          </p>
+          <div class="flex flex-col">
+            <button
+              onClick="onGDriveSettingsBtnClick()"
+              class="${classes.buttonPrimary} mt-6 mb-4">Google Drive</button>
+            <button onClick="closeModal()" class="${classes.buttonSecondary}">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (uiState.modal === 'sync-settings/gdrive') {
+    append(`
+      <div class="${classes.modalBackground}">
+        <div class="${classes.modalContainer}">
+          <h2 class="${classes.modalTitle}">Google Drive</h2>
+          <div>You are currently signed in to Google as:</div>
+          <div class="flex flex-col">
+            <div class="mt-2 text-center">
+              ${uiState.gdrive.currentUser ? uiState.gdrive.currentUser.email : '(failed to retrieve email address)'}
+            </div>
+            <button onClick="onGDriveLogoutBtnClick()" class="${classes.buttonPrimary} mt-6 mb-4">Sign Out</button>
+            <button onClick="closeModal()" class="${classes.buttonSecondary}">Close</button>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (uiState.modal === 'sync-settings/gdrive/sign-in') {
+    append(`
+      <div class="${classes.modalBackground}">
+        <div class="${classes.modalContainer}">
+          <h2 class="${classes.modalTitle}">Setup Google Drive</h2>
+          <p class="mb-4">Clicking the button below will launch Google's sign-in process.</p>
+          <p>After signing in, Google will prompt you to allow (or deny) the ability for this app to manage files and folders that it has created in your Google Drive.</p>
+          <div class="flex flex-col">
+            <button onClick="onGDriveLoginBtnClick()" class="${classes.buttonPrimary} mt-6 mb-4">
+              Launch Google Sign-In
+            </button>
+            <button onClick="closeModal()" class="${classes.buttonSecondary}">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (uiState.modal === 'sync-settings/gdrive/sign-in/in-progress') {
+    append(`
+      <div class="${classes.modalBackground}">
+        <div class="${classes.modalContainer}">
+          <h2 class="${classes.modalTitle}">Google Login In-Progress...</h2>
+          <div class="mb-4">
+            The Google sign-in screen should have opened in a pop-up or new window/tab. Once you complete the sign-in
+            process, that pop-up will close and this screen will update with your new status.
+          </div>
+          <div class="flex flex-col">
+            <button onClick="closeModal()" class="${classes.buttonSecondary}">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (uiState.modal === 'sync-settings/gdrive/sign-in/failed') {
+    append(`
+      <div class="${classes.modalBackground}">
+        <div class="${classes.modalContainer}">
+          <h2 class="${classes.modalTitle}">Setup Google Drive</h2>
+          <div>Oops, the Google sign-in failed:</div>
+          <div class="text-xs text-red-700 font-mono m-2 p-2">${uiState.gdrive.loginError}</div>
+          <div class="flex flex-col">
+            <button onClick="closeModal()" class="${classes.buttonPrimary}">OK</button>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (uiState.modal === 'delete-todo-type') {
+    append(`
+      <div class="${classes.modalBackground}">
+        <div class="${classes.modalContainer}">
+          <h2 class="${classes.modalTitle}">Delete To-Do Type</h2>
           <div class="pb-2">
             Delete ${await renderTodoTypes({ className: 'selected' })} and
             merge into ${await renderTodoTypes({
@@ -353,11 +449,11 @@ async function render() {
     `);
   }
 
-  if (showingStyleSettings) {
+  if (uiState.modal === 'preferences') {
     append(`
-      <div class="absolute bottom-0 left-0 right-0 top-0 pt-16 flex justify-center items-start bg-gray-500 bg-opacity-40">
-        <div class="flex-grow max-w-sm mx-4 p-4 bg-white rounded shadow-xl">
-          <h2 class="text-lg font-bold mb-4">Preferences</h2>
+      <div class="${classes.modalBackground}">
+        <div class="${classes.modalContainer}">
+          <h2 class="${classes.modalTitle}">Preferences</h2>
           <div class="flex flex-col">
             ${await renderProfileNames()}
             <label for="bg-color-setting" class="flex justify-between items-center mb-4">
@@ -382,10 +478,7 @@ async function render() {
               />
               <span class="ml-2" onclick="onFontSizeSettingClick()">✏️</span>
             </label>
-            <button
-              onClick="closeStyleSettings()"
-              class="${classes.buttonPrimary} mt-4 px-8"
-            >Done</button>
+            <button onClick="closeModal()" class="${classes.buttonPrimary} mt-4">Done</button>
           </div>
         </div>
       </div>
@@ -418,10 +511,6 @@ function addEventHandlers() {
 
     await addTodo({ name, type, order: await getNumTodos() });
     render();
-  });
-
-  qs('#btn-sync').addEventListener('click', async (e) => {
-    sync();
   });
 
   qs('#btn-offline-simulate').addEventListener('click', () => {
@@ -481,7 +570,7 @@ function addEventHandlers() {
         render();
       });
     }
-  } else if (uiState.isAddingType) {
+  } else if (uiState.modal === 'add-todo-type') {
     qs('#btn-edit-save').addEventListener('click', (e) => {
       let input = e.target.parentNode.parentNode.querySelector('input');
       let value = input.value;
@@ -492,10 +581,10 @@ function addEventHandlers() {
         name: value,
         color: colors[(Math.random() * colors.length) | 0],
       });
-      uiState.isAddingType = false;
+      uiState.modal = null;
       render();
     });
-  } else if (uiState.isDeletingType) {
+  } else if (uiState.modal === 'delete-todo-type') {
     qs('#btn-edit-delete').addEventListener('click', (e) => {
       let modal = e.target.parentNode;
       let selected = qs('select.selected').selectedOptions[0].value;
@@ -508,7 +597,7 @@ function addEventHandlers() {
 
       deleteTodoType(selected, merge !== '' ? merge : null);
 
-      uiState.isDeletingType = false;
+      uiState.modal = null;
       render();
     });
   }
@@ -517,24 +606,23 @@ function addEventHandlers() {
   if (cancel) {
     cancel.addEventListener('click', () => {
       uiState.editingTodo = null;
-      uiState.isAddingType = false;
-      uiState.isDeletingType = false;
+      uiState.modal = null;
       render();
     });
   }
 
   qs('select[name=types]').addEventListener('change', async (e) => {
     if (e.target.value === 'add-type') {
-      uiState.isAddingType = true;
+      uiState.modal = 'add-todo-type';
       render();
     } else if (e.target.value === 'delete-type') {
-      uiState.isDeletingType = true;
+      uiState.modal = 'delete-todo-type';
       render();
     }
   });
 
   qs('#btn-show-style-modal').addEventListener('click', async (e) => {
-    uiState.showingStyleSettings = true;
+    uiState.modal = 'preferences';
     render();
   });
 }
@@ -558,7 +646,91 @@ async function onStyleProfileChange(e) {
   render();
 }
 
+function defaultUiState() {
+  return {
+    offline: false,
+    editingTodo: null,
+    activeProfileName: null,
+    modal: null,
+    waitModalMessage: null,
+    gdrive: {
+      email: null,
+      loginError: null,
+    },
+  };
+}
 
+function closeModal() {
+  uiState = {
+    ...uiState,
+    modal: null,
+  };
+
+  render();
+}
+
+function showWaitModal(optionalMessage) {
+  uiState.modal = 'please-wait';
+  uiState.waitModalMessage = optionalMessage;
+  render();
+}
+
+function onSyncSettingsBtnClick() {
+  uiState.modal = 'sync-settings/main-menu';
+  render();
+}
+
+async function onGDriveSettingsBtnClick() {
+  if (!IDBSideSync.plugins.googledrive.isLoaded()) {
+    showWaitModal('Loading Google Drive client library...');
+    try {
+      await IDBSideSync.plugins.googledrive.load({
+        clientId: '1004853515655-8qhi3kf64cllut2no4trescfq3p6jknm.apps.googleusercontent.com',
+      });
+    } catch (error) {
+      console.error('Failed to load Google Drive plugin:', error);
+      const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
+      return showGDriveLoginFailedModal(errMsg);
+    }
+  }
+
+  if (IDBSideSync.plugins.googledrive.isUserSignedIn()) {
+    // uiState.modal = 'sync-settings/gdrive';
+    return onGoogleSignInChange(IDBSideSync.plugins.googledrive.getCurrentUser());
+  }
+
+  uiState.modal = 'sync-settings/gdrive/sign-in';
+  render();
+}
+
+async function onGDriveLoginBtnClick() {
+  uiState.modal = 'sync-settings/gdrive/sign-in/in-progress';
+  render();
+  try {
+    IDBSideSync.plugins.googledrive.onSignInChange(onGoogleSignInChange);
+    IDBSideSync.plugins.googledrive.signIn();
+  } catch (error) {
+    console.error(error);
+    showGDriveLoginFailedModal(JSON.stringify(error));
+  }
+}
+
+function onGoogleSignInChange(googleUser) {
+  uiState.gdrive.currentUser = googleUser;
+  uiState.modal = 'sync-settings/gdrive';
+  render();
+}
+
+function showGDriveLoginFailedModal(errorMessage) {
+  uiState.modal = 'sync-settings/gdrive/sign-in/failed';
+  uiState.gdrive.loginError = errorMessage;
+  render();
+}
+
+function onGDriveLogoutBtnClick() {
+  IDBSideSync.plugins.googledrive.signOut();
+  closeModal();
+}
 
 async function onBgColorSettingClick() {
   const currentVal = qs('#root').style.backgroundColor;
@@ -581,11 +753,6 @@ async function onFontSizeSettingClick() {
     await updateFontSizeSetting(uiState.activeProfileName, newVal);
     setFontSize(newVal);
   }
-}
-
-function closeStyleSettings() {
-  uiState.showingStyleSettings = false;
-  render();
 }
 
 function setBgColor(color) {
@@ -617,31 +784,40 @@ async function loadAndApplyProfileSettings(profileName) {
   render();
 })();
 
-let _syncMessageTimer = null;
+const syncTimers = {};
 
-let gdriveSyncProvider = null;
-
-function setupSync() {
-  // This will check local storage for Google Drive access token, etc. If none
-  // exists, it'll dynamically add a <script> element to the document for loading
-  // the Google API JavaScript client, and then proceed to launch the OAuth login
-  // pop-up.
-  if (IDBSideSync.plugins.googledrive.needsSetup()) {
-    console.warn('todo: setup google sync...');
+function startSyncTimers() {
+  for (const syncProfile of IDBSideSync.getSyncProfiles()) {
+    if (syncProfile.type === 'gdrive') {
+      syncTimers.gdrive = setInterval(syncGDrive, 15000);
+    }
   }
-  // IDBSideSync.plugins.googledrive.setup((syncProvider) => {
-  //   gdriveSyncProvider = syncProvider;
-  //   sync();
-  // });
+}
+
+function stopSyncTimers() {
+  for (const key in syncTimers) {
+    clearInterval(syncTimers[key]);
+    syncTimers[key] = -1;
+  }
 }
 
 function sync() {
-  if (gdriveSyncProvider) {
-    // IDBSideSync.sync(gdriveSyncProvider);
-  } else {
-    setupSync();
+  for (let syncProfile of IDBSideSync.getSyncProfiles()) {
+    if (syncProfile.type === 'gdrive') {
+      syncGDrive();
+    }
   }
 }
+
+function syncGDrive() {
+  const syncProfile = IDBSideSync.getSyncProfiles().find((profile) => profile.type === 'gdrive');
+  if (!syncProfile) {
+    console.warn('Google Drive sync was requested, but no corresponding profile exists.');
+    return;
+  }
+
+}
+
 // onSync(hasChanged => {
 //   render();
 
