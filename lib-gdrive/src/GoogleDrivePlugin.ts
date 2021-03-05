@@ -8,31 +8,42 @@ const GAPI_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 // fields, see https://developers.google.com/drive/api/v3/reference/files
 const GAPI_FILE_FIELDS = 'id, name, createdTime';
 
-export class GoogleDrivePlugin {
-  private static onSignInChangeHandler: ((args: UserProfile) => void) | null = null;
+type SignInChangeHandler = (currentUserProfile: UserProfile | null) => void;
 
-  public static needsSetup(): boolean {
-    return true;
+export class GoogleDrivePlugin implements SyncPlugin {
+  private clientId: string;
+
+  private listeners: {
+    signIn: SignInChangeHandler[];
+  } = {
+    signIn: [],
+  };
+
+  constructor(options: { clientId: string; onSignIn?: SignInChangeHandler }) {
+    if (!options || typeof options.clientId !== 'string') {
+      const errMsg = `Missing options param with clientId. Example: setup({ clientId: '...' })`;
+      log.error(errMsg);
+      throw new Error(`[${libName}] ${errMsg}`);
+    }
+
+    this.clientId = options.clientId;
+
+    if (options.onSignIn instanceof Function) {
+      this.listeners.signIn.push(options.onSignIn);
+    }
   }
 
-  public static getStore(): OpLogStore {
+  public getStore(): OpLogStore {
     return new GDriveOpLogStore();
   }
 
-  public static isLoaded(): boolean {
+  public isLoaded(): boolean {
     return window.gapi !== undefined && window.gapi.client !== undefined;
   }
 
-  public static load(options: { clientId: string }): ReturnType<typeof GoogleDrivePlugin.initGDriveClient> {
-    if (!options || typeof options.clientId !== 'string') {
-      const errMsg = `${libName}.load(): missing options param with clientId. Example: load({ clientId: '...' })`;
-      log.error(errMsg);
-      throw new Error(errMsg);
-    }
-
-    // Remember: the function passed to the Promise constructor (the "executor") is executed immediately.
+  public load(): Promise<void> {
     return new Promise((resolve, reject) => {
-      if (window.gapi) {
+      if (this.isLoaded()) {
         debug && log.debug(`Skipping <script> injections for Google API Client .js file; window.gapi already exists.`);
         return resolve('skipped-script-injection');
       }
@@ -70,7 +81,7 @@ export class GoogleDrivePlugin {
             console.log('ua:', ua);
           }
           log.error(errorMsg, error);
-          throw new Error(errorMsg);
+          throw new Error(`[${libName}] ${errorMsg}`);
         }
         throw error;
       })
@@ -78,40 +89,71 @@ export class GoogleDrivePlugin {
         if (result !== 'skipped-module-load') {
           debug && log.debug(`GAPI library modules successfully loaded.`);
         }
-        return GoogleDrivePlugin.initGDriveClient(window.gapi.client, options.clientId);
+        debug && log.debug(`Initializing GAPI client...`);
+        return window.gapi.client
+          .init({
+            // Note that `apiKey` is NOT specified here, only the (OAuth) Client ID. When setting up app credentials in
+            // the Google Developer Console via "Create Credentials > Help Me Choose" the console explains that it's not
+            // safe to use some creds in certain contexts. If you select Google Drive, indicate that the app will run in
+            // a browser, and specify that the application will access user data, it states that only the clientId can
+            // be used securely. See https://developer.okta.com/blog/2019/01/22/oauth-api-keys-arent-safe-in-mobile-apps
+            // for more info on why including the API key in a browser app is a bad idea.
+            clientId: this.clientId,
+            discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+            scope: 'https://www.googleapis.com/auth/drive.file',
+          })
+          .then(() => {
+            debug && log.debug(`GAPI client successfully initialized.`);
+            debug && log.debug(`Setting up GAPI auth change listeners.`);
+            const authInstance = gapi.auth2.getAuthInstance();
+            authInstance.isSignedIn.listen(this.onSignInChange.bind(this));
+            authInstance.currentUser.listen(this.onCurrentUserChange.bind(this));
+          });
       });
   }
 
-  public static initGDriveClient(client: typeof gapi.client, clientId: string): Promise<void> {
-    debug && log.debug(`Initializing GAPI client...`);
-    return client
-      .init({
-        // Note that `apiKey` is NOT specified here, only the (OAuth) Client ID. When setting up app credentials in the
-        // Google Developer Console via "Create Credentials > Help Me Choose" the console explains that it's not safe to
-        // use some creds in certain contexts. If you select Google Drive, indicate that the app will run in a browser,
-        // and specify that the application will access user data, it states that only the clientId can be used securely.
-        // See https://developer.okta.com/blog/2019/01/22/oauth-api-keys-arent-safe-in-mobile-apps for more info on why
-        // including the API key in a browser app is a bad idea.
-        clientId,
-        discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-        scope: 'https://www.googleapis.com/auth/drive.file',
-      })
-      .then(() => {
-        debug && log.debug(`GAPI client successfully initialized.`);
-        debug && log.debug(`Setting up GAPI auth change listeners.`);
-        const authInstance = gapi.auth2.getAuthInstance();
-        authInstance.isSignedIn.listen((newSignInStatus) => {
-          console.log({ newSignInStatus });
-        });
-        authInstance.currentUser.listen(GoogleDrivePlugin.updateCurrentUser);
-      });
+  private onSignInChange(isSignedIn: boolean) {
+    const currentUser = isSignedIn ? this.getCurrentUser() : null;
+    this.listeners.signIn.forEach((handleSignInChange) => {
+      handleSignInChange(currentUser);
+    });
   }
 
-  public static isUserSignedIn(): boolean {
+  /**
+   * This function will be called after every successful sign-in (assuming it is set up as the handler for
+   * `gapi.auth2.getAuthInstance().currentUser.listen(...)`).
+   *
+   * Note that even after the initial sign-in, this function will continue to get called every hour. This happens
+   * because Google OAuth access tokens expire after one hour and the GAPI client will automatically requests a new
+   * access token so that the client will continue to be usable; every time a new access token is requested, the
+   * "currentUser" change handler will get called.
+   *
+   * Google likely does this to limit the amount of time an access key is valid if it were to be intercepted.
+   */
+  private onCurrentUserChange(googleUser: gapi.auth2.GoogleUser) {
+    debug && log.debug(`New user:`, googleUser);
+    const currentUser = this.getCurrentUser();
+    this.listeners.signIn.forEach((handleSignInChange) => {
+      handleSignInChange(currentUser);
+    });
+  }
+
+  public isSignedIn(): boolean {
     return gapi.auth2.getAuthInstance().isSignedIn.get();
   }
 
-  public static getCurrentUser(): UserProfile {
+  public signIn(): Promise<gapi.auth2.GoogleUser> {
+    return gapi.auth2.getAuthInstance().signIn({
+      fetch_basic_profile: false,
+      ux_mode: 'popup',
+    });
+  }
+
+  public signOut(): void {
+    gapi.auth2.getAuthInstance().signOut();
+  }
+
+  public getCurrentUser(): UserProfile {
     const userProfile = gapi.auth2
       .getAuthInstance()
       .currentUser.get()
@@ -123,48 +165,7 @@ export class GoogleDrivePlugin {
     };
   }
 
-  public static signIn(): Promise<gapi.auth2.GoogleUser> {
-    return gapi.auth2.getAuthInstance().signIn({
-      fetch_basic_profile: false,
-      ux_mode: 'popup',
-    });
-  }
-
-  public static signOut(): void {
-    gapi.auth2.getAuthInstance().signOut();
-  }
-
-  public static onSignIn(callback: typeof GoogleDrivePlugin.onSignInChangeHandler) {
-    GoogleDrivePlugin.onSignInChangeHandler = callback;
-  }
-
-  /**
-   * This function will be called after every successful sign-in (assuming it is set up as the handler for
-   * `gapi.auth2.getAuthInstance().currentUser.listen(...)`).
-   *
-   * Note that even after the initial sign-in, this function will continue to get called every hour. This happens because
-   * Google OAuth access tokens expire after one hour and the GAPI client will automatically requests a new access token
-   * so that the client will continue to be usable; every time a new access token is requested, the "currentUser" change
-   * handler will get called.
-   *
-   * Google likely does this to limit the amount of time an access key is valid if it were to be intercepted.
-   */
-  public static updateCurrentUser(googleUser: gapi.auth2.GoogleUser) {
-    debug && log.debug(`Handling "current user" change event; new user:`, googleUser);
-
-    //TODO: persist current user info to idb
-    const userProfile = googleUser.getBasicProfile();
-
-    if (GoogleDrivePlugin.onSignInChangeHandler) {
-      GoogleDrivePlugin.onSignInChangeHandler({
-        email: userProfile.getEmail(),
-        firstName: userProfile.getGivenName(),
-        lastName: userProfile.getFamilyName(),
-      });
-    }
-  }
-
-  public static listFolders(): Promise<GoogleFile[]> {
+  public listFolders(): Promise<GoogleFile[]> {
     return new Promise((resolve, reject) => {
       gapi.client.drive.files
         .list({
@@ -186,7 +187,7 @@ export class GoogleDrivePlugin {
     });
   }
 
-  public static createFolder(folderName: string): Promise<GoogleFile> {
+  public createFolder(folderName: string): Promise<GoogleFile> {
     return new Promise((resolve, reject) => {
       gapi.client.drive.files
         .create({
@@ -204,8 +205,9 @@ export class GoogleDrivePlugin {
               resolve(folder as GoogleFile);
               return;
             default:
-              log.error(`Received error response on attempt to create folder:`, response);
-              throw new Error(response.body);
+              const errorMsg = `Received error response on attempt to create folder:`;
+              log.error(errorMsg, response);
+              throw new Error(`[${libName}] ${errorMsg} ${response.body}`);
           }
         })
         .catch((error) => {

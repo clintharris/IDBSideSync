@@ -684,18 +684,21 @@ function onSyncSettingsBtnClick() {
   render();
 }
 
-function loadGoogleDrivePlugin() {
+let googleDrivePlugin = null;
 
-  return IDBSideSync.plugins.googledrive.GoogleDrivePlugin.load({
-    // Replace clientId with one of your own from https://console.developers.google.com/.
+async function loadGoogleDrivePlugin() {
+  googleDrivePlugin = new IDBSideSync.plugins.googledrive.GoogleDrivePlugin({
     clientId: '1004853515655-8qhi3kf64cllut2no4trescfq3p6jknm.apps.googleusercontent.com',
+    onSignIn: onGoogleSignIn,
   });
+  IDBSideSync.registerSyncPlugin(googleDrivePlugin);
 }
 
 async function onGDriveSettingsBtnClick() {
   // Ensure that the Google Drive plugin is loaded (i.e., that the Google API client library is loaded).
-  if (!IDBSideSync.plugins.googledrive.GoogleDrivePlugin.isLoaded()) {
+  if (!googleDrivePlugin) {
     showWaitModal('Loading IDBSideSync Google Drive plugin.');
+
     try {
       await loadGoogleDrivePlugin();
     } catch (error) {
@@ -703,12 +706,6 @@ async function onGDriveSettingsBtnClick() {
       const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
       return showGDriveLoginFailedModal(errMsg);
     }
-  }
-
-  //TODO: remove this once "load gapi and sign user in on app startup" has been implemented.
-  if (IDBSideSync.plugins.googledrive.GoogleDrivePlugin.isUserSignedIn()) {
-    onGoogleSignIn(IDBSideSync.plugins.googledrive.GoogleDrivePlugin.getCurrentUser());
-    return;
   }
 
   uiState.modal = 'sync-settings/gdrive/sign-in';
@@ -719,8 +716,7 @@ async function onGDriveLoginBtnClick() {
   uiState.modal = 'sync-settings/gdrive/sign-in/in-progress';
   render();
   try {
-    IDBSideSync.plugins.googledrive.GoogleDrivePlugin.onSignIn(onGoogleSignIn);
-    IDBSideSync.plugins.googledrive.GoogleDrivePlugin.signIn();
+    googleDrivePlugin.signIn();
   } catch (error) {
     console.error('Google sign-in failed:', error);
     showGDriveLoginFailedModal(JSON.stringify(error));
@@ -728,7 +724,7 @@ async function onGDriveLoginBtnClick() {
 }
 
 function onGoogleSignIn(googleUser) {
-  console.warn('googleUser:', googleUser);
+  console.log('onGoogleSignIn()', googleUser);
   uiState.gdrive.currentUser = googleUser;
   uiState.modal = 'sync-settings/gdrive';
   render();

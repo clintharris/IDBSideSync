@@ -142,6 +142,9 @@ interface UserProfile {
   lastName: string;
 }
 
+interface SyncPlugin {
+  load(): Promise<void>;
+}
 interface Settings {
   nodeId: string;
 }
