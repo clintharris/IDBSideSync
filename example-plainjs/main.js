@@ -684,8 +684,9 @@ function onSyncSettingsBtnClick() {
   render();
 }
 
-function loadIDBSideSyncGoogleDrivePlugin() {
-  return IDBSideSync.plugins.googledrive.load({
+function loadGoogleDrivePlugin() {
+
+  return IDBSideSync.plugins.googledrive.GoogleDrivePlugin.load({
     // Replace clientId with one of your own from https://console.developers.google.com/.
     clientId: '1004853515655-8qhi3kf64cllut2no4trescfq3p6jknm.apps.googleusercontent.com',
   });
@@ -693,10 +694,10 @@ function loadIDBSideSyncGoogleDrivePlugin() {
 
 async function onGDriveSettingsBtnClick() {
   // Ensure that the Google Drive plugin is loaded (i.e., that the Google API client library is loaded).
-  if (!IDBSideSync.plugins.googledrive.isLoaded()) {
+  if (!IDBSideSync.plugins.googledrive.GoogleDrivePlugin.isLoaded()) {
     showWaitModal('Loading IDBSideSync Google Drive plugin.');
     try {
-      await loadIDBSideSyncGoogleDrivePlugin();
+      await loadGoogleDrivePlugin();
     } catch (error) {
       console.error('Failed to load IDBSideSync Google Drive plugin:', error);
       const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
@@ -705,8 +706,8 @@ async function onGDriveSettingsBtnClick() {
   }
 
   //TODO: remove this once "load gapi and sign user in on app startup" has been implemented.
-  if (IDBSideSync.plugins.googledrive.isUserSignedIn()) {
-    onGoogleSignIn(IDBSideSync.plugins.googledrive.getCurrentUser());
+  if (IDBSideSync.plugins.googledrive.GoogleDrivePlugin.isUserSignedIn()) {
+    onGoogleSignIn(IDBSideSync.plugins.googledrive.GoogleDrivePlugin.getCurrentUser());
     return;
   }
 
@@ -718,8 +719,8 @@ async function onGDriveLoginBtnClick() {
   uiState.modal = 'sync-settings/gdrive/sign-in/in-progress';
   render();
   try {
-    IDBSideSync.plugins.googledrive.onSignIn(onGoogleSignIn);
-    IDBSideSync.plugins.googledrive.signIn();
+    IDBSideSync.plugins.googledrive.GoogleDrivePlugin.onSignIn(onGoogleSignIn);
+    IDBSideSync.plugins.googledrive.GoogleDrivePlugin.signIn();
   } catch (error) {
     console.error('Google sign-in failed:', error);
     showGDriveLoginFailedModal(JSON.stringify(error));
@@ -740,7 +741,7 @@ function showGDriveLoginFailedModal(errorMessage) {
 }
 
 function onGDriveLogoutBtnClick() {
-  IDBSideSync.plugins.googledrive.signOut();
+  IDBSideSync.plugins.googledrive.GoogleDrivePlugin.signOut();
   closeModal();
 }
 
@@ -828,7 +829,7 @@ function syncGDrive() {
     return;
   }
 
-  const gdriveStore = IDBSideSync.plugins.googledrive.getStore();
+  const gdriveStore = IDBSideSync.plugins.googledrive.GoogleDrivePlugin.getStore();
   IDBSideSync.sync(gdriveStore);
 }
 

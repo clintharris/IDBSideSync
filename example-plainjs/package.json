@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "license": "MIT",
   "scripts": {
-    "prestart": "npm run copyLibs",
+    "clean": "del dist",
+    "prestart": "npm run clean; npm run copyLibs",
     "start": "serve --listen 3000 --no-clipboard",
     "watch": "nodemon -x 'npm start' -w ../lib-core/dist -w ../lib-gdrive/dist --ext .umd.development.js --delay 1",
     "copyLibs": "cpy '../lib-core/dist/*.umd.*' '../lib-gdrive/dist/*.umd.*' ./dist",
@@ -11,6 +12,7 @@
   },
   "devDependencies": {
     "cpy-cli": "^3.1.1",
+    "del-cli": "^3.0.1",
     "nodemon": "^2.0.7",
     "serve": "^11.3.2"
   }

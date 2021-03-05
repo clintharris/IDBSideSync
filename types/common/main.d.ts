@@ -136,6 +136,12 @@ interface OpLogEntry {
   value: unknown;
 }
 
+interface UserProfile {
+  email: string;
+  firstName: string;
+  lastName: string;
+}
+
 interface Settings {
   nodeId: string;
 }
