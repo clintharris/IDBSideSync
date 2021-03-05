@@ -1,10 +1,23 @@
-import { debug, log } from './utils';
+import { debug, libName, log } from './utils';
 
 interface UserProfile {
   email: string;
   firstName: string;
   lastName: string;
 }
+
+interface GoogleFile {
+  id: string;
+  name: string;
+  createdTime: string;
+}
+
+// For full list of drive's supported MIME types: https://developers.google.com/drive/api/v3/mime-types
+const GAPI_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
+
+// Defines list of fields that we want to be populated on each file object we get from Google. For full list of file
+// fields, see https://developers.google.com/drive/api/v3/reference/files
+const GAPI_FILE_FIELDS = 'id, name, createdTime';
 
 let onSignInChangeHandler: ((args: UserProfile) => void) | null = null;
 
@@ -33,6 +46,12 @@ export function isLoaded(): boolean {
 }
 
 export function load(options: { clientId: string }): ReturnType<typeof initGDriveClient> {
+  if (!options || typeof options.clientId !== 'string') {
+    const errMsg = `${libName}.load(): missing options param with clientId. Example: load({ clientId: '...' })`;
+    log.error(errMsg);
+    throw new Error(errMsg);
+  }
+
   // Remember: the function passed to the Promise constructor (the "executor") is executed immediately.
   return new Promise((resolve, reject) => {
     if (window.gapi) {
@@ -103,7 +122,9 @@ function initGDriveClient(client: typeof gapi.client, clientId: string): Promise
       debug && log.debug(`GAPI client successfully initialized.`);
       debug && log.debug(`Setting up GAPI auth change listeners.`);
       const authInstance = gapi.auth2.getAuthInstance();
-      // authInstance.isSignedIn.listen(updateSignInStatus);
+      authInstance.isSignedIn.listen((newSignInStatus) => {
+        console.log({ newSignInStatus });
+      });
       authInstance.currentUser.listen(updateCurrentUser);
     });
 }
@@ -140,7 +161,7 @@ export function onSignIn(callback: typeof onSignInChangeHandler) {
 }
 
 /**
- * This function should be called whenever the current Google user changes (i.e., it should be passed to
+ * This function will be called after every successful sign-in (assuming it is set up as the handler for
  * `gapi.auth2.getAuthInstance().currentUser.listen(...)`).
  *
  * Note that even after the initial sign-in, this function will continue to get called every hour. This happens because
@@ -163,16 +184,55 @@ function updateCurrentUser(googleUser: gapi.auth2.GoogleUser) {
       lastName: userProfile.getFamilyName(),
     });
   }
+}
 
-  // This seems to be the old, auth v1 way of refreshing the OAuth access token:
-  // gapi.auth.authorize({
-  //   client_id: '123',
-  //   // If immediate=true, the token is refreshed behind the scenes, and no UI is shown to the user
-  //   immediate: true
-  // }, (authResult: GoogleApiOAuth2TokenObject) => {
-  //   gapi.auth.setToken(authResult)
-  // });
+export function listFolders(): Promise<GoogleFile[]> {
+  return new Promise((resolve, reject) => {
+    gapi.client.drive.files
+      .list({
+        spaces: 'drive',
+        q: `mimeType='${GAPI_FOLDER_MIME_TYPE}'`,
+        pageSize: 10,
+        // See https://developers.google.com/drive/api/v3/reference/files for list of all the file properties. Note
+        // that you can request `files(*)` if you want each file object to be populated with all fields.
+        fields: `nextPageToken, files(${GAPI_FILE_FIELDS})`,
+      })
+      .then(function(response) {
+        debug && log.debug(`Retrieved folders:`, response.result);
+        resolve(Array.isArray(response.result.files) ? (response.result.files as GoogleFile[]) : []);
+      })
+      .catch((error) => {
+        log.error(`Error while attempting to retrieve list of folders from Google Drive:`, error);
+        reject(error);
+      });
+  });
+}
 
-  // This seems to be the auth2 way of refreshing the OAuth access token:
-  // gapi.auth2.getAuthInstance().currentUser.get().reloadAuthResponse();
+export function createFolder(folderName: string): Promise<GoogleFile> {
+  return new Promise((resolve, reject) => {
+    gapi.client.drive.files
+      .create({
+        resource: {
+          name: folderName,
+          mimeType: GAPI_FOLDER_MIME_TYPE,
+        },
+        fields: GAPI_FILE_FIELDS,
+      })
+      .then(function(response) {
+        switch (response.status) {
+          case 200:
+            debug && log.debug(`Created folders`, response.result);
+            const folder = response.result;
+            resolve(folder as GoogleFile);
+            return;
+          default:
+            log.error(`Received error response on attempt to create folder:`, response);
+            throw new Error(response.body);
+        }
+      })
+      .catch((error) => {
+        log.error(`Failed to create folder:`, error);
+        reject(error);
+      });
+  });
 }
