@@ -2,6 +2,8 @@ import { debug, log } from './utils';
 
 interface UserProfile {
   email: string;
+  firstName: string;
+  lastName: string;
 }
 
 let onSignInChangeHandler: ((args: UserProfile) => void) | null = null;
@@ -117,6 +119,8 @@ export function getCurrentUser(): UserProfile {
     .getBasicProfile();
   return {
     email: userProfile.getEmail(),
+    firstName: userProfile.getGivenName(),
+    lastName: userProfile.getFamilyName(),
   };
 }
 
@@ -131,7 +135,7 @@ export function signOut(): void {
   gapi.auth2.getAuthInstance().signOut();
 }
 
-export function onSignInChange(callback: typeof onSignInChangeHandler) {
+export function onSignIn(callback: typeof onSignInChangeHandler) {
   onSignInChangeHandler = callback;
 }
 
@@ -155,6 +159,8 @@ function updateCurrentUser(googleUser: gapi.auth2.GoogleUser) {
   if (onSignInChangeHandler) {
     onSignInChangeHandler({
       email: userProfile.getEmail(),
+      firstName: userProfile.getGivenName(),
+      lastName: userProfile.getFamilyName(),
     });
   }
 

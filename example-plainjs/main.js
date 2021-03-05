@@ -345,9 +345,10 @@ async function render() {
       <div class="${classes.modalBackground}">
         <div class="${classes.modalContainer}">
           <h2 class="${classes.modalTitle}">Sync Settings</h2>
-          <p class="mb-4">
-            At least one of the services below needs to be enabled for syncing to work.
-          </p>
+          <div class="text-gray-700 text-sm">
+            If you want your data to stay in sync across different web browsers (e.g., one on your phone and one on 
+            your desktop), you'll need to set up a remote file storage service. This will be used as a common location where each browser you use can upload and download the changes it makes (i.e., CRDT operation messages).
+          </div>
           <div class="flex flex-col">
             <button
               onClick="onGDriveSettingsBtnClick()"
@@ -382,8 +383,11 @@ async function render() {
       <div class="${classes.modalBackground}">
         <div class="${classes.modalContainer}">
           <h2 class="${classes.modalTitle}">Setup Google Drive</h2>
-          <p class="mb-4">Clicking the button below will launch Google's sign-in process.</p>
-          <p>After signing in, Google will prompt you to allow (or deny) the ability for this app to manage files and folders that it has created in your Google Drive.</p>
+          <p class="mb-4 text-sm">Clicking the button below will launch Google's sign-in process.</p>
+          <p class="text-sm">
+            After signing in, Google will prompt you to allow (or deny) the ability for this app to manage files and 
+            folders that it has created in your Google Drive.
+          </p>
           <div class="flex flex-col">
             <button onClick="onGDriveLoginBtnClick()" class="${classes.buttonPrimary} mt-6 mb-4">
               Launch Google Sign-In
@@ -680,23 +684,30 @@ function onSyncSettingsBtnClick() {
   render();
 }
 
+function loadIDBSideSyncGoogleDrivePlugin() {
+  return IDBSideSync.plugins.googledrive.load({
+    // Replace clientId with one of your own from https://console.developers.google.com/.
+    clientId: '1004853515655-8qhi3kf64cllut2no4trescfq3p6jknm.apps.googleusercontent.com',
+  });
+}
+
 async function onGDriveSettingsBtnClick() {
+  // Ensure that the Google Drive plugin is loaded (i.e., that the Google API client library is loaded).
   if (!IDBSideSync.plugins.googledrive.isLoaded()) {
-    showWaitModal('Loading Google Drive client library...');
+    showWaitModal('Loading IDBSideSync Google Drive plugin.');
     try {
-      await IDBSideSync.plugins.googledrive.load({
-        clientId: '1004853515655-8qhi3kf64cllut2no4trescfq3p6jknm.apps.googleusercontent.com',
-      });
+      await loadIDBSideSyncGoogleDrivePlugin();
     } catch (error) {
-      console.error('Failed to load Google Drive plugin:', error);
+      console.error('Failed to load IDBSideSync Google Drive plugin:', error);
       const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
       return showGDriveLoginFailedModal(errMsg);
     }
   }
 
+  //TODO: remove this once "load gapi and sign user in on app startup" has been implemented.
   if (IDBSideSync.plugins.googledrive.isUserSignedIn()) {
-    // uiState.modal = 'sync-settings/gdrive';
-    return onGoogleSignInChange(IDBSideSync.plugins.googledrive.getCurrentUser());
+    onGoogleSignIn(IDBSideSync.plugins.googledrive.getCurrentUser());
+    return;
   }
 
   uiState.modal = 'sync-settings/gdrive/sign-in';
@@ -707,15 +718,16 @@ async function onGDriveLoginBtnClick() {
   uiState.modal = 'sync-settings/gdrive/sign-in/in-progress';
   render();
   try {
-    IDBSideSync.plugins.googledrive.onSignInChange(onGoogleSignInChange);
+    IDBSideSync.plugins.googledrive.onSignIn(onGoogleSignIn);
     IDBSideSync.plugins.googledrive.signIn();
   } catch (error) {
-    console.error(error);
+    console.error('Google sign-in failed:', error);
     showGDriveLoginFailedModal(JSON.stringify(error));
   }
 }
 
-function onGoogleSignInChange(googleUser) {
+function onGoogleSignIn(googleUser) {
+  console.warn('googleUser:', googleUser);
   uiState.gdrive.currentUser = googleUser;
   uiState.modal = 'sync-settings/gdrive';
   render();
@@ -816,6 +828,8 @@ function syncGDrive() {
     return;
   }
 
+  const gdriveStore = IDBSideSync.plugins.googledrive.getStore();
+  IDBSideSync.sync(gdriveStore);
 }
 
 // onSync(hasChanged => {
