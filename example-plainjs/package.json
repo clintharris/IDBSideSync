@@ -6,7 +6,8 @@
     "prestart": "npm run copyLibs",
     "start": "serve --listen 3000 --no-clipboard",
     "watch": "nodemon -x 'npm start' -w ../lib-core/dist -w ../lib-gdrive/dist --ext .umd.development.js --delay 1",
-    "copyLibs": "cpy '../lib-core/dist/*.umd.*' '../lib-gdrive/dist/*.umd.*' ./dist"
+    "copyLibs": "cpy '../lib-core/dist/*.umd.*' '../lib-gdrive/dist/*.umd.*' ./dist",
+    "ngrok": "ngrok http 3000"
   },
   "devDependencies": {
     "cpy-cli": "^3.1.1",
