@@ -143,8 +143,41 @@ interface UserProfile {
 }
 
 interface SyncPlugin {
+  getPluginId(): string;
+  isLoaded(): boolean;
   load(): Promise<void>;
+  isSignedIn(): boolean;
+  signIn(): void;
+  signOut(): void;
+  addSignInChangeListener(handlerFcn: SignInChangeHandler): void;
+  getStore(): OpLogStore;
 }
+
+interface SyncProfile {
+  pluginId: string;
+  userProfile: UserProfile;
+}
+
 interface Settings {
   nodeId: string;
+  syncProfiles: SyncProfile[];
 }
+
+interface OpLogStore {
+  getEntries: () => OpLogEntry[];
+  addEntry: (entry: OpLogEntry) => Promise<void>;
+}
+
+// TODO: figure out how to make this work, per https://github.com/jakearchibald/idb#typescript. Previous attempts to use
+// `/// <reference types="idb" />` to reference the DBSchema type didn't work.
+// interface IDBSideSyncDatabase extends DBSchema {
+//   IDBSideSync_MetaStore: {
+//     key: string;
+//     value: any;
+//   };
+//   IDBSideSync_OpLogStore: {
+//     key: string;
+//     value: OpLogEntry;
+//     indexes: { 'by-price': number };
+//   };
+// }

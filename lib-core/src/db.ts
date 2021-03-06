@@ -83,6 +83,13 @@ export async function init(db: IDBDatabase): Promise<void> {
   HLClock.setTime(new HLTime(0, 0, settings.nodeId));
 }
 
+export function getSettings(): Settings {
+  if (!cachedSettings) {
+    throw new Error(`${libName} hasn't been initialized. Please call init() first.`);
+  }
+  return cachedSettings;
+}
+
 /**
  * Ensures that IDBSideSync has required settings in its own IndexedDB store (e.g., a unique node ID that identifies
  * all the oplog entries created by the application instance).
@@ -90,9 +97,12 @@ export async function init(db: IDBDatabase): Promise<void> {
 export function initSettings(): Promise<typeof cachedSettings> {
   return new Promise((resolve, reject) => {
     const txReq = cachedDb.transaction([STORE_NAME.META], 'readwrite');
-    txReq.oncomplete = () => resolve(cachedSettings);
     txReq.onabort = () => reject(new TransactionAbortedError(txReq.error));
-    txReq.onerror = () => reject(txReq.error);
+    txReq.onerror = (event) => {
+      const error = isEventWithTargetError(event) ? event.target.error : txReq.error;
+      log.error('Failed to init settings:', error);
+      reject(new Error(`${libName} Failed to init settings`));
+    };
 
     const metaStore = txReq.objectStore(STORE_NAME.META);
     const getReq = metaStore.get(CACHED_SETTINGS_OBJ_KEY);
@@ -100,22 +110,40 @@ export function initSettings(): Promise<typeof cachedSettings> {
     getReq.onsuccess = () => {
       const result = getReq.result;
       if (result && isValidSideSyncSettings(result)) {
-        debug && log.debug('found saved settings.', result);
+        debug && log.debug(`Skipping settings initialization; existing settings found.`, result);
         cachedSettings = result;
+        resolve(cachedSettings);
       } else {
-        debug && log.debug('no valid settings found in database; creating new settings...');
+        debug && log.debug('No valid settings found in database; initializing new settings...');
         cachedSettings = { nodeId: makeNodeId(), syncProfiles: [] };
         const putReq = metaStore.put(cachedSettings, CACHED_SETTINGS_OBJ_KEY);
         putReq.onsuccess = () => {
-          debug && log.debug('successfully persisted initial settings:', cachedSettings);
+          debug && log.debug('Successfully saved initial settings:', cachedSettings);
+          resolve(cachedSettings);
         };
       }
     };
   });
 }
 
-export function getSyncProfiles(): SyncProfile[] {
-  return Array.isArray(cachedSettings?.syncProfiles) ? cachedSettings.syncProfiles : [];
+export function saveSettings(newSettings: Settings): Promise<Settings> {
+  return new Promise((resolve, reject) => {
+    const txReq = cachedDb.transaction([STORE_NAME.META], 'readwrite');
+    txReq.onabort = () => reject(new TransactionAbortedError(txReq.error));
+    txReq.onerror = (event) => {
+      const error = isEventWithTargetError(event) ? event.target.error : txReq.error;
+      log.error('Failed to save settings:', error);
+      reject(new Error(`${libName} Failed to save settings`));
+    };
+
+    const metaStore = txReq.objectStore(STORE_NAME.META);
+    const putReq = metaStore.put(newSettings, CACHED_SETTINGS_OBJ_KEY);
+    putReq.onsuccess = () => {
+      cachedSettings = newSettings;
+      debug && log.debug('Successfully saved settings:', cachedSettings);
+      resolve(cachedSettings);
+    };
+  });
 }
 
 /**

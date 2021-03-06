@@ -365,11 +365,12 @@ async function render() {
       <div class="${classes.modalBackground}">
         <div class="${classes.modalContainer}">
           <h2 class="${classes.modalTitle}">Google Drive</h2>
-          <div>You are currently signed in to Google as:</div>
+          <div class="text-sm">
+            You are currently signed in to Google as
+            ${uiState.gdrive.currentUser.firstName} ${uiState.gdrive.currentUser.lastName} 
+            (${uiState.gdrive.currentUser.email}).
+          </div>
           <div class="flex flex-col">
-            <div class="mt-2 text-center">
-              ${uiState.gdrive.currentUser ? uiState.gdrive.currentUser.email : '(failed to retrieve email address)'}
-            </div>
             <button onClick="onGDriveLogoutBtnClick()" class="${classes.buttonPrimary} mt-6 mb-4">Sign Out</button>
             <button onClick="closeModal()" class="${classes.buttonSecondary}">Close</button>
           </div>
@@ -403,8 +404,8 @@ async function render() {
     append(`
       <div class="${classes.modalBackground}">
         <div class="${classes.modalContainer}">
-          <h2 class="${classes.modalTitle}">Google Login In-Progress...</h2>
-          <div class="mb-4">
+          <h2 class="${classes.modalTitle}">Google Sign-In in Progress...</h2>
+          <div class="mb-4 text-sm">
             The Google sign-in screen should have opened in a pop-up or new window/tab. Once you complete the sign-in
             process, that pop-up will close and this screen will update with your new status.
           </div>
@@ -421,7 +422,7 @@ async function render() {
       <div class="${classes.modalBackground}">
         <div class="${classes.modalContainer}">
           <h2 class="${classes.modalTitle}">Setup Google Drive</h2>
-          <div>Oops, the Google sign-in failed:</div>
+          <div class="text-sm">Oops, the Google sign-in failed:</div>
           <div class="text-xs text-red-700 font-mono m-2 p-2">${uiState.gdrive.loginError}</div>
           <div class="flex flex-col">
             <button onClick="closeModal()" class="${classes.buttonPrimary}">OK</button>
@@ -689,9 +690,9 @@ let googleDrivePlugin = null;
 async function loadGoogleDrivePlugin() {
   googleDrivePlugin = new IDBSideSync.plugins.googledrive.GoogleDrivePlugin({
     clientId: '1004853515655-8qhi3kf64cllut2no4trescfq3p6jknm.apps.googleusercontent.com',
-    onSignIn: onGoogleSignIn,
+    onSignInChange: onGoogleSignInChange,
   });
-  IDBSideSync.registerSyncPlugin(googleDrivePlugin);
+  await IDBSideSync.registerSyncPlugin(googleDrivePlugin);
 }
 
 async function onGDriveSettingsBtnClick() {
@@ -708,7 +709,7 @@ async function onGDriveSettingsBtnClick() {
     }
   }
 
-  uiState.modal = 'sync-settings/gdrive/sign-in';
+  uiState.modal = uiState.gdrive.currentUser ? 'sync-settings/gdrive' : 'sync-settings/gdrive/sign-in';
   render();
 }
 
@@ -716,6 +717,10 @@ async function onGDriveLoginBtnClick() {
   uiState.modal = 'sync-settings/gdrive/sign-in/in-progress';
   render();
   try {
+    // If sign-in succeeds, IDBSideSync will automatically save a "sync profile" to its internal IndexedDB object store.
+    // The sync profile includes info about which sync plugin was set up (so that it can automatically be loaded when
+    // the app starts up in the future), which remote folder should be used for storage, and some basic user info. It
+    // will also trigger a sign-in change event, which causes the "onGoogleSignInChange()" handler to be called.
     googleDrivePlugin.signIn();
   } catch (error) {
     console.error('Google sign-in failed:', error);
@@ -723,10 +728,11 @@ async function onGDriveLoginBtnClick() {
   }
 }
 
-function onGoogleSignIn(googleUser) {
-  console.log('onGoogleSignIn()', googleUser);
+function onGoogleSignInChange(googleUser) {
   uiState.gdrive.currentUser = googleUser;
-  uiState.modal = 'sync-settings/gdrive';
+  if (uiState.modal === 'sync-settings/gdrive/sign-in/in-progress') {
+    uiState.modal = 'sync-settings/gdrive';
+  }
   render();
 }
 
@@ -737,7 +743,7 @@ function showGDriveLoginFailedModal(errorMessage) {
 }
 
 function onGDriveLogoutBtnClick() {
-  IDBSideSync.plugins.googledrive.GoogleDrivePlugin.signOut();
+  googleDrivePlugin.signOut();
   closeModal();
 }
 
@@ -793,40 +799,33 @@ async function loadAndApplyProfileSettings(profileName) {
   render();
 })();
 
-const syncTimers = {};
+let syncTimer;
 
-function startSyncTimers() {
-  for (const syncProfile of IDBSideSync.getSyncProfiles()) {
-    if (syncProfile.type === 'gdrive') {
-      syncTimers.gdrive = setInterval(syncGDrive, 15000);
-    }
-  }
+function startSyncTimer() {
+  syncTimer = setInterval(syncNow, 15000);
 }
 
-function stopSyncTimers() {
-  for (const key in syncTimers) {
-    clearInterval(syncTimers[key]);
-    syncTimers[key] = -1;
-  }
+function stopSyncTimer() {
+  clearInterval(syncTimer);
 }
 
-function sync() {
+async function setupSync() {
+  // Don't attempt to set up syncing until IDBSideSync has been initialized...
+  await getDB();
   for (let syncProfile of IDBSideSync.getSyncProfiles()) {
-    if (syncProfile.type === 'gdrive') {
-      syncGDrive();
+    if (syncProfile.pluginId === IDBSideSync.plugins.googledrive.GoogleDrivePlugin.PLUGIN_ID) {
+      await loadGoogleDrivePlugin();
+      uiState.gdrive.currentUser = syncProfile.userProfile;
     }
   }
 }
 
-function syncGDrive() {
-  const syncProfile = IDBSideSync.getSyncProfiles().find((profile) => profile.type === 'gdrive');
-  if (!syncProfile) {
-    console.warn('Google Drive sync was requested, but no corresponding profile exists.');
-    return;
-  }
+// Delay the sync setup a bit to avoid taking resources away from getting the app to a usable state.
+setTimeout(setupSync, 1000);
 
-  const gdriveStore = IDBSideSync.plugins.googledrive.GoogleDrivePlugin.getStore();
-  IDBSideSync.sync(gdriveStore);
+async function syncNow() {
+  console.log('Starting sync...');
+  await IDBSideSync.sync();
 }
 
 // onSync(hasChanged => {

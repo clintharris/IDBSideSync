@@ -8,18 +8,20 @@ const GAPI_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 // fields, see https://developers.google.com/drive/api/v3/reference/files
 const GAPI_FILE_FIELDS = 'id, name, createdTime';
 
-type SignInChangeHandler = (currentUserProfile: UserProfile | null) => void;
+type SignInChangeHandler = (userProfile: UserProfile | null) => void;
 
 export class GoogleDrivePlugin implements SyncPlugin {
+  public static PLUGIN_ID = libName;
+
   private clientId: string;
 
   private listeners: {
-    signIn: SignInChangeHandler[];
+    signInChange: SignInChangeHandler[];
   } = {
-    signIn: [],
+    signInChange: [],
   };
 
-  constructor(options: { clientId: string; onSignIn?: SignInChangeHandler }) {
+  constructor(options: { clientId: string; onSignInChange?: SignInChangeHandler }) {
     if (!options || typeof options.clientId !== 'string') {
       const errMsg = `Missing options param with clientId. Example: setup({ clientId: '...' })`;
       log.error(errMsg);
@@ -28,9 +30,13 @@ export class GoogleDrivePlugin implements SyncPlugin {
 
     this.clientId = options.clientId;
 
-    if (options.onSignIn instanceof Function) {
-      this.listeners.signIn.push(options.onSignIn);
+    if (options.onSignInChange instanceof Function) {
+      this.addSignInChangeListener(options.onSignInChange);
     }
+  }
+
+  public getPluginId() {
+    return libName;
   }
 
   public getStore(): OpLogStore {
@@ -112,11 +118,43 @@ export class GoogleDrivePlugin implements SyncPlugin {
       });
   }
 
-  private onSignInChange(isSignedIn: boolean) {
-    const currentUser = isSignedIn ? this.getCurrentUser() : null;
-    this.listeners.signIn.forEach((handleSignInChange) => {
-      handleSignInChange(currentUser);
-    });
+  public addSignInChangeListener(handlerFcn: SignInChangeHandler) {
+    if (handlerFcn instanceof Function && !this.listeners.signInChange.includes(handlerFcn)) {
+      this.listeners.signInChange.push(handlerFcn);
+    }
+  }
+
+  public removeSignInChangeListener(handlerFcn: SignInChangeHandler) {
+    const foundAtIndex = this.listeners.signInChange.indexOf(handlerFcn);
+    if (foundAtIndex > -1) {
+      this.listeners.signInChange = [
+        ...this.listeners.signInChange.slice(0, foundAtIndex),
+        ...this.listeners.signInChange.slice(foundAtIndex + 1),
+      ];
+    }
+    if (handlerFcn instanceof Function && !this.listeners.signInChange.includes(handlerFcn)) {
+      this.listeners.signInChange.push(handlerFcn);
+    }
+  }
+
+  public isSignedIn(): boolean {
+    return gapi.auth2.getAuthInstance().isSignedIn.get();
+  }
+
+  public signIn(): void {
+    gapi.auth2.getAuthInstance().signIn({ fetch_basic_profile: false, ux_mode: 'popup' });
+  }
+
+  public signOut(): void {
+    gapi.auth2.getAuthInstance().signOut();
+  }
+
+  public getUserProfile(): UserProfile {
+    const googleUserProfile = gapi.auth2
+      .getAuthInstance()
+      .currentUser.get()
+      .getBasicProfile();
+    return this.convertGoogleUserProfileToStandardUserProfile(googleUserProfile);
   }
 
   /**
@@ -131,37 +169,28 @@ export class GoogleDrivePlugin implements SyncPlugin {
    * Google likely does this to limit the amount of time an access key is valid if it were to be intercepted.
    */
   private onCurrentUserChange(googleUser: gapi.auth2.GoogleUser) {
-    debug && log.debug(`New user:`, googleUser);
-    const currentUser = this.getCurrentUser();
-    this.listeners.signIn.forEach((handleSignInChange) => {
-      handleSignInChange(currentUser);
-    });
+    const googleUserProfile = googleUser.getBasicProfile();
+    this.dispatchSignInChangeEvent(this.convertGoogleUserProfileToStandardUserProfile(googleUserProfile));
   }
 
-  public isSignedIn(): boolean {
-    return gapi.auth2.getAuthInstance().isSignedIn.get();
+  private onSignInChange(isSignedIn: boolean) {
+    const userProfile = isSignedIn ? this.getUserProfile() : null;
+    this.dispatchSignInChangeEvent(userProfile);
   }
 
-  public signIn(): Promise<gapi.auth2.GoogleUser> {
-    return gapi.auth2.getAuthInstance().signIn({
-      fetch_basic_profile: false,
-      ux_mode: 'popup',
-    });
+  private dispatchSignInChangeEvent(userProfile: UserProfile | null) {
+    for (const signInHandlerFcn of this.listeners.signInChange) {
+      if (signInHandlerFcn instanceof Function) {
+        signInHandlerFcn(userProfile);
+      }
+    }
   }
 
-  public signOut(): void {
-    gapi.auth2.getAuthInstance().signOut();
-  }
-
-  public getCurrentUser(): UserProfile {
-    const userProfile = gapi.auth2
-      .getAuthInstance()
-      .currentUser.get()
-      .getBasicProfile();
+  private convertGoogleUserProfileToStandardUserProfile(googleUserProfile: gapi.auth2.BasicProfile): UserProfile {
     return {
-      email: userProfile.getEmail(),
-      firstName: userProfile.getGivenName(),
-      lastName: userProfile.getFamilyName(),
+      email: googleUserProfile.getEmail(),
+      firstName: googleUserProfile.getGivenName(),
+      lastName: googleUserProfile.getFamilyName(),
     };
   }
 

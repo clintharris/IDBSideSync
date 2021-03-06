@@ -23,7 +23,7 @@
     "pretsdx": "npm run clean",
     "tsdx": "tsdx --format umd --name IDBSideSync.plugins.googledrive",
     "test": "tsdx test",
-    "lint": "tsdx lint",
+    "lint": "tsdx lint src",
     "prepare": "tsdx build",
     "size": "size-limit",
     "analyze": "size-limit --why"
