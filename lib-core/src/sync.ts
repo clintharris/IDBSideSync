@@ -6,9 +6,7 @@ const plugins: SyncPlugin[] = [];
 export async function sync() {
   debug && log.debug('Starting sync...');
   for (const plugin of plugins) {
-    const store = plugin.getStore();
-
-    for (const remoteEntry in store.getEntries()) {
+    for (const remoteEntry in plugin.getEntries()) {
       log.debug('todo: apply remote entry to local store:', remoteEntry);
     }
 
@@ -33,9 +31,15 @@ export async function registerSyncPlugin(plugin: SyncPlugin) {
 
   plugins.push(plugin);
 
-  if (getSyncProfileForPlugin(plugin.getPluginId()) && !plugin.isSignedIn()) {
-    debug && log.debug(`Asking '${plugin.getPluginId()}' plugin to sign-in to remote service...`);
-    plugin.signIn();
+  const syncProfileForPlugin = getSyncProfileForPlugin(plugin.getPluginId());
+  if (syncProfileForPlugin) {
+    debug && log.debug(`Passing saved settings to '${plugin.getPluginId()}' plugin:`, syncProfileForPlugin.settings);
+    plugin.setSettings(syncProfileForPlugin.settings);
+
+    if (!plugin.isSignedIn()) {
+      debug && log.debug(`Asking '${plugin.getPluginId()}' plugin to sign-in to remote service...`);
+      plugin.signIn();
+    }
   }
 }
 
@@ -47,6 +51,7 @@ function onPluginSignInChange(plugin: SyncPlugin, userProfile: UserProfile | nul
     addSyncProfile({
       pluginId: pluginId,
       userProfile: userProfile,
+      settings: plugin.getSettings(),
     });
   } else {
     removeSyncProfile(plugin.getPluginId());
@@ -117,7 +122,15 @@ export function isSyncPlugin(thing: unknown): thing is SyncPlugin {
     return false;
   }
 
-  if (!(candidate.getStore instanceof Function)) {
+  if (!(candidate.getSettings instanceof Function)) {
+    return false;
+  }
+
+  if (!(candidate.getEntries instanceof Function)) {
+    return false;
+  }
+
+  if (!(candidate.addEntry instanceof Function)) {
     return false;
   }
 

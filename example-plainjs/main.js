@@ -224,7 +224,7 @@ async function render() {
               <line x1="11" y1="12" x2="20" y2="12" />
               <line x1="11" y1="18" x2="20" y2="18" />
             </svg>
-            <h3 class="ml-1">SideSync To-Do Demo</h3>
+            <h3 class="ml-1">IDBSideSync To-Do Demo</h3>
           </div>
           <button id="btn-show-style-modal">
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" stroke-width="1.5" stroke="#fff" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -366,9 +366,12 @@ async function render() {
         <div class="${classes.modalContainer}">
           <h2 class="${classes.modalTitle}">Google Drive</h2>
           <div class="text-sm">
-            You are currently signed in to Google as
+            You are currently signed in as
             ${uiState.gdrive.currentUser.firstName} ${uiState.gdrive.currentUser.lastName} 
-            (${uiState.gdrive.currentUser.email}).
+            (${uiState.gdrive.currentUser.email}) and your app data is being sync'ed to a folder called 
+            <a href="${uiState.gdrive.settings.remoteFolderLink}" target="_blank" class="underline text-blue-600">
+              ${uiState.gdrive.settings.remoteFolderName}
+            </a>.
           </div>
           <div class="flex flex-col">
             <button onClick="onGDriveLogoutBtnClick()" class="${classes.buttonPrimary} mt-6 mb-4">Sign Out</button>
@@ -690,6 +693,7 @@ let googleDrivePlugin = null;
 async function loadGoogleDrivePlugin() {
   googleDrivePlugin = new IDBSideSync.plugins.googledrive.GoogleDrivePlugin({
     clientId: '1004853515655-8qhi3kf64cllut2no4trescfq3p6jknm.apps.googleusercontent.com',
+    defaultFolderName: 'IDBSideSync ToDo App',
     onSignInChange: onGoogleSignInChange,
   });
   await IDBSideSync.registerSyncPlugin(googleDrivePlugin);
@@ -728,8 +732,9 @@ async function onGDriveLoginBtnClick() {
   }
 }
 
-function onGoogleSignInChange(googleUser) {
+function onGoogleSignInChange(googleUser, settings) {
   uiState.gdrive.currentUser = googleUser;
+  uiState.gdrive.settings = settings;
   if (uiState.modal === 'sync-settings/gdrive/sign-in/in-progress') {
     uiState.modal = 'sync-settings/gdrive';
   }
@@ -816,6 +821,7 @@ async function setupSync() {
     if (syncProfile.pluginId === IDBSideSync.plugins.googledrive.GoogleDrivePlugin.PLUGIN_ID) {
       await loadGoogleDrivePlugin();
       uiState.gdrive.currentUser = syncProfile.userProfile;
+      uiState.gdrive.settings = syncProfile.settings;
     }
   }
 }

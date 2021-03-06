@@ -1,4 +1,3 @@
-import { GDriveOpLogStore } from './GDriveOpLogStore';
 import { debug, libName, log } from './utils';
 
 // For full list of drive's supported MIME types: https://developers.google.com/drive/api/v3/mime-types
@@ -6,14 +5,17 @@ const GAPI_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 
 // Defines list of fields that we want to be populated on each file object we get from Google. For full list of file
 // fields, see https://developers.google.com/drive/api/v3/reference/files
-const GAPI_FILE_FIELDS = 'id, name, createdTime';
+const GAPI_FILE_FIELDS = 'id, name, createdTime, webViewLink';
 
-type SignInChangeHandler = (userProfile: UserProfile | null) => void;
+type SignInChangeHandler = (userProfile: UserProfile | null, settings: SyncProfileSettings) => void;
 
 export class GoogleDrivePlugin implements SyncPlugin {
   public static PLUGIN_ID = libName;
 
   private clientId: string;
+  private remoteFolderName: string;
+  private remoteFolderId?: string;
+  private remoteFolderLink?: string;
 
   private listeners: {
     signInChange: SignInChangeHandler[];
@@ -21,7 +23,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
     signInChange: [],
   };
 
-  constructor(options: { clientId: string; onSignInChange?: SignInChangeHandler }) {
+  constructor(options: { clientId: string; defaultFolderName: string; onSignInChange?: SignInChangeHandler }) {
     if (!options || typeof options.clientId !== 'string') {
       const errMsg = `Missing options param with clientId. Example: setup({ clientId: '...' })`;
       log.error(errMsg);
@@ -29,6 +31,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
     }
 
     this.clientId = options.clientId;
+    this.remoteFolderName = options.defaultFolderName;
 
     if (options.onSignInChange instanceof Function) {
       this.addSignInChangeListener(options.onSignInChange);
@@ -37,10 +40,6 @@ export class GoogleDrivePlugin implements SyncPlugin {
 
   public getPluginId() {
     return libName;
-  }
-
-  public getStore(): OpLogStore {
-    return new GDriveOpLogStore();
   }
 
   public isLoaded(): boolean {
@@ -157,6 +156,30 @@ export class GoogleDrivePlugin implements SyncPlugin {
     return this.convertGoogleUserProfileToStandardUserProfile(googleUserProfile);
   }
 
+  public getSettings(): SyncProfileSettings {
+    return {
+      remoteFolderName: this.remoteFolderName,
+      remoteFolderId: this.remoteFolderId,
+      remoteFolderLink: this.remoteFolderLink,
+    };
+  }
+
+  public setSettings(settings: SyncProfileSettings) {
+    if (typeof settings.remoteFolderName === 'string' && settings.remoteFolderName !== '') {
+      this.remoteFolderName = settings.remoteFolderName;
+    }
+
+    if (typeof settings.remoteFolderId === 'string' && settings.remoteFolderId !== '') {
+      this.remoteFolderId = settings.remoteFolderId;
+    }
+
+    if (typeof settings.remoteFolderLink === 'string' && settings.remoteFolderLink !== '') {
+      this.remoteFolderLink = settings.remoteFolderLink;
+    }
+
+    this.setupRemoteFolder();
+  }
+
   /**
    * This function will be called after every successful sign-in (assuming it is set up as the handler for
    * `gapi.auth2.getAuthInstance().currentUser.listen(...)`).
@@ -168,9 +191,46 @@ export class GoogleDrivePlugin implements SyncPlugin {
    *
    * Google likely does this to limit the amount of time an access key is valid if it were to be intercepted.
    */
-  private onCurrentUserChange(googleUser: gapi.auth2.GoogleUser) {
+  private async onCurrentUserChange(googleUser: gapi.auth2.GoogleUser) {
     const googleUserProfile = googleUser.getBasicProfile();
+    await this.setupRemoteFolder();
     this.dispatchSignInChangeEvent(this.convertGoogleUserProfileToStandardUserProfile(googleUserProfile));
+  }
+
+  public async setupRemoteFolder() {
+    if (!this.remoteFolderId) {
+      log.debug(`Google Drive folder ID for '${this.remoteFolderName}' is unknown; attempting to find/create...`);
+      const existingFolders = await this.listGoogleDriveFiles({ type: 'folders', exactName: this.remoteFolderName });
+      if (existingFolders.length) {
+        const existingFolder = existingFolders[0];
+        log.debug(`Found existing Google Drive folder with name '${this.remoteFolderName}`, existingFolder);
+        this.remoteFolderId = existingFolder.id;
+        this.remoteFolderLink = existingFolder.webViewLink;
+      } else {
+        log.debug(`No folder with name '${this.remoteFolderName}' exists in Google Drive; attempting to create...`);
+        const newFolder = await this.createGoogleDriveFolder(this.remoteFolderName);
+        log.debug(`Created new Google Drive folder with name '${this.remoteFolderName}'`, newFolder);
+        this.remoteFolderId = newFolder.id;
+        this.remoteFolderLink = newFolder.webViewLink;
+      }
+    } else {
+      const existingFolder = await this.getFile(this.remoteFolderId);
+      if (existingFolder) {
+        if (typeof existingFolder.name === 'string' && existingFolder.name.trim() !== '') {
+          log.debug(`Found existing Google Drive folder with name '${this.remoteFolderName}`, existingFolder);
+          this.remoteFolderName = existingFolder.name;
+          this.remoteFolderLink = existingFolder.webViewLink;
+        } else {
+          throw new Error(`${libName} Google Drive folder with ID '${this.remoteFolderId}' lack valid name.`);
+        }
+      } else {
+        log.debug(`No folder with ID '${this.remoteFolderId}' exists in Google Drive; attempting to create...`);
+        const newFolder = await this.createGoogleDriveFolder(this.remoteFolderName);
+        log.debug(`Created new Google Drive folder with name '${this.remoteFolderName}'`, newFolder);
+        this.remoteFolderId = newFolder.id;
+        this.remoteFolderLink = newFolder.webViewLink;
+      }
+    }
   }
 
   private onSignInChange(isSignedIn: boolean) {
@@ -179,9 +239,10 @@ export class GoogleDrivePlugin implements SyncPlugin {
   }
 
   private dispatchSignInChangeEvent(userProfile: UserProfile | null) {
+    const settings = this.getSettings();
     for (const signInHandlerFcn of this.listeners.signInChange) {
       if (signInHandlerFcn instanceof Function) {
-        signInHandlerFcn(userProfile);
+        signInHandlerFcn(userProfile, settings);
       }
     }
   }
@@ -194,12 +255,42 @@ export class GoogleDrivePlugin implements SyncPlugin {
     };
   }
 
-  public listFolders(): Promise<GoogleFile[]> {
+  public getFile(fileId: string): Promise<gapi.client.drive.File> {
     return new Promise((resolve, reject) => {
+      debug && log.debug(`Attempting to get Google Drive file with ID '${fileId}'...`);
+      gapi.client.drive.files
+        .get({
+          fileId: fileId,
+          fields: GAPI_FILE_FIELDS,
+        })
+        .then(function(response) {
+          debug && log.debug(`Retrieved file:`, response.result);
+          resolve(response.result);
+        })
+        .catch((error) => {
+          log.error(`Error while attempting to get file '${fileId}' from Google Drive:`, error);
+          reject(error);
+        });
+    });
+  }
+
+  public listGoogleDriveFiles(filter: { type?: 'files' | 'folders'; exactName?: string } = {}): Promise<GoogleFile[]> {
+    return new Promise((resolve, reject) => {
+      const queryParts = [];
+
+      if (typeof filter.type === 'string') {
+        queryParts.push(`mimeType='${GAPI_FOLDER_MIME_TYPE}'`);
+      }
+
+      if (typeof filter.exactName === 'string') {
+        queryParts.push(`name='${filter.exactName}'`);
+      }
+      debug && log.debug('Attempting to list Google Drive folders with filter:', filter);
+      // For more info on 'list' operation see https://developers.google.com/drive/api/v3/reference/files/list
       gapi.client.drive.files
         .list({
           spaces: 'drive',
-          q: `mimeType='${GAPI_FOLDER_MIME_TYPE}'`,
+          q: queryParts.join(' and '),
           pageSize: 10,
           // See https://developers.google.com/drive/api/v3/reference/files for list of all the file properties. Note
           // that you can request `files(*)` if you want each file object to be populated with all fields.
@@ -216,7 +307,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
     });
   }
 
-  public createFolder(folderName: string): Promise<GoogleFile> {
+  public createGoogleDriveFolder(folderName: string): Promise<GoogleFile> {
     return new Promise((resolve, reject) => {
       gapi.client.drive.files
         .create({
@@ -244,5 +335,15 @@ export class GoogleDrivePlugin implements SyncPlugin {
           reject(error);
         });
     });
+  }
+
+  public getEntries(): Promise<OpLogEntry[]> {
+    //todo: get all files from remote folder using gapi.client.drive.
+    return Promise.resolve([]);
+  }
+
+  public addEntry(entry: OpLogEntry): Promise<void> {
+    debug && log.debug('Attempting to add oplog entry to Google Drive:', entry);
+    return Promise.resolve();
   }
 }

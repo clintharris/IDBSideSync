@@ -50,11 +50,21 @@ Note that, by default, the GDrive Plugin is set up to only request the minimum s
 
 If your application uses the GAPI client independently of the IDBSideSync GDrive Plugin and has been configured to request other permissions/scopes, you may see those in addition to those mentioned above.
 
+After sign-in has completed successfully, the GDrive Plugin will automatically create a folder in Google Drive where your application's data (i.e., CRDT "change operation" messages) will be stored. Note that while the Google Drive API offers the ability to create a special "[application data folder](https://developers.google.com/drive/api/v3/appdata)", the GDrive Plugin deliberately creates a regular folder instead. This is done because "app" folders are hidden from users; the IDBSideSync project would prefer that users can easily see and manage their own data.
+
+# FAQ
+
+## Q: Does my application need to keep track of / refresh expired Google Drive OAuth tokens?
+
+No, the gapi client that the GDrive Plugin uses will automatically refresh the OAuth access token that is needed to make calls to the Google Drive API. It will attempt this once an hour. If you need to manually fresh the token for some reason, this can be done with a call to `gapi.auth2.getAuthInstance().currentUser.get().reloadAuthResponse()`.
 
 # Roadmap
 
 - [x] Create simple GDrive test app to help learn how to use the gapi library, OAuth, etc.
 - [x] Incorporate the library via `<script src...>` into the main `example-plainjs` app
+- [x] Find/create remote sync folder on startup.
+- [ ] Find/create `0_README.txt` on startup explaining nature of folder.
+- [ ] Test on mobile browsers.
 - [ ] Build a really basic version of `.sync()` that just uploads oplog entries to GDrive
 
 # Technical notes
