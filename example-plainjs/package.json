@@ -6,8 +6,8 @@
     "clean": "del dist",
     "prestart": "npm run clean; npm run copyLibs",
     "start": "serve --listen 3000 --no-clipboard",
-    "watch": "nodemon -x 'npm start' -w ../lib-core/dist -w ../lib-gdrive/dist --ext .umd.development.js --delay 1",
-    "copyLibs": "cpy '../lib-core/dist/*.umd.*' '../lib-gdrive/dist/*.umd.*' ./dist",
+    "watch": "nodemon -x 'npm start' -w ../lib-core/dist -w ../plugins/googledrive/dist --ext .umd.development.js --delay 1",
+    "copyLibs": "cpy '../lib-core/dist/*.umd.*' '../plugins/googledrive/dist/*.umd.*' ./dist",
     "ngrok": "ngrok http 3000"
   },
   "devDependencies": {

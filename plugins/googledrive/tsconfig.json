@@ -32,6 +32,6 @@
     "noEmit": true,
     // make it possible to use spread operator with iterables such as Set() and Map()
     "downlevelIteration": true,
-    "typeRoots": ["node_modules/@types", "../types"]
+    "typeRoots": ["node_modules/@types", "../../types"]
   }
 }

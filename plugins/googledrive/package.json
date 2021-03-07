@@ -8,7 +8,7 @@
   },
   "main": "dist/index.js",
   "typings": "dist/index.d.ts",
-  "module": "dist/lib-gdrive.esm.js",
+  "module": "dist/idbsidesync.plugins.googledrive.esm.js",
   "files": [
     "dist",
     "src"
@@ -21,7 +21,7 @@
     "build": "npm run tsdx -- build",
     "watch": "npm run tsdx -- watch",
     "pretsdx": "npm run clean",
-    "tsdx": "tsdx --format umd --name IDBSideSync.plugins.googledrive",
+    "tsdx": "tsdx --format umd,esm --name IDBSideSync.plugins.googledrive",
     "test": "tsdx test",
     "lint": "tsdx lint src",
     "prepare": "tsdx build",
@@ -35,11 +35,11 @@
   },
   "size-limit": [
     {
-      "path": "dist/lib-gdrive.cjs.production.min.js",
+      "path": "dist/idbsidesync.plugins.googledrive.umd.production.min.js",
       "limit": "10 KB"
     },
     {
-      "path": "dist/lib-gdrive.esm.js",
+      "path": "dist/idbsidesync.plugins.googledrive.esm.js",
       "limit": "10 KB"
     }
   ],
