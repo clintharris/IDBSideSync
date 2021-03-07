@@ -61,7 +61,7 @@ No, the gapi client that the GDrive Plugin uses will automatically refresh the O
 # Roadmap
 
 - [x] Create simple GDrive test app to help learn how to use the gapi library, OAuth, etc.
-- [x] Incorporate the library via `<script src...>` into the main `example-plainjs` app
+- [x] Incorporate the library via `<script src...>` into the main `plainjs_todos` app
 - [x] Find/create remote sync folder on startup.
 - [ ] Find/create `0_README.txt` on startup explaining nature of folder.
 - [ ] Test on mobile browsers.

@@ -7,10 +7,10 @@ This is a basic to-do app for testing/demoing IDBSideSync.
 ```
 # Build the libraries
 cd lib; npm run build
-cd ../plugins/googledrive; npm run build
+cd ../../plugins/googledrive; npm run build
 
 # Start a local web server
-cd ../example-plainjs
+cd app_demos/plainjs_todos
 npm run watch
 
 # Open http://localhost:3000/ in your browser
