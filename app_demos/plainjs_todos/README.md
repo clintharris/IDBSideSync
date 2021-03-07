@@ -11,7 +11,7 @@ cd ../../plugins/googledrive; npm run build
 
 # Start a local web server
 cd app_demos/plainjs_todos
-npm run watch
+npm start
 
 # Open http://localhost:3000/ in your browser
 ```

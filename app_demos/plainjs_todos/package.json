@@ -1,13 +1,13 @@
 {
-  "name": "idbsidesync-plainjs-example-app",
+  "name": "@clintharris/idbsidesync-plainjs-todos-demo-app",
   "version": "0.1.0",
   "license": "MIT",
   "scripts": {
     "clean": "del dist",
     "prestart": "npm run clean; npm run copyLibs",
     "start": "serve --listen 3000 --no-clipboard",
-    "watch": "nodemon -x 'npm start' -w ../lib/dist -w ../plugins/googledrive/dist --ext .umd.development.js --delay 1",
-    "copyLibs": "cpy '../lib/dist/*.umd.*' '../plugins/googledrive/dist/*.umd.*' ./dist",
+    "watch": "nodemon -x 'npm start' -w ../../lib/dist -w ../../plugins/googledrive/dist --ext .umd.development.js --delay 1",
+    "copyLibs": "cpy '../../lib/dist/*.umd.*' '../../plugins/googledrive/dist/*.umd.*' ./dist",
     "ngrok": "ngrok http 3000"
   },
   "devDependencies": {
