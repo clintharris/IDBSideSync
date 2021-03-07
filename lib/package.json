@@ -1,5 +1,5 @@
 {
-  "name": "@clintharris/idb-sidesync-core",
+  "name": "@clintharris/idb-sidesync",
   "version": "0.1.0",
   "license": "MIT",
   "repository": {
@@ -7,7 +7,7 @@
     "url": "git://github.com/clintharris/idb-sidesync.git"
   },
   "main": "dist/index.js",
-  "module": "dist/lib-core.esm.js",
+  "module": "dist/idbsidesync.esm.js",
   "typings": "dist/index.d.ts",
   "files": [
     "dist",
@@ -21,7 +21,7 @@
     "build": "npm run tsdx -- build",
     "watch": "npm run tsdx -- watch",
     "pretsdx": "npm run clean",
-    "tsdx": "tsdx --format umd --name IDBSideSync",
+    "tsdx": "tsdx --format umd,esm --name IDBSideSync",
     "test": "npm run test:jest && npm run test:cy",
     "test:jest": "jest",
     "test:jest:watch": "jest --watch --verbose",
@@ -40,11 +40,11 @@
   },
   "size-limit": [
     {
-      "path": "dist/lib-core.cjs.production.min.js",
+      "path": "dist/idbsidesync.cjs.production.min.js",
       "limit": "10 KB"
     },
     {
-      "path": "dist/lib-core.esm.js",
+      "path": "dist/idbsidesync.esm.js",
       "limit": "10 KB"
     }
   ],

@@ -6,7 +6,7 @@ This is a basic to-do app for testing/demoing IDBSideSync.
 
 ```
 # Build the libraries
-cd lib-core; npm run build
+cd lib; npm run build
 cd ../plugins/googledrive; npm run build
 
 # Start a local web server
