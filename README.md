@@ -2,10 +2,10 @@
 
 IDBSideSync is a JavaScript library that makes it possible to sync IndexedDB object stores using CRDT concepts. It works by intercepting the CRUD calls to IndexedDB objects and automatically logging all the operations "on the side" in a separate store--the operation log. The objects in the operation log can be uploaded somewhere, then downloaded and "replayed" somewhere else, in effect, synchronizing IndexedDB stores across devices without conflict.
 
-You can use this library to, for example, build a "[local first](https://www.inkandswitch.com/local-first.html)" [PWA](https://developer.mozilla.org/en-US/docs/Web/Apps/Progressive/) that also supports syncing across different devices without having to run a custom backend server. Once a user enables a remote storage service of their choosing via OAuth (e.g., Google Drive, Dropbox, iCloud), the application can use that to backup/sync data. The user owns their own data and decides where to store it, and the application developer never sees that data.
+You can use this library to, for example, build a "[local first](https://www.inkandswitch.com/local-first.html)" [PWA](https://developer.mozilla.org/en-US/docs/Web/Apps/Progressive/) that also supports syncing across different devices without having to run a custom backend server. Once a user enables a remote data store (e.g., Google Drive, Dropbox, iCloud, or something else via custom plugin), the application can use that store for backup and sync. This "bring your own remote data store" model allows users to maintain ownership of their data--even while it is on a server--and gives them the flexibility change to a different remote storage service at any time.
 
 The idea for the library came from studying [James Long](https://twitter.com/jlongster)'s
-[crdt-example-app](https://github.com/jlongster/crdt-example-app), which offers a fantastic demonstration of how to use [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type), [hybrid logical clock](https://jaredforsyth.com/posts/hybrid-logical-clocks/), and merkle tree concepts to build a simple, ephemeral/in-memory data store (that relies on a custom server for synchronization across instances of the application). `IDBSideSync` is an attempt at applying those concepts (and in some cases, modified versions of James' code) to work with [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API), specifically. It also adds the ability for HTTP-accessible data storage APIs that users already have (or host themselves) as the means for syncing data instead of relying on a single, developer-owned, server application. `IDBSideSync` was deliberately forked from `crdt-example-app` to make that "heritage" literally part of this project's own history.
+[crdt-example-app](https://github.com/jlongster/crdt-example-app), which offers a fantastic demonstration of how to use [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type), [hybrid logical clock](https://jaredforsyth.com/posts/hybrid-logical-clocks/), and merkle tree concepts to build a simple, in-memory data store that uses a custom server for synchronization. `IDBSideSync` is an attempt at applying those concepts (and in some cases, modified versions of James' code) to work with [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API), specifically. It also adds the ability for HTTP-accessible data storage APIs that users already have (or host themselves) as the means for syncing data instead of relying on a single, developer-owned, server application. `IDBSideSync` was deliberately forked from `crdt-example-app` to make that "heritage" literally part of this project's own history.
 
 # ⚠️ Disclaimer
 
@@ -63,25 +63,37 @@ todoStore.add({ id: todoId, title: "Buy milk" }); // { id: 123, title: "Buy milk
 
 ## Updating Stuff
 
-IDBSideSync modifies `put()` so that it only updates the specific properties that you pass in instead of completely replacing objects (i.e., it now supports "partial" updates). This is out of necessity and can't be changed, (but you can always pass in a complete copy of an object to update all of its properties in the store).
+IDBSideSync, acting as a [JavaScript proxy](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy) to the standard [`IDBObjectStore.put()`](https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/put) function, modifies the default behavior of `put()` so that it no longer completely replaces any existing object with the value you pass to it. Instead, you now have the ability to pass in "partial updates"--objects with only a subset of properties--that will be applied to any existing object. (You can still pass in complete objects with all properties if you want, of course.)
 
 ```javascript
-todoStore.put({ title: "Buy cookies" }, todoId);
-todoStore.put({ priority: "high" }, todoId);
+// Assuming a full todo object looks like `{ id: 123, title: "Buy cookies", priority: "low", done: false }`, let's say
+// the user just changed its priority from "low" to "high"...
+todoStore.put({ priority: "high" }, todoId); // 👍 Only update the prop that was changed: GOOD.
 
 // In a separate transaction...
 todoStore.get(todoId).onsuccess = (event) => {
-  console.log(event.target.result); // { id: 123, title: "Buy cookies", priority: "high" }
+  console.log(event.target.result); // { id: 123, title: "Buy cookies", priority: "high", done: false }
 };
 ```
 
 ### ⚠️ Make object you pass to put() as minimal as possible!
 
-If you pass an objet to `put()`, all of the properties in that object will become the _most recent_ properties/value for that object on all instances where the data is sync'ed. This is because OpLog entries are created for every property on the object you pass to `put(...)`.
+When possible, only pass in an object with props/values that you have actually changed. This helps ensure that your changes, and the changes that might be made to the same object somewhere else, are _merged_.
 
-When possible, only pass in an object with props/values that you have actually changed. This helps ensure that your changes, and the changes that might be made somewhere else to other props on an object, are _merged_. (It also minimizes the number of OpLog entries that are created, reducing the amount of data that ends up being sync'ed.)
+If, instead, if you pass in a "complete" version of an object with all the properties--including ones you didn't modify--you may end up overwriting changes that were made to a specific prop somewhere else.
 
-In other words, if you pass in a "complete" version of an object with all the properties--including ones you didn't modify--you may end up overwriting changes that were made to a specific prop somewhere else.
+```javascript
+// 👎 User only changed priority, but let's update all the props anyways: BAD
+todoStore.put({ title: "Buy cookies" , priority: "high", done: false }, todoId);
+
+// In a separate transaction...
+todoStore.get(todoId).onsuccess = (event) => {
+  // 😭 If someone else had previously marked this todo as "done", their change will be lost once they receive these
+  // changes since an operation log entry was just created that overwrites all props on the todo--including the "done"
+  // property.
+  console.log(event.target.result); // { id: 123, title: "Buy cookies", priority: "high", done: false }
+};
+```
 
 ## Deleting stuff
 
@@ -122,6 +134,12 @@ todo
 Also, `IDBSideSync` currently doesn't support `add(value, key)` or `put(value, key)` calls when `key` is of type `ArrayBuffer` or `DataView`.
 
 ## FAQ
+
+### Q: But I really dislike the IndexedDB API...
+
+Agreed: the IndexedDB's API isn't nearly as convenient as many popular relational or "document-oriented" databases. However, it's a pragmatic choice if you want a persistent data store API that is ubiquitous across most browsers.
+
+Jake Archibald's [idb](https://github.com/jakearchibald/idb) library makes using IndexedDB a bit easier.
 
 ### Q: What happens if the same oplog/change message is "ingested" more than once?
 
@@ -181,7 +199,7 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
   - how will this work without the use of the merkle tree for efficient diffing? is that even necessary?
   - make sure to prevent the "many changes in same ~10sec window causes issue" problem (https://twitter.com/jaredforsyth/status/1228366315569565696)
 - [ ] Set up the project to work with [CodeSandbox CI](https://codesandbox.io/docs/ci).
-- [ ] Set up a simple sandbox app in a sub-directory that can be use to demo/test the library (from relative imports)
+- [ ] Add a [Code Tour](https://github.com/microsoft/codetour)
 - [ ] Support _syncing_ with remote file storage services
   - Once a standard API exists for the _local_ data store (which can be implemented with different adapters), modify the sync code so that it uses a standard API, which would allow for different remote storage providers to be plugged in.
   - `sidesync-gdrive`, `sidesync-icloud`, etc.
