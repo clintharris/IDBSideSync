@@ -136,3 +136,40 @@ export function waitForAFew(msec = 50): Promise<void> {
     setTimeout(resolve, msec);
   });
 }
+
+export async function insertDummyOpLogEntries(dummyEntryCount: number, firstEntryTime: number): Promise<void> {
+  const oplogEntries: OpLogEntry[] = [];
+  for (let i = 1; i <= dummyEntryCount; i++) {
+    oplogEntries.push({
+      hlcTime: `${new Date(firstEntryTime + i - 1).toISOString()}-0000-testnode`,
+      objectKey: i,
+      prop: 'foo',
+      store: TODO_ITEMS_STORE,
+      value: 'bar',
+    });
+  }
+
+  await transaction([], (oplogStore) => {
+    // Shuffle the entries before adding to prove that, even though they're not inserted in order of HL time, we still
+    // end up getting them back in that order.
+    for (const entry of shuffle(oplogEntries)) {
+      oplogStore.add(entry);
+    }
+  });
+}
+
+// Copied from https://github.com/sindresorhus/array-shuffle/blob/main/index.js
+export function shuffle<T>(array: T[]): T[] {
+  if (!Array.isArray(array)) {
+    throw new TypeError(`Expected an array, got ${typeof array}`);
+  }
+
+  array = [...array];
+
+  for (let index = array.length - 1; index > 0; index--) {
+    const newIndex = Math.floor(Math.random() * (index + 1));
+    [array[index], array[newIndex]] = [array[newIndex], array[index]];
+  }
+
+  return array;
+}

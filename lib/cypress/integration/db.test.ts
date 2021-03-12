@@ -1,3 +1,4 @@
+import { lowerFirst } from 'cypress/types/lodash';
 import { HLTime } from '../../src/HLTime';
 import * as IDBSideSync from '../../src/index';
 import { HLClock, OPLOG_STORE } from '../../src/index';
@@ -6,6 +7,8 @@ import {
   deleteDb,
   getDb,
   GLOBAL_SETTINGS_STORE,
+  insertDummyOpLogEntries,
+  log,
   SCOPED_SETTINGS_STORE,
   TODOS_DB,
   TODO_ITEMS_STORE,
@@ -271,8 +274,8 @@ context('db', () => {
     });
   });
 
-  describe('getEntries()', async () => {
-    const dummyEntryCount = 50;
+  describe('getEntriesPage()', async () => {
+    const dummyEntryCount = 42;
     const firstEntryTime = Date.parse('2021-03-01T20:00:00.000Z');
 
     function firstEntryTimePlus(msec: number): Date {
@@ -280,41 +283,79 @@ context('db', () => {
     }
 
     beforeEach(async () => {
-      console.log(`Inserting ${dummyEntryCount} dummy objects into ${OPLOG_STORE}.`);
-      await transaction([], (oplogStore) => {
-        for (let i = 1; i <= dummyEntryCount; i++) {
-          oplogStore.add({
-            hlcTime: `${new Date(firstEntryTime + i - 1).toISOString()}-0000-testnode`,
-            objectKey: i,
-            prop: 'foo',
-            store: TODO_ITEMS_STORE,
-            value: 'bar',
-          });
-        }
-      });
+      log(`Inserting ${dummyEntryCount} dummy objects into ${OPLOG_STORE}.`);
+      await insertDummyOpLogEntries(dummyEntryCount, firstEntryTime);
     });
 
     it('returns expected when no parameters are specified', async () => {
-      let entries = await IDBSideSync.getEntries();
+      let entries = await IDBSideSync.getEntriesPage();
       expect(entries).to.have.lengthOf(5);
     });
 
     it('paginates results correctly', async () => {
       const pageSize = 10;
-      for (let page = 0; page < 5; page++) {
-        let entries = await IDBSideSync.getEntries({ page, pageSize });
-        expect(entries).to.have.lengthOf(10);
-        let absolutePosition = page * pageSize;
-        expect(entries[0].hlcTime).contains(firstEntryTimePlus(absolutePosition).toISOString());
-        expect(entries[9].hlcTime).contains(firstEntryTimePlus(absolutePosition + pageSize - 1).toISOString());
+      let prevHlcTime = '';
+      let counter = 0;
+
+      for (let page = 0; true; page++) {
+        let entries = await IDBSideSync.getEntriesPage({ page, pageSize });
+        counter += entries.length;
+        for (let entry of entries) {
+          assert.isTrue(entry.hlcTime > prevHlcTime, `entries are returned in order of HLC time`);
+          prevHlcTime = entry.hlcTime;
+        }
+
+        if (entries.length < pageSize) {
+          break;
+        }
       }
+
+      assert.equal(counter, dummyEntryCount);
+    });
+  });
+
+  describe('getEntries()', async () => {
+    const dummyEntryCount = 62;
+    const firstEntryTime = Date.parse('2021-03-01T20:00:00.000Z');
+
+    function firstEntryTimePlus(msec: number): Date {
+      return new Date(firstEntryTime + msec);
+    }
+
+    beforeEach(async () => {
+      log(`Inserting ${dummyEntryCount} dummy objects into ${OPLOG_STORE}.`);
+      await insertDummyOpLogEntries(dummyEntryCount, firstEntryTime);
+    });
+
+    it('returns expected when no parameters are specified', async () => {
+      let counter = 0;
+      let prevHlcTime = '';
+      for await (const entry of IDBSideSync.getEntries()) {
+        assert.isTrue(entry.hlcTime > prevHlcTime, `entries are returned in order of HLC time`);
+        counter++;
+        prevHlcTime = entry.hlcTime;
+      }
+      expect(counter).equal(dummyEntryCount);
     });
 
     it('returns expected when min date is specified', async () => {
-      const minDate = firstEntryTimePlus(10);
-      let entries = await IDBSideSync.getEntries({ afterTime: minDate, page: 0, pageSize: 5 });
-      expect(entries).to.have.lengthOf(5);
-      expect(entries[0].hlcTime).contains(minDate.toISOString());
+      const skipCount = 10;
+      const minDate = firstEntryTimePlus(skipCount);
+      let counter = 0;
+      let prevHlcTime = '';
+      for await (const entry of IDBSideSync.getEntries({ afterTime: minDate })) {
+        if (prevHlcTime === '') {
+          assert.isTrue(
+            entry.hlcTime.startsWith(minDate.toISOString()),
+            `first entry should have time ${minDate.toISOString()}`
+          );
+        }
+
+        assert.isTrue(entry.hlcTime > prevHlcTime, `entries are returned in order of HLC time`);
+        counter++;
+        prevHlcTime = entry.hlcTime;
+      }
+      expect(counter).equal(dummyEntryCount - skipCount);
     });
   });
 });

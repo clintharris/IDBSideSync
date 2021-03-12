@@ -147,27 +147,40 @@ export function saveSettings(newSettings: Settings): Promise<Settings> {
 }
 
 /**
- * Use this function to retrieve pages of oplog entries from the IndexedDB object store.
- *
- * Pagination is used instead of something like an async generator because it's not possible to perform async operations
- * within an IndexedDB transaction. This function could, technically, return an async generator (using the idb library,
- * for example: https://git.io/JqfQq). However, that would mislead callers into thinking that the following is possible:
+ * A convenience function that wraps the paginated results of `getEntriesPage()` and returns an async iteraterable
+ * iterator so that you can do something like the following:
  *
  * @example
  * ```
- * for await (const entry of IDBSideSync.getEntries()) {
- *    await uploadEntry(entry); // ❌ This will cause IndexedDB to throw a "transaction has finished" error
+ * for await (let entry of getEntries()) {
+ *   await doSomethingAsyncWith(entry)
  * }
  * ```
  *
- * By using pagination we avoid doing anything async during the IndexedDB transaction. Some number of objects are read
- * from the database, the transaction finishes, and the caller can take as much time as desired working on the returned
- * set of entries before requesting another page.
+ * For more info on async generators, etc., see https://javascript.info/async-iterators-generators.
+ */
+export async function* getEntries(params: { afterTime?: Date } = {}): AsyncGenerator<OpLogEntry, void, void> {
+  let page = 0;
+  while (page >= 0) {
+    const entries = await getEntriesPage({ afterTime: params.afterTime, page, pageSize: 10 });
+    page = entries.length ? page + 1 : -1;
+    for (const entry of entries) {
+      yield entry;
+    }
+  }
+}
+
+/**
+ * Use this function to retrieve paginated oplog entries from the IndexedDB object store.
+ *
+ * Pagination is used to eliminate the possibility of async operations being attempted during the IndexedDB transaction
+ * used to retrieve the entries. Some number of objects are read from the database, the transaction finishes, and the
+ * caller can take as much time as desired working on the returned set of entries before requesting another page.
  *
  * Note that the pagination algorithm is a modified version of an example shared by Raymond Camden at
  * https://www.raymondcamden.com/2016/09/02/pagination-and-indexeddb/.
  */
-export function getEntries(
+export function getEntriesPage(
   params: { afterTime?: Date; page: number; pageSize: number } = { page: 0, pageSize: 5 }
 ): Promise<OpLogEntry[]> {
   let query: IDBKeyRange | null = null;

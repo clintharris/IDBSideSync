@@ -10,7 +10,7 @@ export async function sync() {
       log.debug('todo: apply remote entry to local store:', remoteEntry);
     }
 
-    for (const localEntry in db.getEntries()) {
+    for await (const localEntry of db.getEntries()) {
       log.debug('todo: updload local entry to remote store:', localEntry);
       // Note: we do not want the database to actually load the next entry until we have finished saving the current one
       // await store.saveEntry(localEntry);
