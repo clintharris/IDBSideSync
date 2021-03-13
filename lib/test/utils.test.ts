@@ -1,6 +1,7 @@
 /// <reference types="../../types/common" />
 import { expect, describe, it } from '@jest/globals';
 import * as utils from '../src/utils';
+import { makeNodeId } from '../src/utils';
 
 describe('utils', () => {
   const unsupportedObjectKeys = [{}, null, undefined, new Date(), [1, {}], [1, null], [1, undefined], [1, new Date()]];
@@ -39,7 +40,7 @@ describe('utils', () => {
 
   describe('isValidOplogEntry()', () => {
     const oplogEntry: OpLogEntry = {
-      hlcTime: '2021-01-24T13:23:14.203Z-0000-testnode',
+      hlcTime: `2021-01-24T13:23:14.203Z-0000-${makeNodeId}`,
       objectKey: 1,
       prop: 'id',
       store: 'someStore',

@@ -174,30 +174,32 @@ export class HLClock {
   }
 
   static DeserializationError = class DeserializationError extends Error {
-    constructor(message: string) {
-      super(message);
-      Object.setPrototypeOf(this, DeserializationError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+    // Constructor param must be of type `unknown` to avoid TypeScript/Jest error: https://git.io/JqCDN
+    constructor(message: unknown) {
+      super(message + '');
+      Object.setPrototypeOf(this, DeserializationError.prototype); // https://git.io/vHLlu
     }
   };
 
   static TimeNotSetError = class TimeNotSetError extends Error {
     constructor() {
       super(libName + ': Clock time has not been set.');
-      Object.setPrototypeOf(this, TimeNotSetError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, TimeNotSetError.prototype); // https://git.io/vHLlu
     }
   };
 
   static ClockDriftError = class ClockDriftError extends Error {
+    // Constructor param must be of type `unknown` to avoid TypeScript/Jest error: https://git.io/JqCDN
     constructor(message: unknown) {
       super(libName + ': ' + JSON.stringify(message));
-      Object.setPrototypeOf(this, ClockDriftError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, ClockDriftError.prototype); // https://git.io/vHLlu
     }
   };
 
   static OverflowError = class OverflowError extends Error {
     constructor() {
       super(`${libName}: timestamp counter overflow`);
-      Object.setPrototypeOf(this, OverflowError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, OverflowError.prototype); // https://git.io/vHLlu
     }
   };
 }

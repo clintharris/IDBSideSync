@@ -26,35 +26,40 @@ describe('HLTime', () => {
       const actualTimestampStr = new HLTime(millis, counter, node).toString();
       const expectedTimestampStr = [
         dateStr,
-        ('0000' + counter.toString(16).toUpperCase()).slice(-4),
-        ('0000000000000000' + node).slice(-16),
-      ].join('-');
+        ('0'.repeat(HLTime.COUNTER_PART_STR_LENGTH) + counter.toString(16).toUpperCase()).slice(
+          -HLTime.COUNTER_PART_STR_LENGTH
+        ),
+        ('0'.repeat(HLTime.NODE_PART_STR_LENGTH) + node).slice(-HLTime.NODE_PART_STR_LENGTH),
+      ].join(HLTime.STRING_PARTS_DELIMITER);
       expect(actualTimestampStr).toEqual(expectedTimestampStr);
     }
   });
 
   describe('hash()', () => {
     it('returns the same value every time', () => {
-      const expectedHash = 4019442025;
       const timestamp = new HLTime(111, 222, 'foo');
+      const expectedHash = murmurhash.v3(timestamp.toString());
       expect(timestamp.hash()).toEqual(expectedHash);
       expect(timestamp.hash()).toEqual(expectedHash);
       expect(timestamp.hash()).toEqual(expectedHash);
     });
 
     it('returns different value for different timestamp node IDs', () => {
-      expect(new HLTime(111, 222, 'foo').hash()).toEqual(4019442025);
-      expect(new HLTime(111, 222, 'foo2').hash()).toEqual(1253188043);
+      const time1 = new HLTime(111, 222, 'foo');
+      const time2 = new HLTime(111, 222, 'foo2');
+      expect(time1.hash()).not.toEqual(time2.hash());
     });
 
     it('returns different value for different timestamp counters', () => {
-      expect(new HLTime(111, 222, 'foo').hash()).toEqual(4019442025);
-      expect(new HLTime(111, 229, 'foo').hash()).toEqual(3056981850);
+      const time1 = new HLTime(111, 222, 'foo');
+      const time2 = new HLTime(111, 333, 'foo');
+      expect(time1.hash()).not.toEqual(time2.hash());
     });
 
     it('returns different value for different timestamp physical times', () => {
-      expect(new HLTime(111, 222, 'foo').hash()).toEqual(4019442025);
-      expect(new HLTime(119, 222, 'foo').hash()).toEqual(256289245);
+      const time1 = new HLTime(111, 222, 'foo');
+      const time2 = new HLTime(333, 222, 'foo');
+      expect(time1.hash()).not.toEqual(time2.hash());
     });
   });
 
@@ -67,18 +72,25 @@ describe('HLTime', () => {
         time: '2020-02-02T16:29:22.946Z',
       };
 
-      const timestamp = HLTime.parse(`${expected.time}-${expected.counter}-${expected.node}`);
+      const timestamp = HLTime.parse(`${expected.time}_${expected.counter}_${expected.node}`);
 
       expect(timestamp).toBeInstanceOf(HLTime);
       expect(timestamp?.node()).toEqual(expected.node);
       expect(timestamp?.counter()).toEqual(expectedCounter);
     });
 
-    it('returns null when given an invalid string', () => {
-      expect(HLTime.parse('')).toBeNull();
-      expect(HLTime.parse('asdfasdf')).toBeNull();
+    it('throws ParseError when given an invalid string', () => {
+      expect(() => {
+        HLTime.parse('');
+      }).toThrow(HLTime.ParseError);
 
-      // TODO: modify Timestamp.parse() to throw if it receives invalid dates (e.g., 2020-32-02), then add test for that
+      expect(() => {
+        HLTime.parse('asdfasdf');
+      }).toThrow(HLTime.ParseError);
+
+      expect(() => {
+        HLTime.parse((undefined as unknown) as string);
+      }).toThrow(HLTime.ParseError);
     });
   });
 

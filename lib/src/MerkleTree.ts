@@ -311,35 +311,37 @@ export class MerkleTree {
   static MinTimeError = class MinTimeError extends Error {
     constructor(timeMsec: unknown) {
       super(`Time '${timeMsec}' is <= 0.`);
-      Object.setPrototypeOf(this, MinTimeError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, MinTimeError.prototype); // https://git.io/vHLlu
     }
   };
 
   static MinPathLengthError = class MinPathLengthError extends Error {
     constructor() {
       super(`Tree paths must have at least one element.`);
-      Object.setPrototypeOf(this, MinPathLengthError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, MinPathLengthError.prototype); // https://git.io/vHLlu
     }
   };
 
   static MaxTimeError = class MaxTimeError extends Error {
+    // Constructor param must be of type `unknown` to avoid TypeScript/Jest error: https://git.io/JqCDN
     constructor(timeMsec: unknown) {
       super(`Time '${timeMsec}' is greater than limit ('${MAX_TIME_MSEC}').`);
-      Object.setPrototypeOf(this, MaxTimeError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, MaxTimeError.prototype); // https://git.io/vHLlu
     }
   };
 
   static InvalidSourceObjectError = class InvalidSourceObjectError extends Error {
+    // Constructor param must be of type `unknown` to avoid TypeScript/Jest error: https://git.io/JqCDN
     constructor(object: unknown) {
       super(`Can't create tree from object: ` + JSON.stringify(object));
-      Object.setPrototypeOf(this, InvalidSourceObjectError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, InvalidSourceObjectError.prototype); // https://git.io/vHLlu
     }
   };
 
   static MaxPathLengthError = class MaxPathLengthError extends Error {
     constructor(treePath: BaseThreeTreePath) {
       super(`Tree path cannot have more than ${MAX_TREEPATH_LENGTH} elements: ${treePath}`);
-      Object.setPrototypeOf(this, MaxPathLengthError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+      Object.setPrototypeOf(this, MaxPathLengthError.prototype); // https://git.io/vHLlu
     }
   };
 }

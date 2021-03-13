@@ -2,6 +2,7 @@ import { lowerFirst } from 'cypress/types/lodash';
 import { HLTime } from '../../src/HLTime';
 import * as IDBSideSync from '../../src/index';
 import { HLClock, OPLOG_STORE } from '../../src/index';
+import { makeNodeId } from '../../src/utils';
 import {
   assertEntries,
   deleteDb,
@@ -83,7 +84,7 @@ context('db', () => {
       const objectKey = [expectedSettingObj.scope, expectedSettingObj.name];
 
       await IDBSideSync.applyOplogEntry({
-        hlcTime: '2021-01-24T13:23:14.203Z-0000-testnode',
+        hlcTime: `2021-01-24T13:23:14.203Z_0000_${makeNodeId()}`,
         objectKey: objectKey,
         prop: 'bgColor',
         store: SCOPED_SETTINGS_STORE,
@@ -102,7 +103,7 @@ context('db', () => {
       const expected = { id: objectKey, name: 'foo ' };
 
       await IDBSideSync.applyOplogEntry({
-        hlcTime: '2021-01-24T13:23:14.203Z-0001-testnode',
+        hlcTime: `2021-01-24T13:23:14.203Z_0001_${makeNodeId()}`,
         objectKey: objectKey,
         prop: 'name',
         store: TODO_ITEMS_STORE,
@@ -119,13 +120,13 @@ context('db', () => {
     it('ignores oplog entry if a newer one exists', async () => {
       const objectKey = 123;
       const olderEntry = {
-        hlcTime: '2021-01-24T13:23:14.203Z-0000-testnode',
+        hlcTime: `2021-01-24T13:23:14.203Z_0000_${makeNodeId()}`,
         objectKey: objectKey,
         prop: 'name',
         store: TODO_ITEMS_STORE,
         value: 'old',
       };
-      const newerEntry = { ...olderEntry, hlcTime: '2021-01-24T13:23:14.203Z-0001-testnode', value: 'new' };
+      const newerEntry = { ...olderEntry, hlcTime: `2021-01-24T13:23:14.203Z_0001_${makeNodeId()}`, value: 'new' };
       let foundTodo;
       let foundEntries;
 
@@ -183,21 +184,21 @@ context('db', () => {
       const expectedTodo: TodoItem = { id: 1, name: 'buy cookies', done: false };
       const todoOplogEntries = [
         {
-          hlcTime: '2021-01-24T13:23:14.203Z-0000-testnode',
+          hlcTime: `2021-01-24T13:23:14.203Z_0000_${makeNodeId()}`,
           objectKey: expectedTodo.id,
           prop: 'id',
           store: TODO_ITEMS_STORE,
           value: expectedTodo.id,
         },
         {
-          hlcTime: '2021-01-24T13:23:14.203Z-0001-testnode',
+          hlcTime: `2021-01-24T13:23:14.203Z_0001_${makeNodeId()}`,
           objectKey: expectedTodo.id,
           prop: 'name',
           store: TODO_ITEMS_STORE,
           value: expectedTodo.name,
         },
         {
-          hlcTime: '2021-01-24T13:23:14.203Z-0002-testnode',
+          hlcTime: `2021-01-24T13:23:14.203Z_0002_${makeNodeId()}`,
           objectKey: expectedTodo.id,
           prop: 'done',
           store: TODO_ITEMS_STORE,
@@ -237,21 +238,21 @@ context('db', () => {
 
       const oplogEntries = [
         {
-          hlcTime: '2021-01-24T13:23:14.203Z-0000-testnode',
+          hlcTime: `2021-01-24T13:23:14.203Z_0000_${makeNodeId()}`,
           objectKey: objectKey,
           prop: 'foo',
           store: GLOBAL_SETTINGS_STORE,
           value: 'bar',
         },
         {
-          hlcTime: '2021-01-24T13:23:14.203Z-0001-testnode',
+          hlcTime: `2021-01-24T13:23:14.203Z_0001_${makeNodeId()}`,
           objectKey: objectKey,
           prop: 'meaning',
           store: GLOBAL_SETTINGS_STORE,
           value: 42,
         },
         {
-          hlcTime: '2021-01-24T13:23:14.203Z-0002-testnode',
+          hlcTime: `2021-01-24T13:23:14.203Z_0002_${makeNodeId()}`,
           objectKey: objectKey,
           prop: 'foo',
           store: GLOBAL_SETTINGS_STORE,

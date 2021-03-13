@@ -5,7 +5,7 @@ import { HLTime } from './HLTime';
 import {
   debug,
   isEventWithTargetError,
-  isValidOplogEntry,
+  throwIfInvalidOpLogEntry,
   isValidSideSyncSettings,
   libName,
   log,
@@ -256,16 +256,22 @@ export async function applyOplogEntries(candidates: OpLogEntry[]) {
  */
 export function applyOplogEntry(candidate: OpLogEntry) {
   return new Promise((resolve, reject) => {
-    if (!isValidOplogEntry(candidate)) {
-      reject(new InvalidOpLogEntryError(candidate));
-      return;
+    try {
+      throwIfInvalidOpLogEntry(candidate);
+    } catch (error) {
+      reject(new InvalidOpLogEntryError(candidate, error.message));
     }
-    const candidateHLTime = HLTime.parse(candidate.hlcTime);
 
-    // A bit redundant since isValidOplogEntry() validates the hlcTime, but allows tsc to trust that HLTime.parse()
-    // didn't return null...
+    let candidateHLTime;
+    try {
+      candidateHLTime = HLTime.parse(candidate.hlcTime);
+    } catch (error) {
+      reject(new InvalidOpLogEntryError(candidate, error.message));
+    }
+
+    // This logic is redundant since throwIfInvalidOpLogEntry() validates the hlcTime, but necessary to prove to the
+    // Typescript compiler that candidateHLTime is set to a value.
     if (!candidateHLTime) {
-      reject(new InvalidOpLogEntryError(candidate, 'Invalid .hlcTime value.'));
       return;
     } else if (candidateHLTime.node() === HLClock.time().node()) {
       log.warn(`Encountered oplog entry with the same node ID:`, candidateHLTime.node());
@@ -349,11 +355,13 @@ export function applyOplogEntry(candidate: OpLogEntry) {
 
       // The purpose of this block is to see if an existing oplog entry exists that is "newer" than the candidate entry.
       if (cursor && cursor.value) {
-        if (!isValidOplogEntry(cursor.value)) {
+        try {
+          throwIfInvalidOpLogEntry(cursor.value);
+        } catch (error) {
           log.warn(
-            `encountered an invalid oplog entry in its "${OPLOG_STORE}" store. This might mean that an oplog entry` +
+            `encountered an invalid oplog entry in "${OPLOG_STORE}" store. This might mean that an oplog entry` +
               `was manually edited or created in an invalid way somewhere. The entry will be ignored.`,
-            JSON.stringify(cursor.value)
+            JSON.stringify(error.message)
           );
           cursor.continue();
           return;
@@ -522,27 +530,27 @@ class UnexpectedOpLogEntryError extends Error {
       `${libName}: invalid "most recent oplog entry"; expected '${noun}' value of '${expected}' but got ` +
         `'${actual}'. (This might mean there's a problem with the IDBKeyRange used to iterate over ${OPLOG_INDEX}.)`
     );
-    Object.setPrototypeOf(this, UnexpectedOpLogEntryError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+    Object.setPrototypeOf(this, UnexpectedOpLogEntryError.prototype); // https://git.io/vHLlu
   }
 }
 
 export class ApplyPutError extends Error {
   constructor(storeName: string, error: unknown) {
     super(`${libName}: error on attempt to apply oplog entry that adds/updates object in "${storeName}": ` + error);
-    Object.setPrototypeOf(this, ApplyPutError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+    Object.setPrototypeOf(this, ApplyPutError.prototype); // https://git.io/vHLlu
   }
 }
 
 export class TransactionAbortedError extends Error {
   constructor(error: unknown) {
     super(`${libName}: transaction aborted with error: ` + error);
-    Object.setPrototypeOf(this, TransactionAbortedError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+    Object.setPrototypeOf(this, TransactionAbortedError.prototype); // https://git.io/vHLlu
   }
 }
 
 export class InvalidOpLogEntryError extends Error {
   constructor(object: unknown, message = '') {
-    super(`${libName}: object is not a valid OpLogEntry: ` + JSON.stringify(object) + '. ' + message);
-    Object.setPrototypeOf(this, InvalidOpLogEntryError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+    super(`Object is not a valid OpLogEntry; ${message}: ` + JSON.stringify(object));
+    Object.setPrototypeOf(this, InvalidOpLogEntryError.prototype); // https://git.io/vHLlu
   }
 }

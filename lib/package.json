@@ -24,7 +24,7 @@
     "tsdx": "tsdx --format umd,esm --name IDBSideSync",
     "test": "npm run test:jest && npm run test:cy",
     "test:jest": "jest",
-    "test:jest:watch": "jest --watch --verbose",
+    "test:jest:watch": "jest --watch",
     "test:cy": "cypress run --quiet",
     "test:cy:watch": "nodemon --quiet --watch src --watch cypress --ext js,ts --exec 'npm run cy:run'",
     "test:cy:open": "cypress open",

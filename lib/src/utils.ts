@@ -20,7 +20,7 @@ export function noOp() {}
 export function makeNodeId(): string {
   return uuid()
     .replace(/-/g, '')
-    .slice(-16); // TODO: Figure out if there's a reason for using last 16 chars, specifically.
+    .slice(-HLTime.NODE_PART_STR_LENGTH);
 }
 
 /**
@@ -51,33 +51,39 @@ export function isSupportedObjectKey(thing: unknown): thing is IDBValidKey {
  * Type guard for safely asserting that something is an OpLogEntry.
  */
 export function isValidOplogEntry(thing: unknown): thing is OpLogEntry {
-  if (!thing) {
+  try {
+    throwIfInvalidOpLogEntry(thing);
+  } catch (error) {
     return false;
+  }
+
+  return true;
+}
+
+export function throwIfInvalidOpLogEntry(thing: unknown): void {
+  if (!thing) {
+    throw new Error('not an object');
   }
 
   const candidate = thing as OpLogEntry;
 
   if (typeof candidate.store !== 'string' || candidate.store.trim() === '') {
-    return false;
-  }
-
-  if (typeof candidate.prop !== 'string') {
-    return false;
+    throw new Error('Object must have "store" property set to a non-empty string');
   }
 
   if (!('value' in candidate)) {
-    return false;
+    throw new Error('Object must have "value" property');
   }
 
-  if (!HLTime.parse(candidate.hlcTime)) {
-    return false;
+  try {
+    HLTime.parse(candidate.hlcTime);
+  } catch (error) {
+    throw new Error('Object must have a valid "hlcTime" property: ' + error.message);
   }
 
   if (!isSupportedObjectKey(candidate.objectKey)) {
-    return false;
+    throw new Error('"objectKey" property is an unsupported type');
   }
-
-  return true;
 }
 
 export function isValidSideSyncSettings(thing: unknown): thing is Settings {

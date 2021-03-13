@@ -298,34 +298,34 @@ export class PutWithoutKeyError extends Error {
         `"key" arg was specified. Either call put() with a key arg (e.g., store.put(obj, key)) or make sure the ` +
         `object has the following properties set to valid values: ${formattedKeyNames}`
     );
-    Object.setPrototypeOf(this, PutWithoutKeyError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+    Object.setPrototypeOf(this, PutWithoutKeyError.prototype); // https://git.io/vHLlu
   }
 }
 
 export class TempPutError extends Error {
   constructor(storeName: string, error: unknown) {
     super(`${libName}: error while attempting to "temporarily" put() something into "${storeName}": ` + error);
-    Object.setPrototypeOf(this, TempPutError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+    Object.setPrototypeOf(this, TempPutError.prototype); // https://git.io/vHLlu
   }
 }
 
 export class FinalPutError extends Error {
   constructor(storeName: string, error: unknown) {
     super(`${libName}: error while attempting to put() final/merged version of object into "${storeName}": ` + error);
-    Object.setPrototypeOf(this, FinalPutError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+    Object.setPrototypeOf(this, FinalPutError.prototype); // https://git.io/vHLlu
   }
 }
 
 export class MissingKeyParamError extends Error {
   constructor(fcnName: string) {
     super(`${libName}: You must specify the "key" param when calling ${fcnName}() on a store without a keyPath.`);
-    Object.setPrototypeOf(this, MissingKeyParamError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+    Object.setPrototypeOf(this, MissingKeyParamError.prototype); // https://git.io/vHLlu
   }
 }
 
 export class UnknownObjectKeyError extends Error {
   constructor() {
     super(`${libName}: failed to establish a key for retrieving object before updating it.'`);
-    Object.setPrototypeOf(this, UnknownObjectKeyError.prototype); // https://preview.tinyurl.com/y4jhzjgs
+    Object.setPrototypeOf(this, UnknownObjectKeyError.prototype); // https://git.io/vHLlu
   }
 }

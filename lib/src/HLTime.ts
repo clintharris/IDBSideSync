@@ -5,20 +5,36 @@ import murmurhash from 'murmurhash';
  * "physical" clock time and a "logical" monotonic counter.
  */
 export class HLTime {
+  public static readonly STRING_PARTS_DELIMITER = '_';
+  public static readonly COUNTER_PART_STR_LENGTH = 4;
+  public static readonly NODE_PART_STR_LENGTH = 16;
+
   /**
    * Converts an HLC time string to a HLTime instance.
    */
-  public static parse(timestamp: string): HLTime | null {
-    if (typeof timestamp === 'string') {
-      const parts = timestamp.split('-');
-      if (parts && parts.length === 5) {
-        const millis = Date.parse(parts.slice(0, 3).join('-')).valueOf();
-        const counter = parseInt(parts[3], 16);
-        const node = parts[4];
-        if (!isNaN(millis) && !isNaN(counter)) return new HLTime(millis, counter, node);
-      }
+  public static parse(timestamp: string): HLTime {
+    if (typeof timestamp !== 'string') {
+      throw new HLTime.ParseError(timestamp, 'not a string');
     }
-    return null;
+
+    const parts = timestamp.split(HLTime.STRING_PARTS_DELIMITER);
+    if (parts.length !== 3) {
+      throw new HLTime.ParseError(timestamp, 'not in format <date>_<counter>_<node>');
+    }
+
+    const millis = Date.parse(parts[0]).valueOf();
+    const counter = parseInt(parts[1], 16);
+    const node = parts[2];
+
+    if (isNaN(millis)) {
+      throw new HLTime.ParseError(timestamp, 'unable to parse date/time string to date');
+    } else if (isNaN(counter)) {
+      throw new HLTime.ParseError(timestamp, 'failed to parse counter to number');
+    } else if (node.length !== HLTime.NODE_PART_STR_LENGTH) {
+      throw new HLTime.ParseError(timestamp, `node ID should have ${HLTime.NODE_PART_STR_LENGTH} characters`);
+    }
+
+    return new HLTime(millis, counter, node);
   }
 
   protected _state: {
@@ -51,7 +67,7 @@ export class HLTime {
 
   /**
    * Override the standard toString() inherited from the Object prototype. The stringified timestamp is FIXED LENGTH in
-   * the format `<date/time>-<counter>-<client ID>`, where:
+   * the format `<date/time>_<counter>_<client ID>`, where:
    *
    *   - `<date/time>` is ISO 8601 date string via `Date.toISOString()`
    *   - `<counter>` is a hexadecimal encoded version of the counter, always 4 chars in length
@@ -65,8 +81,8 @@ export class HLTime {
    *
    * Examples:
    *
-   *   - `2020-02-02T16:29:22.946Z-0000-97bf28e64e4128b0` (millis = 1580660962946, counter = 0, node = 97bf28e64e4128b0)
-   *   - `2020-02-02T16:30:12.281Z-0001-bc5fd821dc0e3653` (millis = 1580661012281, counter = 1, node = bc5fd821dc0e3653)
+   *   - `2020-02-02T16:29:22.946Z_0000_97bf28e64e4128b0` (millis = 1580660962946, counter = 0, node = 97bf28e64e4128b0)
+   *   - `2020-02-02T16:30:12.281Z_0001_bc5fd821dc0e3653` (millis = 1580661012281, counter = 1, node = bc5fd821dc0e3653)
    *     - Note that `<ISO 8601 date string>` is via `Date.toISOString()`
    */
   toString(): string {
@@ -74,13 +90,13 @@ export class HLTime {
     return [
       new Date(this.millis()).toISOString(),
       (
-        '0000' +
+        '0'.repeat(HLTime.COUNTER_PART_STR_LENGTH) +
         this.counter()
           .toString(16)
           .toUpperCase()
-      ).slice(-4),
-      ('0000000000000000' + this.node()).slice(-16),
-    ].join('-');
+      ).slice(-HLTime.COUNTER_PART_STR_LENGTH),
+      ('0'.repeat(HLTime.NODE_PART_STR_LENGTH) + this.node()).slice(-HLTime.NODE_PART_STR_LENGTH),
+    ].join(HLTime.STRING_PARTS_DELIMITER);
   }
 
   millis() {
@@ -98,6 +114,14 @@ export class HLTime {
   hash() {
     return murmurhash.v3(this.toString());
   }
+
+  static ParseError = class ParseError extends Error {
+    // Constructor param must be of type `unknown` to avoid TypeScript/Jest error: https://git.io/JqCDN
+    constructor(invalidTimestampStr: unknown, reason: string) {
+      super(`Invalid HLTime string; ${reason}: ` + JSON.stringify(invalidTimestampStr));
+      Object.setPrototypeOf(this, ParseError.prototype); // https://git.io/vHLlu
+    }
+  };
 }
 
 /**

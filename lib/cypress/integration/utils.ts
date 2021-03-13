@@ -141,7 +141,7 @@ export async function insertDummyOpLogEntries(dummyEntryCount: number, firstEntr
   const oplogEntries: OpLogEntry[] = [];
   for (let i = 1; i <= dummyEntryCount; i++) {
     oplogEntries.push({
-      hlcTime: `${new Date(firstEntryTime + i - 1).toISOString()}-0000-testnode`,
+      hlcTime: `${new Date(firstEntryTime + i - 1).toISOString()}_0000_testnode`,
       objectKey: i,
       prop: 'foo',
       store: TODO_ITEMS_STORE,

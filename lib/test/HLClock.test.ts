@@ -15,7 +15,7 @@ describe('HLClock', () => {
     const counter = 2;
     const clientId = 'foo';
     HLClock.setTime(new HLTime(millis, counter, clientId));
-    const expectedJson = `{"time":"1970-01-01T00:00:00.00${millis}Z-000${counter}-0000000000000${clientId}"}`;
+    const expectedJson = `{"time":"1970-01-01T00:00:00.00${millis}Z_000${counter}_0000000000000${clientId}"}`;
     const actualJson = HLClock.serialize();
     expect(actualJson).toEqual(expectedJson);
   });
