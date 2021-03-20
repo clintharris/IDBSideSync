@@ -3,7 +3,7 @@ import { HLTime } from '../../src/HLTime';
 import * as IDBSideSync from '../../src/index';
 import { HLClock, OPLOG_STORE } from '../../src/index';
 import { MerkleTree } from '../../src/MerkleTree';
-import { makeNodeId } from '../../src/utils';
+import { makeNodeId, request } from '../../src/utils';
 import {
   assertEntries,
   deleteDb,
@@ -114,6 +114,21 @@ context('db', () => {
       assert(actualMerkle instanceof MerkleTree, 'Should return an instance of MerkleTree');
       assert(actualMerkle.hasBranches() === false, `Should be new/empty.`);
     });
+  });
+
+  it('deleteOplogMerkle() works', async () => {
+    await resolveOnTxComplete([IDBSideSync.META_STORE], 'readwrite', async (metaStore) => {
+      metaStore.put({}, IDBSideSync.OPLOG_MERKLE_OBJ_KEY);
+    });
+
+    await IDBSideSync.deleteOplogMerkle();
+
+    let actualMerkle;
+    await resolveOnTxComplete([IDBSideSync.META_STORE], 'readonly', async (metaStore) => {
+      actualMerkle = await request(metaStore.get(IDBSideSync.OPLOG_MERKLE_OBJ_KEY));
+    });
+
+    assert(actualMerkle === undefined, 'Expected merkle to not exist in IndexedDB');
   });
 
   describe('applyOplogEntry()', () => {

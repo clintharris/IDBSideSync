@@ -11,6 +11,7 @@ import {
   libName,
   log,
   makeNodeId,
+  transaction,
 } from './utils';
 
 export enum STORE_NAME {
@@ -192,6 +193,18 @@ export async function getOplogMerkleTree(): Promise<MerkleTree> {
       }
 
       resolve(newMerkle);
+    };
+  });
+}
+
+export async function deleteOplogMerkle(): Promise<void> {
+  if (!cachedDb) {
+    throw new Error(`${libName} hasn't been initialized. Please call init() first.`);
+  }
+
+  await transaction(cachedDb, [STORE_NAME.META], 'readwrite', async (metaStore) => {
+    metaStore.delete(OPLOG_MERKLE_OBJ_KEY).onsuccess = () => {
+      debug && log.debug(`Successfully deleted merkle from '${STORE_NAME.META}/OPLOG_MERKLE_OBJ_KEY'`);
     };
   });
 }
