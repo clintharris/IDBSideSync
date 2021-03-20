@@ -1,3 +1,12 @@
+interface MerkleTreeCompatible {
+  hash: number;
+  branches: {
+    '0'?: unknown;
+    '1'?: unknown;
+    '2'?: unknown;
+  };
+}
+
 /**
  * Objects with this shape respresent a recorded data mutation that took place at some time, on some node, as specified
  * by the Hybrid Logical Clock timestamp (`hlcTime`). When shared with another node, it should be possible to identify

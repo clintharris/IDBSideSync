@@ -2,6 +2,7 @@
 
 import { HLClock } from './HLClock';
 import { HLTime } from './HLTime';
+import { MerkleTree } from './MerkleTree';
 import {
   debug,
   isEventWithTargetError,
@@ -18,8 +19,10 @@ export enum STORE_NAME {
 }
 
 export const OPLOG_STORE = STORE_NAME.OPLOG;
+export const META_STORE = STORE_NAME.META;
 export const OPLOG_INDEX = 'Indexed by: store, objectKey, prop, hlcTime';
 export const CACHED_SETTINGS_OBJ_KEY = 'settings';
+export const OPLOG_MERKLE_OBJ_KEY = 'oplogMerkle';
 
 // This is technically unnecessary, but a nice way to help make sure we're always referencing a valid OpLogEntry
 // property name when defining a `keyPath` for the object store.
@@ -27,6 +30,7 @@ const OPLOG_ENTRY_HLC_TIME_PROP_NAME: keyof OpLogEntry = 'hlcTime';
 
 let cachedDb: IDBDatabase;
 let cachedSettings: Settings;
+let cachedMerkle: MerkleTree;
 
 /**
  * This should be called as part of the upstream library handling an onupgradeneeded event (i.e., this won't be called
@@ -144,6 +148,65 @@ export function saveSettings(newSettings: Settings): Promise<Settings> {
       resolve(cachedSettings);
     };
   });
+}
+
+export async function getOplogMerkleTree(): Promise<MerkleTree> {
+  if (!cachedDb) {
+    throw new Error(`${libName} hasn't been initialized. Please call init() first.`);
+  }
+
+  if (cachedMerkle) {
+    log.debug('Returning cached merkle tree.');
+    return Promise.resolve(cachedMerkle);
+  }
+
+  return new Promise((resolve, reject) => {
+    const txReq = cachedDb.transaction([STORE_NAME.META], 'readwrite');
+    txReq.onabort = () => reject(new TransactionAbortedError(txReq.error));
+    txReq.onerror = (event) => {
+      const error = isEventWithTargetError(event) ? event.target.error : txReq.error;
+      log.error('Failed to init settings:', error);
+      reject(new Error(`${libName} Error while attempting to load merkle tree from '${STORE_NAME.META}'`));
+    };
+
+    const metaStore = txReq.objectStore(STORE_NAME.META);
+    const getReq = metaStore.get(OPLOG_MERKLE_OBJ_KEY);
+
+    getReq.onsuccess = () => {
+      const result = getReq.result;
+
+      let newMerkle: MerkleTree = new MerkleTree();
+
+      if (!result) {
+        log.debug(`No existing merkle data in ${STORE_NAME.META}; creating new merkle tree.`);
+      } else {
+        try {
+          debug && log.debug(`Attempting to parse merkle tree previously saved to ${STORE_NAME.META}.`);
+          newMerkle = MerkleTree.fromObj(result);
+        } catch (error) {
+          log.warn(`Invalid merkle saved to ${STORE_NAME.META}; deleting saved data and using new merkle instead.`);
+          metaStore.delete(OPLOG_MERKLE_OBJ_KEY).onsuccess = () => {
+            debug && log.debug(`Successfully deleted invalid merkle from '${STORE_NAME.META}'`);
+          };
+        }
+      }
+
+      resolve(newMerkle);
+    };
+  });
+}
+
+export async function updateOplogMerkle(merkle: MerkleTree): Promise<void> {
+  let counter = 0;
+  let startTime = performance.now();
+
+  //TODO: get the right-most branch of the merkle tree, then get all local entries after that time
+  for await (const oplogEntry of getEntries()) {
+    merkle.insertHLTime(HLTime.parse(oplogEntry.hlcTime));
+    counter++;
+  }
+  let stopTime = performance.now();
+  log.debug(`⏱ Took ${stopTime - startTime}msec to add ${counter} entries to merkle tree.`);
 }
 
 /**

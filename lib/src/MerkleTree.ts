@@ -2,15 +2,6 @@ import { HLTime } from './HLTime';
 
 export type BaseThreeNumber = '0' | '1' | '2';
 
-export interface MerkleTreeCompatible {
-  hash: number;
-  branches: {
-    '0'?: unknown;
-    '1'?: unknown;
-    '2'?: unknown;
-  };
-}
-
 // A tree path is an array of characters, where each character can be used to access the next child node in the tree.
 // The path to a node is actually a time: each character in the path is part of a base-3 encoded "minutes since 1970"
 // value. We limit how long the paths can be so that, given a "short" path (i.e., only the first few digits of a time

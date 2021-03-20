@@ -2,6 +2,7 @@ import { lowerFirst } from 'cypress/types/lodash';
 import { HLTime } from '../../src/HLTime';
 import * as IDBSideSync from '../../src/index';
 import { HLClock, OPLOG_STORE } from '../../src/index';
+import { MerkleTree } from '../../src/MerkleTree';
 import { makeNodeId } from '../../src/utils';
 import {
   assertEntries,
@@ -10,6 +11,7 @@ import {
   GLOBAL_SETTINGS_STORE,
   insertDummyOpLogEntries,
   log,
+  resolveOnTxComplete,
   SCOPED_SETTINGS_STORE,
   TODOS_DB,
   TODO_ITEMS_STORE,
@@ -57,6 +59,61 @@ context('db', () => {
     expect(settings).to.exist;
     expect(settings).to.have.property('nodeId');
     expect(settings.nodeId).not.to.be.empty;
+  });
+
+  describe('getOplogMerkleTree()', () => {
+    it('creates a new/empty merkle when none exists in IndexedDB', async () => {
+      const merkle = await IDBSideSync.getOplogMerkleTree();
+      assert(merkle instanceof MerkleTree, 'Should return an instance of MerkleTree');
+      assert(merkle.hasBranches() === false, `Should be new/empty.`);
+    });
+
+    it('loads a valid, saved merkle from IndexedDB', async () => {
+      const merklePlainObj: MerkleTreeCompatible = {
+        hash: 111 ^ 222 ^ 333,
+        branches: {
+          '0': {
+            hash: 111 ^ 222,
+            branches: {
+              '0': {
+                hash: 111,
+                branches: {},
+              },
+              '2': {
+                hash: 222,
+                branches: {},
+              },
+            },
+          },
+          '2': {
+            hash: 333,
+            branches: {},
+          },
+        },
+      };
+      const expectedMerkle = MerkleTree.fromObj(merklePlainObj);
+
+      // Save a valid Merkle tree object to IndexedDB
+      await resolveOnTxComplete([IDBSideSync.META_STORE], 'readwrite', async (metaStore) => {
+        metaStore.put(expectedMerkle, IDBSideSync.OPLOG_MERKLE_OBJ_KEY);
+      });
+
+      const actualMerkle = await IDBSideSync.getOplogMerkleTree();
+
+      assert(actualMerkle instanceof MerkleTree, 'Should return an instance of MerkleTree');
+      expect(actualMerkle).deep.equals(expectedMerkle);
+    });
+
+    it('creates new merkle if saved version is invalid', async () => {
+      // Save an invalid Merkle tree object to IndexedDB
+      await resolveOnTxComplete([IDBSideSync.META_STORE], 'readwrite', async (metaStore) => {
+        metaStore.put({}, IDBSideSync.OPLOG_MERKLE_OBJ_KEY);
+      });
+
+      const actualMerkle = await IDBSideSync.getOplogMerkleTree();
+      assert(actualMerkle instanceof MerkleTree, 'Should return an instance of MerkleTree');
+      assert(actualMerkle.hasBranches() === false, `Should be new/empty.`);
+    });
   });
 
   describe('applyOplogEntry()', () => {
