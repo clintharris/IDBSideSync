@@ -1,3 +1,4 @@
+/// <reference types="../../types/common" />
 import { describe, expect, it } from '@jest/globals';
 import { fail } from 'assert';
 
@@ -8,7 +9,6 @@ import {
   MAX_TREEPATH_LENGTH,
   convertTreePathToTime,
   isBaseThreeTreePath,
-  MerkleTreeCompatible,
   BaseThreeTreePath,
 } from '../src/MerkleTree';
 
@@ -200,18 +200,36 @@ describe('MerkleTree', () => {
     });
   });
 
+  it('pathToOldestLeaf() works', () => {
+    const tree = MerkleTree.fromObj(plainObjTree);
+    expect(tree.pathToOldestLeaf()).toEqual(['0', '0']);
+
+    tree.set(['2', '1', '2'], 222);
+    tree.set(['0', '0', '2'], 111);
+    expect(tree.pathToOldestLeaf()).toEqual(['0', '0', '2']);
+  });
+
+  it('pathToNewestLeaf() works', () => {
+    const tree = MerkleTree.fromObj(plainObjTree);
+    expect(tree.pathToNewestLeaf()).toEqual(['2']);
+
+    tree.set(['2', '1', '2'], 222);
+    tree.set(['0', '1', '2'], 111);
+    expect(tree.pathToNewestLeaf()).toEqual(['2', '1', '2']);
+  });
+
   describe('prune()', () => {
     it('single call works', () => {
       const tree1 = MerkleTree.fromObj(plainObjTree);
       tree1.pruneOldestLeaf();
-      expect(tree1.pathToOldesttLeaf()).toEqual(['0', '2']);
+      expect(tree1.pathToOldestLeaf()).toEqual(['0', '2']);
     });
 
     it('consecutive calls work', () => {
       const tree1 = MerkleTree.fromObj(plainObjTree);
       tree1.pruneOldestLeaf();
       tree1.pruneOldestLeaf();
-      expect(tree1.pathToOldesttLeaf()).toEqual(['0']);
+      expect(tree1.pathToOldestLeaf()).toEqual(['0']);
     });
   });
 

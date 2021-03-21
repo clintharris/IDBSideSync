@@ -174,20 +174,30 @@ export class MerkleTree {
     }
   }
 
-  pathToOldesttLeaf(): BaseThreeTreePath {
+  pathToOldestLeaf(): BaseThreeTreePath {
     const path: BaseThreeTreePath = [];
-
     let node: MerkleTree = this;
-
     while (true) {
       let keys = node.branchKeys();
-
       if (keys.length === 0) {
         return path;
       }
-
       path.push(keys[0]);
       node = node.branches[keys[0]] as MerkleTree;
+    }
+  }
+
+  pathToNewestLeaf(): BaseThreeTreePath {
+    const path: BaseThreeTreePath = [];
+    let node: MerkleTree = this;
+    while (true) {
+      let keys = node.branchKeys();
+      if (keys.length === 0) {
+        return path;
+      }
+      const lastIndex = keys.length - 1;
+      path.push(keys[lastIndex]);
+      node = node.branches[keys[lastIndex]] as MerkleTree;
     }
   }
 
