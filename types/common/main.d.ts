@@ -1,9 +1,11 @@
+/// <reference types="../../lib/src/MerkleTree" />
+
 interface MerkleTreeCompatible {
   hash: number;
   branches: {
-    '0'?: unknown;
-    '1'?: unknown;
-    '2'?: unknown;
+    "0"?: unknown;
+    "1"?: unknown;
+    "2"?: unknown;
   };
 }
 
@@ -163,8 +165,24 @@ interface SyncPlugin {
   addSignInChangeListener(handlerFcn: SignInChangeHandler): void;
   getSettings(): SyncProfileSettings;
   setSettings(settings: SyncProfileSettings): void;
-  getEntries: () => Promise<OpLogEntry[]>;
-  addEntry: (entry: OpLogEntry) => Promise<void>;
+  getRemoteEntries: (params: {
+    nodeId: string;
+    afterTime?: Date;
+  }) => AsyncGenerator<OpLogEntry, void, void>;
+  addRemoteEntry: (entry: OpLogEntry) => Promise<void>;
+  getOwnRemoteDiffTime: (
+    ownNodeId: string,
+    ownMerkle: MerkleTree
+  ) => Promise<?Date>;
+  getOtherRemoteDiffTimes: (
+    ownNodeId: string,
+    ownMerkle: MerkleTree
+  ) => Promise<
+    Array<{
+      nodeId: string;
+      diffTime: Date;
+    }>
+  >;
 }
 
 interface SyncProfile {

@@ -34,16 +34,16 @@ export class MerkleTree {
     '2'?: MerkleTree;
   } = {};
 
+  insertHLTime(time: HLTime): void {
+    this.set(convertTimeToTreePath(time.millis()), time.hash());
+  }
+
   /**
    * Use this function to insert a hash into the merkle tree, updating the hashes of all intermediate tree nodes along
    * the way, using the specified "tree path" to determine where in the tree a node should be created or updated.
    *
    * The specified path should be the "physical clock time" portion of an HLC timestamp (i.e., the time at which an
    * oplog entry was created) as MINUTES since 1970, and converted to base-3.
-   *
-   * TODO: Consider only allowing inserts to proceed for "full" 17-digit paths. This would prevent the possibility of
-   * setting the hash value for a non-leaf node (which would result in a node whose hash is, technically, not derived
-   * from the hashes of all its children).
    */
   set(treePath: BaseThreeTreePath, hash: number): void {
     if (!treePath || treePath.length === 0) {

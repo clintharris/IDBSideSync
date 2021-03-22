@@ -1,19 +1,90 @@
 import * as db from './db';
+import { HLTime } from './HLTime';
+import { convertTreePathToTime } from './MerkleTree';
 import { debug, libName, log } from './utils';
 
 const plugins: SyncPlugin[] = [];
 
 export async function sync() {
   debug && log.debug('Starting sync...');
-  for (const plugin of plugins) {
-    for (const remoteEntry in plugin.getEntries()) {
-      log.debug('todo: apply remote entry to local store:', remoteEntry);
-    }
+  const { nodeId: localNodeId } = db.getSettings();
 
-    for await (const localEntry of db.getEntries()) {
-      log.debug('todo: updload local entry to remote store:', localEntry);
-      // Note: we do not want the database to actually load the next entry until we have finished saving the current one
-      // await store.saveEntry(localEntry);
+  // Note: if a serialized Merkle tree doesn't exist in IndexedDB, then this will cause it to be built from scratch
+  // (which could take some time if there are thousands of entries).
+  const oplogMerkle = await db.getOplogMerkleTree();
+
+  // By deleting any merkle tree data that has been persisted to IndexedDB, we are setting up a "fail safe" condition.
+  // If the runtime dies at any point before we finish syncing, preventing us from having written the updated Merkle
+  // tree to IndexedDB, then the next sync attempt will be forced to rebuild the merkle from scratch.
+  await db.deleteOplogMerkle();
+
+  // It's possible that new oplog entries have been created since the last time the merkle tree was updated. Instead of
+  // always re-building the merkle tree from scratch--iterating over the entire store of oplog entries--we will try to
+  // only add the entries that were created since the last time the merkle was updated. Since every Merkle tree path
+  // maps to a time at which some oplog entry was created (albeit in minutes, deliberately less precise than a smaller
+  // unit of time, which allows the overall tree to be smaller), we can convert the path to the most recent Merkle tree
+  // leaf back to a time and have an approximate time for the last / "most recent" oplog entry that was inserted into
+  // the merkle. We can then quickly figure out which oplog entries were added to the local store on/after that time and
+  // add them to the merkle.
+  //
+  // For this to work correctly, it's important that only "locally created" oplog entries were added to the store since
+  // the last time the merkle was updated. The algorithm will break if, for example, the most recent merkle tree time is
+  // "last week", but yesterday a bunch of month-old oplog entries from some other node were added to the local oplog
+  // store. In that scenario, we would incorrectly assume that we only need to update our merkle with oplog entries from
+  // the last week, when in fact, we need to go back one month.
+
+  // It's possible that we have made local changes (i.e., new oplog entries were created) since the last time the Merkle
+  // tree was updated.
+  let lastMerkleDate;
+  const pathToNewestMerkleLeaf = oplogMerkle.pathToNewestLeaf();
+  if (pathToNewestMerkleLeaf.length > 0) {
+    lastMerkleDate = new Date(convertTreePathToTime(pathToNewestMerkleLeaf));
+    log.debug(`Attempting to update merkle with local oplog entries created on/after ${lastMerkleDate.toISOString()}`);
+  } else {
+    log.debug(`Attempting to update merkle with ALL local oplog entries`);
+  }
+
+  let counter = 0;
+  for await (const localEntry of db.getEntries({ afterTime: lastMerkleDate })) {
+    oplogMerkle.insertHLTime(HLTime.parse(localEntry.hlcTime));
+    counter++;
+  }
+  log.debug(`Added ${counter} new (local) oplog entries to merkle tree.`);
+
+  for (const plugin of plugins) {
+    const pluginId = plugin.getPluginId();
+    try {
+      log.debug(`Attempting to sync with ${pluginId}`);
+
+      // Establish diff time between local and remote merkle, for our own client ID
+      const ownRemoteDiffDate = await plugin.getOwnRemoteDiffTime(localNodeId, oplogMerkle);
+
+      // Upload all messages on/after that diff time
+      if (ownRemoteDiffDate) {
+        log.debug(`Attempting to upload entries created on/after ${ownRemoteDiffDate.toISOString()} to ${pluginId}`);
+        counter = 0;
+        for await (const localEntry of db.getEntries({ afterTime: lastMerkleDate })) {
+          await plugin.addRemoteEntry(localEntry);
+          counter++;
+        }
+        log.debug(`Uploaded ${counter} local oplog entries to ${pluginId}.`);
+      }
+
+      // Establish diff times between local merkle and every other node's merkle
+      const otherRemoteDiffDates = await plugin.getOtherRemoteDiffTimes(localNodeId, oplogMerkle);
+      for (const otherRemoteDiffDate of otherRemoteDiffDates) {
+        const { nodeId, diffTime } = otherRemoteDiffDate;
+        for await (const remoteEntry of plugin.getRemoteEntries({ nodeId, afterTime: diffTime })) {
+          log.debug('todo: apply remote entry to local store:', remoteEntry);
+          db.applyOplogEntry(remoteEntry); // Note: this will increment the local HLC time.
+
+          // If flow of execution makes it this far, we know that at least one remote oplog entry was successfully
+          // downloaded AND applied to our local oplog store, therefore it's safe to update the local merkle.
+          oplogMerkle.insertHLTime(HLTime.parse(remoteEntry.hlcTime));
+        }
+      }
+    } catch (error) {
+      log.error(`Error while attempting to sync with ${pluginId}`, error);
     }
   }
 }
@@ -126,11 +197,11 @@ export function isSyncPlugin(thing: unknown): thing is SyncPlugin {
     return false;
   }
 
-  if (!(candidate.getEntries instanceof Function)) {
+  if (!(candidate.getRemoteEntries instanceof Function)) {
     return false;
   }
 
-  if (!(candidate.addEntry instanceof Function)) {
+  if (!(candidate.addRemoteEntry instanceof Function)) {
     return false;
   }
 
