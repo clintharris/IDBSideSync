@@ -337,13 +337,34 @@ export class GoogleDrivePlugin implements SyncPlugin {
     });
   }
 
-  public getEntries(): Promise<OpLogEntry[]> {
-    //todo: get all files from remote folder using gapi.client.drive.
-    return Promise.resolve([]);
+  public getRemoteMerkles(filter: {
+    includeNodeIds?: string[];
+    excludeNodeIds?: string[];
+  }): Promise<{ nodeId: string; merkle: MerkleTreeCompatible }[]> {
+    debug && log.debug('Attempting to get remote merkle(s) from Google Drive:', filter);
+    const remoteMerkles = [];
+    remoteMerkles.push({ nodeId: '', merkle: { hash: 0, branches: {} } });
+    debug && log.debug(`Downloaded merkle trees from Google Drive:`, remoteMerkles);
+    return Promise.resolve(remoteMerkles);
   }
 
-  public addEntry(entry: OpLogEntry): Promise<void> {
+  public async *getRemoteEntries(params: { afterTime?: Date | null } = {}): AsyncGenerator<OpLogEntry, void, void> {
+    debug && log.debug('Attempting to get oplog entries from Google Drive:', params);
+  }
+
+  public addRemoteEntry(entry: OpLogEntry): Promise<void> {
     debug && log.debug('Attempting to add oplog entry to Google Drive:', entry);
+
+    // WARNING: Google Drive allows multiple files to exist with the same name. Always check to see if a file exists
+    // before uploading it and then decide if it should be overwritten (based on existing file's file ID) or ignored.
+    return Promise.resolve();
+  }
+
+  public saveMerkle(entry: MerkleTreeCompatible): Promise<void> {
+    debug && log.debug('Attempting to add oplog entry to Google Drive:', entry);
+
+    // WARNING: Google Drive allows multiple files to exist with the same name. Always check to see if a file exists
+    // before uploading, and if one exists, replace it using the corresponding File ID.
     return Promise.resolve();
   }
 }

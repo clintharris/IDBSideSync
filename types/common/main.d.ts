@@ -167,22 +167,13 @@ interface SyncPlugin {
   setSettings(settings: SyncProfileSettings): void;
   getRemoteEntries: (params: {
     nodeId: string;
-    afterTime?: Date;
+    afterTime?: Date | null;
   }) => AsyncGenerator<OpLogEntry, void, void>;
   addRemoteEntry: (entry: OpLogEntry) => Promise<void>;
-  getOwnRemoteDiffTime: (
-    ownNodeId: string,
-    ownMerkle: MerkleTree
-  ) => Promise<?Date>;
-  getOtherRemoteDiffTimes: (
-    ownNodeId: string,
-    ownMerkle: MerkleTree
-  ) => Promise<
-    Array<{
-      nodeId: string;
-      diffTime: Date;
-    }>
-  >;
+  getRemoteMerkles: (filter: {
+    includeNodeIds?: string[];
+    excludeNodeIds?: string[];
+  }) => Promise<{ nodeId: string; merkle: MerkleTreeCompatible }[]>;
 }
 
 interface SyncProfile {

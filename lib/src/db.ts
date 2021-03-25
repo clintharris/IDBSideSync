@@ -235,10 +235,10 @@ export async function updateOplogMerkle(merkle: MerkleTree): Promise<void> {
  *
  * For more info on async generators, etc., see https://javascript.info/async-iterators-generators.
  */
-export async function* getEntries(params: { afterTime?: Date } = {}): AsyncGenerator<OpLogEntry, void, void> {
+export async function* getEntries(params: { afterTime?: Date | null } = {}): AsyncGenerator<OpLogEntry, void, void> {
   let page = 0;
   while (page >= 0) {
-    const entries = await getEntriesPage({ afterTime: params.afterTime, page, pageSize: 10 });
+    const entries = await getEntriesPage({ afterTime: params.afterTime, page, pageSize: 100 });
     page = entries.length ? page + 1 : -1;
     for (const entry of entries) {
       yield entry;
