@@ -7,6 +7,8 @@
     <button id="authorize_button" style="display: none;">Authorize</button>
     <button id="signout_button" style="display: none;">Sign Out</button>
     <button id="create_folder_btn" style="display: none;">Create Folder</button>
+    <button id="create_file_btn" style="display: none;">Create File</button>
+    <button id="download_file_btn" style="display: none;">Download File</button>
 
     <pre id="content" style="white-space: pre-wrap;"></pre>
 
@@ -14,6 +16,8 @@
       const authorizeButton = document.getElementById('authorize_button');
       const signoutButton = document.getElementById('signout_button');
       const createFolderBtn = document.getElementById('create_folder_btn');
+      const createFileBtn = document.getElementById('create_file_btn');
+      const downloadFileBtn = document.getElementById('download_file_btn');
       let authResponse;
 
       function handleClientLoad() {
@@ -43,6 +47,8 @@
               authorizeButton.onclick = handleAuthClick;
               signoutButton.onclick = handleSignoutClick;
               createFolderBtn.onclick = onCreateFolderBtnClick;
+              createFileBtn.onclick = onCreateFileBtnClick;
+              downloadFileBtn.onclick = onDownloadFileBtnClick;
             },
 
             function(error) {
@@ -63,12 +69,17 @@
           authorizeButton.style.display = 'none';
           signoutButton.style.display = 'block';
           createFolderBtn.style.display = 'block';
+          createFileBtn.style.display = 'block';
+          downloadFileBtn.style.display = 'block';
           listFolders();
+          listFiles();
         } else {
           authResponse = null;
           authorizeButton.style.display = 'block';
           signoutButton.style.display = 'none';
           createFolderBtn.style.display = 'none';
+          createFileBtn.style.display = 'none';
+          downloadFileBtn.style.display = 'none';
         }
       }
 
@@ -112,6 +123,76 @@
           });
       }
 
+      function onCreateFileBtnClick() {
+        const date = new Date();
+        const evenOdd = Math.ceil(Math.random() * 100) % 2 === 0 ? 'even' : 'odd';
+        const beepBoop = Math.ceil(Math.random() * 100) % 2 === 0 ? 'beep' : 'boop';
+        const name =
+          Math.floor(Math.random() * 1000) + ' ' + evenOdd + '_' + beepBoop + ' ' + date.toISOString() + '.json';
+        const fileData = JSON.stringify({ name: name, bar: 123, baz: true });
+        const contentType = 'text/plain';
+        const metadata = {
+          name: name,
+          mimeType: contentType,
+          createdTime: '2011-06-04T12:00:00.215Z', // this would be set oplog entry time
+        };
+
+        const boundary = 'multipartformboundaryhere';
+        const delimiter = '\r\n--' + boundary + '\r\n';
+        const close_delim = '\r\n--' + boundary + '--';
+
+        // Create a request body that looks like this:
+        //
+        // --multipartformboundaryhere
+        // Content-Type: application/json; charset=UTF-8
+        //
+        // {"name":"798_2021-03-14T12:07:54.248Z","mimeType":"text/plain"}
+        // --multipartformboundaryhere
+        // Content-Type: text/plain
+        //
+        // this is a sample data
+        //
+        // --multipartformboundaryhere--
+        const multipartRequestBody =
+          delimiter +
+          'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+          JSON.stringify(metadata) +
+          delimiter +
+          'Content-Type: ' +
+          contentType +
+          '\r\n\r\n' +
+          fileData +
+          '\r\n' +
+          close_delim;
+
+        const request = gapi.client.request({
+          path: 'https://www.googleapis.com/upload/drive/v3/files',
+          method: 'POST',
+          params: { uploadType: 'multipart' },
+          headers: {
+            'Content-Type': 'multipart/related; boundary=' + boundary + '',
+          },
+          body: multipartRequestBody,
+        });
+
+        request.execute(function(response, stringifiedGapiRequest) {
+          console.log('parsedResp:', response);
+          console.log('rawResp', JSON.parse(stringifiedGapiRequest));
+        });
+      }
+
+      function onDownloadFileBtnClick() {
+        const fileId = prompt('Enter file ID (17X3ICG9xkKiNpVxSCgL5iw6Yqui0axxx):');
+        gapi.client.drive.files
+          .get({
+            fileId: fileId,
+            alt: 'media',
+          })
+          .then(function(response) {
+            console.log('Get file response.result', response.result);
+          });
+      }
+
       /**
        * Append a pre element to the body containing the given message
        * as its text node. Used to display the results of the API call.
@@ -136,13 +217,58 @@
             fields: 'nextPageToken, files(*)',
           })
           .then(function(response) {
-            appendPre('Folders (see JS console log for more info):\n');
+            appendPre('\nFolders (see JS console log for more info):\n');
             var files = response.result.files;
             if (files && files.length > 0) {
               for (var i = 0; i < files.length; i++) {
                 var file = files[i];
                 appendPre('  ' + file.name + ' (' + file.id + ')');
                 console.log('folder:', file);
+              }
+            } else {
+              appendPre('  No files found.');
+            }
+          });
+      }
+
+      function listFiles() {
+        // https://developers.google.com/drive/api/v3/reference/query-ref#fields
+        const conditions = [];
+        conditions.push("mimeType='text/plain'");
+        conditions.push("createdTime > '2011-06-04T12:00:00'");
+
+        // The GAPI `name contains '<string>'` syntax doesn't work like a wildcard search. It only matches a file if:
+        //   - File name begins with, or ends with <string>
+        //   - File name contains a space followed by <string> (i.e., ' <string>')
+        //
+        // Example search "name contains 'foo'":
+        //
+        //  - ✅ "foobar aaa": matches because overall string starts with "foo"
+        //  - ✅ "aaa foobar": matches because, after splitting on spaces, a word starts with "foo"
+        //  - ✅ "aaaafoo": matches because overall string ENDS with "foo"
+        //  - ❌ "aaaafoo bar": does NOT match
+        //  - ❌ "aaa_foo_bar": does NOT match
+        //  - ❌ "aaafoobar": does NOT match
+
+        // conditions.push("(not name contains 'odd' and not name contains 'boop')");
+        conditions.push("(name contains 'beep')");
+        console.log(conditions.join(' and '));
+        gapi.client.drive.files
+          .list({
+            q: conditions.join(' and '),
+            orderBy: 'createdTime',
+            pageSize: 10,
+            // See https://developers.google.com/drive/api/v3/reference/files for list of all the file properties
+            fields: 'nextPageToken, files(*)',
+          })
+          .then(function(response) {
+            appendPre('\nFiles (see JS console log for more info):\n');
+            var files = response.result.files;
+            if (files && files.length > 0) {
+              for (var i = 0; i < files.length; i++) {
+                var file = files[i];
+                appendPre('  ' + file.name + ' (' + file.id + '), ' + file.createdTime);
+                console.log('file:', file);
               }
             } else {
               appendPre('  No files found.');
