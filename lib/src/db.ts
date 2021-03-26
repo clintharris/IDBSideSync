@@ -257,8 +257,9 @@ export async function* getEntries(params: { afterTime?: Date | null } = {}): Asy
  * https://www.raymondcamden.com/2016/09/02/pagination-and-indexeddb/.
  */
 export function getEntriesPage(
-  params: { afterTime?: Date; page: number; pageSize: number } = { page: 0, pageSize: 5 }
+  params: { afterTime?: Date | null; page: number; pageSize: number } = { page: 0, pageSize: 5 }
 ): Promise<OpLogEntry[]> {
+  let startTime = performance.now();
   let query: IDBKeyRange | null = null;
   if (params?.afterTime instanceof Date) {
     // Set a lower bound for the cursor (e.g., "2021-03-01T20:33:14.080Z"). Keep in mind that the OpLogEntry store uses
@@ -305,6 +306,8 @@ export function getEntriesPage(
       if (entries.length < params.pageSize) {
         cursor.continue();
       } else {
+        let stopTime = performance.now();
+        log.debug(`⏱ Took ${stopTime - startTime}msec to get ${params.pageSize} entries at page ${params.page}.`);
         resolve(entries);
       }
     };
