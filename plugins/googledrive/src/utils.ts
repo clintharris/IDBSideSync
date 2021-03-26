@@ -4,6 +4,9 @@ export const logPrefix = '[' + libName + ']';
 export function noOp() {}
 
 export let debug = process.env.NODE_ENV !== 'production';
+if ('DEBUG' in process.env) {
+  debug = process.env.DEBUG === 'true';
+}
 
 export function setDebug(isEnabled: boolean) {
   debug = isEnabled === true;

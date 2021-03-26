@@ -234,8 +234,9 @@
       function listFiles() {
         // https://developers.google.com/drive/api/v3/reference/query-ref#fields
         const conditions = [];
-        conditions.push("mimeType='text/plain'");
-        conditions.push("createdTime > '2011-06-04T12:00:00'");
+        conditions.push("mimeType != 'application/vnd.google-apps.folder'");
+        // conditions.push("mimeType='text/plain'");
+        // conditions.push("createdTime > '2011-06-04T12:00:00'");
 
         // The GAPI `name contains '<string>'` syntax doesn't work like a wildcard search. It only matches a file if:
         //   - File name begins with, or ends with <string>
@@ -251,7 +252,7 @@
         //  - ❌ "aaafoobar": does NOT match
 
         // conditions.push("(not name contains 'odd' and not name contains 'boop')");
-        conditions.push("(name contains 'beep')");
+        // conditions.push("(name contains 'beep')");
         console.log(conditions.join(' and '));
         gapi.client.drive.files
           .list({

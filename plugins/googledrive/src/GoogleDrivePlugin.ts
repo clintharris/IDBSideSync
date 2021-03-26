@@ -1,11 +1,26 @@
 import { debug, libName, log } from './utils';
 
 // For full list of drive's supported MIME types: https://developers.google.com/drive/api/v3/mime-types
-const GAPI_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
+export const GAPI_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 
 // Defines list of fields that we want to be populated on each file object we get from Google. For full list of file
 // fields, see https://developers.google.com/drive/api/v3/reference/files
-const GAPI_FILE_FIELDS = 'id, name, createdTime, webViewLink';
+export const GAPI_FILE_FIELDS = 'id, name, createdTime, webViewLink';
+
+const FILENAME_PART = {
+  clientPrefix: 'clientId:',
+  merkleExt: '.oplogmerkle.json',
+  messageExt: '.oplogmsg.json',
+};
+
+export const defaultFileListParams = {
+  spaces: 'drive',
+  pageSize: 10,
+  orderBy: 'createdTime',
+  // See https://developers.google.com/drive/api/v3/reference/files for list of all the file properties. Note that you
+  // can request `files(*)` if you want each file object to be populated with all fields.
+  fields: `nextPageToken, files(${GAPI_FILE_FIELDS})`,
+};
 
 type SignInChangeHandler = (userProfile: UserProfile | null, settings: SyncProfileSettings) => void;
 
@@ -83,7 +98,6 @@ export class GoogleDrivePlugin implements SyncPlugin {
             errorMsg +=
               `\n\nTap on the "aA" shown on the left side of Safari's address bar and select "Turn off ` +
               'Content Blockers", then refresh the app to try again.';
-            console.log('ua:', ua);
           }
           log.error(errorMsg, error);
           throw new Error(`[${libName}] ${errorMsg}`);
@@ -274,30 +288,53 @@ export class GoogleDrivePlugin implements SyncPlugin {
     });
   }
 
-  public listGoogleDriveFiles(filter: { type?: 'files' | 'folders'; exactName?: string } = {}): Promise<GoogleFile[]> {
+  /**
+   * GAPI convenience wrapper for listing files.
+   */
+  public listGoogleDriveFiles(filter: {
+    type: 'files' | 'folders';
+    exactName?: string;
+    nameContains?: string[];
+    nameNotContains?: string[];
+  }): Promise<GoogleFile[]> {
     return new Promise((resolve, reject) => {
       const queryParts = [];
-
-      if (typeof filter.type === 'string') {
-        queryParts.push(`mimeType='${GAPI_FOLDER_MIME_TYPE}'`);
-      }
+      queryParts.push('mimeType ' + (filter.type === 'folders' ? '=' : '!=') + ` '${GAPI_FOLDER_MIME_TYPE}'`);
 
       if (typeof filter.exactName === 'string') {
-        queryParts.push(`name='${filter.exactName}'`);
+        queryParts.push(`name = '${filter.exactName}'`);
+      } else {
+        // The GAPI `name contains '<string>'` syntax doesn't work like a wildcard search. It only matches a file if:
+        //   - File name begins with, or ends with <string>
+        //   - File name contains a space followed by <string> (i.e., ' <string>')
+        //
+        // Example search "name contains 'foo'":
+        //
+        //  - ✅ "foobar aaa": matches because overall string starts with "foo"
+        //  - ✅ "aaa foobar": matches because, after splitting on spaces, a word starts with "foo"
+        //  - ✅ "aaaafoo": matches because overall string ENDS with "foo"
+        //  - ❌ "aaaafoo bar": does NOT match
+        //  - ❌ "aaa_foo_bar": does NOT match
+        //  - ❌ "aaafoobar": does NOT match
+        //
+        // For more info see https://developers.google.com/drive/api/v3/reference/query-ref#fields.
+        if (Array.isArray(filter.nameContains) && filter.nameContains.length) {
+          const includeQuery = filter.nameContains.map((pattern) => `name contains '${pattern}'`).join(' or ');
+          queryParts.push('(' + includeQuery + ')');
+        }
+
+        if (Array.isArray(filter.nameNotContains) && filter.nameNotContains.length) {
+          const excludeQuery = filter.nameNotContains.map((pattern) => `not name contains '${pattern}'`).join(' and ');
+          queryParts.push('(' + excludeQuery + ')');
+        }
       }
-      debug && log.debug('Attempting to list Google Drive folders with filter:', filter);
+
+      debug && log.debug('Attempting to list Google Drive files/folders with filter:', filter);
       // For more info on 'list' operation see https://developers.google.com/drive/api/v3/reference/files/list
       gapi.client.drive.files
-        .list({
-          spaces: 'drive',
-          q: queryParts.join(' and '),
-          pageSize: 10,
-          // See https://developers.google.com/drive/api/v3/reference/files for list of all the file properties. Note
-          // that you can request `files(*)` if you want each file object to be populated with all fields.
-          fields: `nextPageToken, files(${GAPI_FILE_FIELDS})`,
-        })
+        .list({ q: queryParts.join(' and '), ...defaultFileListParams })
         .then(function(response) {
-          debug && log.debug(`Retrieved folders:`, response.result);
+          debug && log.debug(`Retrieved files/folders:`, response.result);
           resolve(Array.isArray(response.result.files) ? (response.result.files as GoogleFile[]) : []);
         })
         .catch((error) => {
