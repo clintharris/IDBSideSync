@@ -7,13 +7,13 @@ export const GAPI_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 // fields, see https://developers.google.com/drive/api/v3/reference/files
 export const GAPI_FILE_FIELDS = 'id, name, createdTime, webViewLink';
 
-const FILENAME_PART = {
+export const FILENAME_PART = {
   clientPrefix: 'clientId:',
   merkleExt: '.oplogmerkle.json',
   messageExt: '.oplogmsg.json',
 };
 
-export const defaultFileListParams = {
+export const DEFAULT_GAPI_FILE_LIST_PARAMS = {
   spaces: 'drive',
   pageSize: 10,
   orderBy: 'createdTime',
@@ -214,9 +214,9 @@ export class GoogleDrivePlugin implements SyncPlugin {
   public async setupRemoteFolder() {
     if (!this.remoteFolderId) {
       log.debug(`Google Drive folder ID for '${this.remoteFolderName}' is unknown; attempting to find/create...`);
-      const existingFolders = await this.listGoogleDriveFiles({ type: 'folders', exactName: this.remoteFolderName });
-      if (existingFolders.length) {
-        const existingFolder = existingFolders[0];
+      const existingFolders = await this.getFileListPage({ type: 'folders', exactName: this.remoteFolderName });
+      if (existingFolders.files.length) {
+        const existingFolder = existingFolders.files[0];
         log.debug(`Found existing Google Drive folder with name '${this.remoteFolderName}`, existingFolder);
         this.remoteFolderId = existingFolder.id;
         this.remoteFolderLink = existingFolder.webViewLink;
@@ -291,12 +291,14 @@ export class GoogleDrivePlugin implements SyncPlugin {
   /**
    * GAPI convenience wrapper for listing files.
    */
-  public listGoogleDriveFiles(filter: {
+  public getFileListPage(filter: {
     type: 'files' | 'folders';
     exactName?: string;
     nameContains?: string[];
     nameNotContains?: string[];
-  }): Promise<GoogleFile[]> {
+    pageToken?: string;
+    pageSize?: number;
+  }): Promise<{ files: GoogleFile[]; nextPageToken?: string | undefined }> {
     return new Promise((resolve, reject) => {
       const queryParts = [];
       queryParts.push('mimeType ' + (filter.type === 'folders' ? '=' : '!=') + ` '${GAPI_FOLDER_MIME_TYPE}'`);
@@ -329,13 +331,28 @@ export class GoogleDrivePlugin implements SyncPlugin {
         }
       }
 
-      debug && log.debug('Attempting to list Google Drive files/folders with filter:', filter);
+      const listParams: Parameters<typeof gapi.client.drive.files.list>[0] = { ...DEFAULT_GAPI_FILE_LIST_PARAMS };
+      listParams.q = queryParts.join(' and ');
+
+      if (typeof filter.pageSize === 'number') {
+        listParams.pageSize = filter.pageSize;
+      }
+
+      if (typeof filter.pageToken === 'string' && filter.pageToken.trim().length > 0) {
+        listParams.pageToken = filter.pageToken;
+      }
+
+      debug && log.debug('Attempting to list Google Drive files/folders with filter:', listParams);
+
       // For more info on 'list' operation see https://developers.google.com/drive/api/v3/reference/files/list
       gapi.client.drive.files
-        .list({ q: queryParts.join(' and '), ...defaultFileListParams })
+        .list(listParams)
         .then(function(response) {
-          debug && log.debug(`Retrieved files/folders:`, response.result);
-          resolve(Array.isArray(response.result.files) ? (response.result.files as GoogleFile[]) : []);
+          debug && log.debug('GAPI files.list() response:', response);
+          resolve({
+            files: Array.isArray(response.result.files) ? (response.result.files as GoogleFile[]) : [],
+            nextPageToken: response.result.nextPageToken,
+          });
         })
         .catch((error) => {
           log.error(`Error while attempting to retrieve list of folders from Google Drive:`, error);

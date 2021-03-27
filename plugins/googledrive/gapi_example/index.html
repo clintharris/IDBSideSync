@@ -258,19 +258,20 @@
           .list({
             q: conditions.join(' and '),
             orderBy: 'createdTime',
-            pageSize: 10,
+            pageSize: 3,
             // See https://developers.google.com/drive/api/v3/reference/files for list of all the file properties
             fields: 'nextPageToken, files(*)',
           })
           .then(function(response) {
+            console.log('List files response:', response);
             appendPre('\nFiles (see JS console log for more info):\n');
             var files = response.result.files;
             if (files && files.length > 0) {
               for (var i = 0; i < files.length; i++) {
                 var file = files[i];
                 appendPre('  ' + file.name + ' (' + file.id + '), ' + file.createdTime);
-                console.log('file:', file);
               }
+              appendPre('  👉 Next page: ' + response.result.nextPageToken);
             } else {
               appendPre('  No files found.');
             }

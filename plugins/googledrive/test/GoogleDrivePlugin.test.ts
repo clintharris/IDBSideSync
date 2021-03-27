@@ -1,7 +1,12 @@
 /// <reference types="../../../types/common" />
 import { jest, describe, expect, it } from '@jest/globals';
 
-import { defaultFileListParams, GAPI_FOLDER_MIME_TYPE, GoogleDrivePlugin } from '../src/GoogleDrivePlugin';
+import {
+  DEFAULT_GAPI_FILE_LIST_PARAMS,
+  FILENAME_PART,
+  GAPI_FOLDER_MIME_TYPE,
+  GoogleDrivePlugin,
+} from '../src/GoogleDrivePlugin';
 
 // Define the mock GAPI global object before the 'GoogleDrivePlugin' is loaded
 stubMockGapiGlobal();
@@ -10,83 +15,87 @@ describe('GoogleDrivePlugin', () => {
   describe('listGoogleDriveFiles()', () => {
     it('makes correct GAPI query for folders', async () => {
       // @ts-ignore
-      const listFilesMock = jest.spyOn(gapi.client.drive.files, 'list');
+      const mockListFcn = jest.spyOn(gapi.client.drive.files, 'list');
       const mockResponse = { body: '', result: { files: [{ id: '1', name: 'file1' }] } };
-      listFilesMock.mockResolvedValue(mockResponse);
+      mockListFcn.mockResolvedValue(mockResponse);
 
       const plugin = new GoogleDrivePlugin({ clientId: '1234', defaultFolderName: 'foo' });
-      const files = await plugin.listGoogleDriveFiles({ type: 'folders' });
+      const page = await plugin.getFileListPage({ type: 'folders' });
 
-      expect(files).toEqual(mockResponse.result.files);
-      expect(listFilesMock).toHaveBeenCalledWith({
+      expect(page.files).toEqual(mockResponse.result.files);
+      expect(mockListFcn).toHaveBeenCalledWith({
         q: `mimeType = '${GAPI_FOLDER_MIME_TYPE}'`,
-        ...defaultFileListParams,
+        ...DEFAULT_GAPI_FILE_LIST_PARAMS,
       });
     });
 
     it('makes correct GAPI query for files', async () => {
       // @ts-ignore
-      const listFilesMock = jest.spyOn(gapi.client.drive.files, 'list');
+      const mockListFcn = jest.spyOn(gapi.client.drive.files, 'list');
       const mockResponse = { body: '', result: { files: [{ id: '1', name: 'file1' }] } };
-      listFilesMock.mockResolvedValue(mockResponse);
+      mockListFcn.mockResolvedValue(mockResponse);
 
       const plugin = new GoogleDrivePlugin({ clientId: '1234', defaultFolderName: 'foo' });
-      const files = await plugin.listGoogleDriveFiles({ type: 'files' });
+      const page = await plugin.getFileListPage({ type: 'files' });
 
-      expect(files).toEqual(mockResponse.result.files);
-      expect(listFilesMock).toHaveBeenCalledWith({
+      expect(page.files).toEqual(mockResponse.result.files);
+      expect(mockListFcn).toHaveBeenCalledWith({
         q: `mimeType != '${GAPI_FOLDER_MIME_TYPE}'`,
-        ...defaultFileListParams,
+        ...DEFAULT_GAPI_FILE_LIST_PARAMS,
       });
     });
 
     it('makes correct GAPI query for "exactName"', async () => {
       // @ts-ignore
-      const listFilesMock = jest.spyOn(gapi.client.drive.files, 'list');
+      const mockListFcn = jest.spyOn(gapi.client.drive.files, 'list');
       const mockResponse = { body: '', result: { files: [{ id: '1', name: 'file1' }] } };
-      listFilesMock.mockResolvedValue(mockResponse);
+      mockListFcn.mockResolvedValue(mockResponse);
 
       const plugin = new GoogleDrivePlugin({ clientId: '1234', defaultFolderName: 'foo' });
-      const files = await plugin.listGoogleDriveFiles({ type: 'files', exactName: 'foo' });
+      const page = await plugin.getFileListPage({ type: 'files', exactName: 'foo' });
 
-      expect(files).toEqual(mockResponse.result.files);
-      expect(listFilesMock).toHaveBeenCalledWith({
+      expect(page.files).toEqual(mockResponse.result.files);
+      expect(mockListFcn).toHaveBeenCalledWith({
         q: `mimeType != '${GAPI_FOLDER_MIME_TYPE}' and name = 'foo'`,
-        ...defaultFileListParams,
+        ...DEFAULT_GAPI_FILE_LIST_PARAMS,
       });
     });
 
     it('makes correct GAPI query for "nameContains" and "nameNotContains"', async () => {
       // @ts-ignore
-      const listFilesMock = jest.spyOn(gapi.client.drive.files, 'list');
+      const mockListFcn = jest.spyOn(gapi.client.drive.files, 'list');
       const mockResponse = { body: '', result: { files: [{ id: '1', name: 'file1' }] } };
-      listFilesMock.mockResolvedValue(mockResponse);
+      mockListFcn.mockResolvedValue(mockResponse);
 
       const plugin = new GoogleDrivePlugin({ clientId: '1234', defaultFolderName: 'foo' });
-      const files = await plugin.listGoogleDriveFiles({ type: 'files', nameContains: ['foo', 'bar'] });
+      const { files } = await plugin.getFileListPage({ type: 'files', nameContains: ['foo', 'bar'] });
 
       expect(files).toEqual(mockResponse.result.files);
-      expect(listFilesMock).toHaveBeenCalledWith({
+      expect(mockListFcn).toHaveBeenCalledWith({
         q: `mimeType != '${GAPI_FOLDER_MIME_TYPE}' and (name contains 'foo' or name contains 'bar')`,
-        ...defaultFileListParams,
+        ...DEFAULT_GAPI_FILE_LIST_PARAMS,
       });
 
-      await plugin.listGoogleDriveFiles({ type: 'files', nameContains: ['foo'] });
-      expect(listFilesMock).toHaveBeenCalledWith({
+      await plugin.getFileListPage({ type: 'files', nameContains: ['foo'] });
+      expect(mockListFcn).toHaveBeenCalledWith({
         q: `mimeType != '${GAPI_FOLDER_MIME_TYPE}' and (name contains 'foo')`,
-        ...defaultFileListParams,
+        ...DEFAULT_GAPI_FILE_LIST_PARAMS,
       });
 
-      await plugin.listGoogleDriveFiles({ type: 'files', nameNotContains: ['foo', 'bar'] });
-      expect(listFilesMock).toHaveBeenCalledWith({
+      await plugin.getFileListPage({ type: 'files', nameNotContains: ['foo', 'bar'] });
+      expect(mockListFcn).toHaveBeenCalledWith({
         q: `mimeType != '${GAPI_FOLDER_MIME_TYPE}' and (not name contains 'foo' and not name contains 'bar')`,
-        ...defaultFileListParams,
+        ...DEFAULT_GAPI_FILE_LIST_PARAMS,
       });
 
-      await plugin.listGoogleDriveFiles({ type: 'files', nameContains: ['foo'], nameNotContains: ['bar'] });
-      expect(listFilesMock).toHaveBeenCalledWith({
+      await plugin.getFileListPage({ type: 'files', nameContains: ['foo'], nameNotContains: ['bar'] });
+      expect(mockListFcn).toHaveBeenCalledWith({
         q: `mimeType != '${GAPI_FOLDER_MIME_TYPE}' and (name contains 'foo') and (not name contains 'bar')`,
-        ...defaultFileListParams,
+        ...DEFAULT_GAPI_FILE_LIST_PARAMS,
+      });
+    });
+  });
+
       });
     });
   });
