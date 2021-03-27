@@ -155,6 +155,8 @@ interface UserProfile {
 
 type SyncProfileSettings = Record<string, unknown>;
 
+type NodeIdMerklePair = { nodeId: string; merkle: MerkleTreeCompatible };
+
 interface SyncPlugin {
   getPluginId(): string;
   isLoaded(): boolean;
@@ -171,9 +173,9 @@ interface SyncPlugin {
   }) => AsyncGenerator<OpLogEntry, void, void>;
   addRemoteEntry: (entry: OpLogEntry) => Promise<void>;
   getRemoteMerkles: (filter: {
-    includeNodeIds?: string[];
-    excludeNodeIds?: string[];
-  }) => Promise<{ nodeId: string; merkle: MerkleTreeCompatible }[]>;
+    includeClientIds?: string[];
+    excludeClientIds?: string[];
+  }) => AsyncGenerator<NodeIdMerklePair, void, void>;
 }
 
 interface SyncProfile {

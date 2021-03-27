@@ -391,15 +391,72 @@ export class GoogleDrivePlugin implements SyncPlugin {
     });
   }
 
-  public getRemoteMerkles(filter: {
-    includeNodeIds?: string[];
-    excludeNodeIds?: string[];
-  }): Promise<{ nodeId: string; merkle: MerkleTreeCompatible }[]> {
+  /**
+   * A convenience function that wraps the paginated results of `getFileListPage()` and returns an async iteraterable
+   * iterator so that you can do something like the following:
+   *
+   * @example
+   * ```
+   * for await (let merkle of getRemoteMerkles()) {
+   *   await doSomethingAsyncWith(entry)
+   * }
+   * ```
+   *
+   * For more info on async generators, etc., see https://javascript.info/async-iterators-generators.
+   */
+  public async *getRemoteMerkles(
+    filter: {
+      includeClientIds?: string[];
+      excludeClientIds?: string[];
+    } = {}
+  ): AsyncGenerator<NodeIdMerklePair, void, void> {
     debug && log.debug('Attempting to get remote merkle(s) from Google Drive:', filter);
-    const remoteMerkles = [];
-    remoteMerkles.push({ nodeId: '', merkle: { hash: 0, branches: {} } });
-    debug && log.debug(`Downloaded merkle trees from Google Drive:`, remoteMerkles);
-    return Promise.resolve(remoteMerkles);
+
+    const nameContains = Array.isArray(filter.includeClientIds)
+      ? filter.includeClientIds.map((clientId) => clientId + FILENAME_PART.merkleExt)
+      : [FILENAME_PART.merkleExt];
+
+    const nameNotContains = Array.isArray(filter.excludeClientIds)
+      ? filter.excludeClientIds.map((clientId) => clientId + FILENAME_PART.merkleExt)
+      : undefined;
+
+    let pageResults;
+    let pageToken: undefined | string = '';
+
+    while (pageToken !== undefined) {
+      pageResults = await this.getFileListPage({
+        type: 'files',
+        pageSize: 1,
+        nameContains,
+        nameNotContains,
+        pageToken,
+      });
+      pageToken = pageResults.nextPageToken;
+
+      const downloadFilePromises = pageResults.files.map<Promise<NodeIdMerklePair>>((file) => {
+        return new Promise((resolve, reject) => {
+          gapi.client.drive.files
+            .get({ fileId: file.id, alt: 'media' })
+            .then((response) => {
+              resolve({
+                nodeId: file.name.split('.')[0],
+                merkle: response.result as MerkleTreeCompatible,
+              });
+            })
+            .catch((error) => {
+              log.error(`Error while attempting to download Merkle tree file from Google Drive:`, error);
+              reject(error);
+            });
+        });
+      });
+
+      const results = await Promise.all(downloadFilePromises);
+
+      debug && log.debug(`Downloaded merkle trees from Google Drive:`, results);
+      for (let result of results) {
+        yield result;
+      }
+    }
   }
 
   public async *getRemoteEntries(params: { afterTime?: Date | null } = {}): AsyncGenerator<OpLogEntry, void, void> {
@@ -411,6 +468,9 @@ export class GoogleDrivePlugin implements SyncPlugin {
 
     // WARNING: Google Drive allows multiple files to exist with the same name. Always check to see if a file exists
     // before uploading it and then decide if it should be overwritten (based on existing file's file ID) or ignored.
+
+    // Ensure filename tokens are separated by SPACES, otherwise partial-matching in `listGoogleDriveFiles()` breaks.
+    // Example: `<hlc time> <counter> ${FILENAME_PART.clientPrefix}<nodeId>.${FILENAME_PART.messageExt}`
     return Promise.resolve();
   }
 
@@ -419,6 +479,10 @@ export class GoogleDrivePlugin implements SyncPlugin {
 
     // WARNING: Google Drive allows multiple files to exist with the same name. Always check to see if a file exists
     // before uploading, and if one exists, replace it using the corresponding File ID.
+
+    // TODO: ensure filename tokens are separated by SPACES, otherwise partial-matchingin listGoogleDriveFiles breaks
+    // Example: `<nodeId>.${FILENAME_PART.merkleExt}`
+
     return Promise.resolve();
   }
 }

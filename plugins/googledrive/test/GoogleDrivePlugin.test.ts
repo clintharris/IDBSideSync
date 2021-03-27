@@ -96,6 +96,61 @@ describe('GoogleDrivePlugin', () => {
     });
   });
 
+  describe('getRemoteMerkles()', () => {
+    it('makes correct GAPI query for all merkle files', async () => {
+      // @ts-ignore
+      const mockListFcn = jest.spyOn(gapi.client.drive.files, 'list');
+      const mockListResponse = {
+        body: '',
+        result: {
+          files: [
+            { id: '1', name: 'foo' + FILENAME_PART.merkleExt },
+            { id: '2', name: 'bar' + FILENAME_PART.merkleExt },
+          ],
+        },
+      };
+      mockListFcn.mockResolvedValue(mockListResponse);
+
+      // @ts-ignore
+      const mockGetFcn = jest.spyOn(gapi.client.drive.files, 'get');
+      const mockGetResponse = {
+        body: '',
+        result: {
+          hash: 333,
+          branches: {
+            '2': {
+              hash: 333,
+              branches: {},
+            },
+          },
+        },
+      };
+      // @ts-ignore
+      mockGetFcn.mockResolvedValue(mockGetResponse);
+
+      const plugin = new GoogleDrivePlugin({ clientId: '1234', defaultFolderName: 'foo' });
+
+      const results: NodeIdMerklePair[] = [];
+      for await (const nodeIdMerklePair of plugin.getRemoteMerkles()) {
+        results.push(nodeIdMerklePair);
+      }
+
+      expect(results).toEqual([
+        {
+          nodeId: 'foo',
+          merkle: mockGetResponse.result,
+        },
+        {
+          nodeId: 'bar',
+          merkle: mockGetResponse.result,
+        },
+      ]);
+
+      // expect(files).toEqual(mockListResponse.result.files);
+      expect(mockListFcn).toHaveBeenCalledWith({
+        ...DEFAULT_GAPI_FILE_LIST_PARAMS,
+        q: `mimeType != '${GAPI_FOLDER_MIME_TYPE}' and (name contains '${FILENAME_PART.merkleExt}')`,
+        pageSize: 1,
       });
     });
   });
@@ -107,4 +162,6 @@ function stubMockGapiGlobal() {
 
   // @ts-ignore
   gapi.client.drive.files.list = () => {};
+  // @ts-ignore
+  gapi.client.drive.files.get = () => {};
 }
