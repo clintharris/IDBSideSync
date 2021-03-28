@@ -6,16 +6,17 @@
     <!--Add buttons to initiate auth sequence and sign out-->
     <button id="authorize_button" style="display: none;">Authorize</button>
     <button id="signout_button" style="display: none;">Sign Out</button>
-    <button id="create_folder_btn" style="display: none;">Create Folder</button>
-    <button id="create_file_btn" style="display: none;">Create File</button>
-    <button id="download_file_btn" style="display: none;">Download File</button>
 
     <h4>Folders:</h4>
     <pre id="folderOut" style="white-space: pre-wrap;"></pre>
+    <button id="create_folder_btn" style="display: none;">Create Folder</button>
     <hr />
     <h4>Files:</h4>
     <pre id="fileOut" style="white-space: pre-wrap;"></pre>
     <button id="files_next_page_btn" style="display: none;">Get Next Page of Files</button>
+    <button id="download_file_btn" style="display: none;">Download File</button>
+    <button id="create_file_btn" style="display: none;">Create File</button>
+    <button id="update_file_btn" style="display: none;">Update File</button>
 
     <script type="text/javascript">
       const authorizeButton = document.getElementById('authorize_button');
@@ -24,6 +25,7 @@
       const createFileBtn = document.getElementById('create_file_btn');
       const downloadFileBtn = document.getElementById('download_file_btn');
       const getFilesNextPageBtn = document.getElementById('files_next_page_btn');
+      const updateFileBtn = document.getElementById('update_file_btn');
       let authResponse;
       let filesNextPageToken;
 
@@ -57,6 +59,7 @@
               createFileBtn.onclick = onCreateFileBtnClick;
               downloadFileBtn.onclick = onDownloadFileBtnClick;
               getFilesNextPageBtn.onclick = listFiles;
+              updateFileBtn.onclick = onUpdateFileBtnClick;
             },
 
             function(error) {
@@ -79,6 +82,7 @@
           createFolderBtn.style.display = 'block';
           createFileBtn.style.display = 'block';
           downloadFileBtn.style.display = 'block';
+          updateFileBtn.style.display = 'block';
           listFolders();
           listFiles();
         } else {
@@ -88,6 +92,7 @@
           createFolderBtn.style.display = 'none';
           createFileBtn.style.display = 'none';
           downloadFileBtn.style.display = 'none';
+          updateFileBtn.style.display = 'none';
         }
       }
 
@@ -137,13 +142,24 @@
         const beepBoop = Math.ceil(Math.random() * 100) % 2 === 0 ? 'beep' : 'boop';
         const name =
           Math.floor(Math.random() * 1000) + ' ' + evenOdd + '_' + beepBoop + ' ' + date.toISOString() + '.json';
-        const fileData = JSON.stringify({ name: name, bar: 123, baz: true });
-        const contentType = 'text/plain';
         const metadata = {
           name: name,
-          mimeType: contentType,
+          mimeType: 'text/plain',
           createdTime: '2011-06-04T12:00:00.215Z', // this would be set oplog entry time
         };
+        const data = { foo: name, bar: 123, baz: true };
+        saveFile({ metadata, data });
+      }
+
+      function onUpdateFileBtnClick() {
+        const fileId = prompt('Enter file ID (17X3ICG9xkKiNpVxSCgL5iw6Yqui0axxx):');
+        const newFileContents = prompt('Enter new file contents:');
+        saveFile({ metadata: {}, data: { stuff: newFileContents }, fileId });
+      }
+
+      async function saveFile(params) {
+        const fileData = JSON.stringify(params.data);
+        const contentType = 'text/plain';
 
         const boundary = 'multipartformboundaryhere';
         const delimiter = '\r\n--' + boundary + '\r\n';
@@ -164,7 +180,7 @@
         const multipartRequestBody =
           delimiter +
           'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
-          JSON.stringify(metadata) +
+          JSON.stringify(params.metadata) +
           delimiter +
           'Content-Type: ' +
           contentType +
@@ -173,9 +189,9 @@
           '\r\n' +
           close_delim;
 
-        const request = gapi.client.request({
-          path: 'https://www.googleapis.com/upload/drive/v3/files',
-          method: 'POST',
+        const response = await gapi.client.request({
+          path: 'https://www.googleapis.com/upload/drive/v3/files' + (params.fileId ? `/${params.fileId}` : ''),
+          method: params.fileId ? 'PATCH' : 'POST',
           params: { uploadType: 'multipart' },
           headers: {
             'Content-Type': 'multipart/related; boundary=' + boundary + '',
@@ -183,10 +199,7 @@
           body: multipartRequestBody,
         });
 
-        request.execute(function(response, stringifiedGapiRequest) {
-          console.log('parsedResp:', response);
-          console.log('rawResp', JSON.parse(stringifiedGapiRequest));
-        });
+        console.log('Save file response:', response);
       }
 
       function onDownloadFileBtnClick() {
