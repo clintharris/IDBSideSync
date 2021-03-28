@@ -59,13 +59,16 @@ export async function sync() {
 
       // How/when does our own merkle differ from what's on the remote server?
       let ownLocalRemoteDiffDate;
+      let ownRemoteMerkleCandidateCounter = 0;
 
-      const ownRemoteMerkleCandidates = await plugin.getRemoteMerkles({ includeNodeIds: [localNodeId] });
-      if (ownRemoteMerkleCandidates.length === 0) {
-        debug && log.debug(`No merkle trees exist on remote for current node (${localNodeId}).`);
-      } else if (ownRemoteMerkleCandidates.length === 1) {
+      for await (const ownRemoteMerkleCandidate of plugin.getRemoteMerkles({ includeClientIds: [localNodeId] })) {
+        ownRemoteMerkleCandidateCounter++;
+        if (ownRemoteMerkleCandidateCounter > 1) {
+          continue;
+        }
+
         try {
-          ownLocalRemoteDiffDate = findMerkleDiffDate(ownRemoteMerkleCandidates[0].merkle, ownLocalMerkle);
+          ownLocalRemoteDiffDate = findMerkleDiffDate(ownRemoteMerkleCandidate.merkle, ownLocalMerkle);
           if (ownLocalRemoteDiffDate) {
             log.debug(`Own local merkle differs from own remote merkle at ${ownLocalRemoteDiffDate.toISOString()}`);
           } else {
@@ -77,12 +80,16 @@ export async function sync() {
             `ALL oplog entries (and a new merkle).`;
           log.warn(msg, error);
         }
-      } else {
+      }
+
+      if (ownRemoteMerkleCandidateCounter === 0) {
+        debug && log.debug(`No merkle trees exist on remote for current node (${localNodeId}).`);
+      } else if (ownRemoteMerkleCandidateCounter > 1) {
         let msg =
           `Expected to find 0 or 1 remote merkles for node ${localNodeId} but found ` +
-          `${ownRemoteMerkleCandidates.length}; will attempt to delete these and upload a single merkle.`;
+          `${ownRemoteMerkleCandidateCounter}; will attempt to delete these and upload a single merkle.`;
         log.warn(msg);
-        //TODO: delete remote merkle
+        //TODO: delete all of our own remote merkle files
       }
 
       // Upload own oplog entries that are missing from the server
@@ -100,8 +107,7 @@ export async function sync() {
       debug && log.debug(`Uploaded ${counter} local oplog entries to ${pluginId}.`);
 
       // Download oplog entries created by other nodes
-      const remoteMerkleCandidates = await plugin.getRemoteMerkles({ excludeNodeIds: [localNodeId] });
-      for (const remoteMerkleCandidate of remoteMerkleCandidates) {
+      for await (const remoteMerkleCandidate of plugin.getRemoteMerkles({ excludeClientIds: [localNodeId] })) {
         let diffDate = null;
         const { merkle: remoteMerkle, nodeId: remoteNodeId } = remoteMerkleCandidate;
         try {
