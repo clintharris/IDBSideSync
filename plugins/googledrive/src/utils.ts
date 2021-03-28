@@ -21,6 +21,31 @@ export const log = {
 };
 /* eslint-enable no-console */
 
+export const FILENAME_PART = {
+  clientPrefix: 'clientId:',
+  merkleExt: '.oplogmerkle.json',
+  messageExt: '.oplogmsg.json',
+};
+
+export function oplogEntryToFileName(params: {
+  time: Date;
+  counter: number;
+  clientId: string;
+  entry: OpLogEntry;
+}): string {
+  // Ensure filename tokens are separated by SPACES, otherwise partial-matching in `listGoogleDriveFiles()` breaks.
+  // Example: `<hlc time> <counter> ${FILENAME_PART.clientPrefix}<nodeId>.${FILENAME_PART.messageExt}`
+  let fileName =
+    params.time.toISOString() +
+    ' ' +
+    params.counter +
+    ' ' +
+    FILENAME_PART.clientPrefix +
+    params.clientId +
+    FILENAME_PART.messageExt;
+  return fileName;
+}
+
 export class FileDownloadError extends Error {
   constructor(fileName: string, error: unknown) {
     super(`${libName}: Error on attempt to download ${fileName}. ` + error);
@@ -32,5 +57,12 @@ export class FileListError extends Error {
   constructor(error: unknown) {
     super(`${libName}: Error on attempt to list files: ` + error);
     Object.setPrototypeOf(this, FileListError.prototype); // https://git.io/vHLlu
+  }
+}
+
+export class FileUploadError extends Error {
+  constructor(error: unknown) {
+    super(`${libName}: Error on attempt to upload file: ` + error);
+    Object.setPrototypeOf(this, FileUploadError.prototype); // https://git.io/vHLlu
   }
 }

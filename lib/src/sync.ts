@@ -101,7 +101,13 @@ export async function sync() {
       counter = 0;
       for await (const localEntry of db.getEntries({ afterTime: ownLocalRemoteDiffDate })) {
         //TODO: Add support for uploading more than one entry at a time
-        await plugin.addRemoteEntry(localEntry);
+        let hlTime = HLTime.parse(localEntry.hlcTime);
+        await plugin.saveRemoteEntry({
+          time: new Date(hlTime.millis()),
+          counter: hlTime.counter(),
+          clientId: hlTime.node(),
+          entry: localEntry,
+        });
         counter++;
       }
       debug && log.debug(`Uploaded ${counter} local oplog entries to ${pluginId}.`);
@@ -256,7 +262,7 @@ export function isSyncPlugin(thing: unknown): thing is SyncPlugin {
     return false;
   }
 
-  if (!(candidate.addRemoteEntry instanceof Function)) {
+  if (!(candidate.saveRemoteEntry instanceof Function)) {
     return false;
   }
 

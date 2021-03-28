@@ -1,12 +1,8 @@
 /// <reference types="../../../types/common" />
 import { jest, describe, expect, it } from '@jest/globals';
 
-import {
-  DEFAULT_GAPI_FILE_LIST_PARAMS,
-  FILENAME_PART,
-  GAPI_FOLDER_MIME_TYPE,
-  GoogleDrivePlugin,
-} from '../src/GoogleDrivePlugin';
+import { DEFAULT_GAPI_FILE_LIST_PARAMS, GAPI_FOLDER_MIME_TYPE, GoogleDrivePlugin } from '../src/GoogleDrivePlugin';
+import { FILENAME_PART } from '../src/utils';
 
 // Define the mock GAPI global object before the 'GoogleDrivePlugin' is loaded
 stubMockGapiGlobal();

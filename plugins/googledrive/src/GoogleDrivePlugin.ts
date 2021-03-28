@@ -1,4 +1,13 @@
-import { debug, FileDownloadError, FileListError, libName, log } from './utils';
+import {
+  debug,
+  FileDownloadError,
+  FileListError,
+  FILENAME_PART,
+  FileUploadError,
+  libName,
+  log,
+  oplogEntryToFileName,
+} from './utils';
 
 // For full list of drive's supported MIME types: https://developers.google.com/drive/api/v3/mime-types
 export const GAPI_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
@@ -6,12 +15,6 @@ export const GAPI_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 // Defines list of fields that we want to be populated on each file object we get from Google. For full list of file
 // fields, see https://developers.google.com/drive/api/v3/reference/files
 export const GAPI_FILE_FIELDS = 'id, name, createdTime, webViewLink';
-
-export const FILENAME_PART = {
-  clientPrefix: 'clientId:',
-  merkleExt: '.oplogmerkle.json',
-  messageExt: '.oplogmsg.json',
-};
 
 export const DEFAULT_GAPI_FILE_LIST_PARAMS = {
   spaces: 'drive',
@@ -451,15 +454,44 @@ export class GoogleDrivePlugin implements SyncPlugin {
     debug && log.debug('Attempting to get oplog entries from Google Drive:', params);
   }
 
-  public addRemoteEntry(entry: OpLogEntry): Promise<void> {
-    debug && log.debug('Attempting to add oplog entry to Google Drive:', entry);
+  public async saveRemoteEntry(params: {
+    time: Date;
+    counter: number;
+    clientId: string;
+    entry: OpLogEntry;
+  }): Promise<void> {
+    debug && log.debug('Attempting to save oplog entry to Google Drive:', params.entry);
+
+    const entryFileName = oplogEntryToFileName(params);
 
     // WARNING: Google Drive allows multiple files to exist with the same name. Always check to see if a file exists
     // before uploading it and then decide if it should be overwritten (based on existing file's file ID) or ignored.
+    let existingFileId;
 
-    // Ensure filename tokens are separated by SPACES, otherwise partial-matching in `listGoogleDriveFiles()` breaks.
-    // Example: `<hlc time> <counter> ${FILENAME_PART.clientPrefix}<nodeId>.${FILENAME_PART.messageExt}`
-    return Promise.resolve();
+    try {
+      const listParams: Parameters<typeof gapi.client.drive.files.list>[0] = { ...DEFAULT_GAPI_FILE_LIST_PARAMS };
+      listParams.q = `name = '${entryFileName}'`;
+      debug && log.debug('Checking to see if oplog entry already exists on server with name:', entryFileName);
+      const response = await gapi.client.drive.files.list(listParams);
+      if (Array.isArray(response.result.files)) {
+        existingFileId = response.result.files[0].id;
+      }
+    } catch (error) {
+      log.error(`Error while attempting to retrieve list of folders from Google Drive:`, error);
+      throw new FileListError(error);
+    }
+
+    if (existingFileId) {
+      log.warn(`Oplog entry with file name ${entryFileName} already exists; won't upload/overwrite.`);
+      return;
+    }
+
+    await this.saveFile({
+      fileId: existingFileId,
+      fileName: entryFileName,
+      fileData: params.entry,
+      createdTime: params.time.toISOString(),
+    });
   }
 
   public saveMerkle(entry: MerkleTreeCompatible): Promise<void> {
@@ -472,5 +504,74 @@ export class GoogleDrivePlugin implements SyncPlugin {
     // Example: `<nodeId>.${FILENAME_PART.merkleExt}`
 
     return Promise.resolve();
+  }
+
+  /**
+   * Convenience function for saving some object to Google Drive.
+   */
+  public async saveFile(params: {
+    fileId?: string; // Specify existing file ID to overwrite existing file contents
+    fileName: string;
+    fileData: object;
+    createdTime?: string;
+  }): Promise<{ id: string; name: string }> {
+    const fileData = JSON.stringify(params.fileData);
+    const contentType = 'text/plain';
+    const metadata: Record<string, unknown> = params.fileId
+      ? {}
+      : {
+          name: params.fileName,
+          mimeType: contentType,
+        };
+
+    if (!params.fileId && typeof params.createdTime === 'string') {
+      metadata.createdTime = params.createdTime;
+    }
+
+    const boundary = 'multipartformboundaryhere';
+    const delimiter = '\r\n--' + boundary + '\r\n';
+    const close_delim = '\r\n--' + boundary + '--';
+
+    // Create a request body that looks like this:
+    //
+    // --multipartformboundaryhere
+    // Content-Type: application/json; charset=UTF-8
+    //
+    // {"name":"798_2021-03-14T12:07:54.248Z","mimeType":"text/plain"}
+    // --multipartformboundaryhere
+    // Content-Type: text/plain
+    //
+    // data goes here
+    //
+    // --multipartformboundaryhere--
+    const multipartRequestBody =
+      delimiter +
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+      JSON.stringify(metadata) +
+      delimiter +
+      'Content-Type: ' +
+      contentType +
+      '\r\n\r\n' +
+      fileData +
+      '\r\n' +
+      close_delim;
+
+    try {
+      const response = await gapi.client.request({
+        path: 'https://www.googleapis.com/upload/drive/v3/files' + (params.fileId ? `/${params.fileId}` : ''),
+        method: params.fileId ? 'PATCH' : 'POST',
+        params: { uploadType: 'multipart' },
+        headers: {
+          'Content-Type': 'multipart/related; boundary=' + boundary + '',
+        },
+        body: multipartRequestBody,
+      });
+
+      debug && log.debug('Successfully saved file; response:', response);
+      return response.result;
+    } catch (error) {
+      log.error('Error on attempt to save file:', error);
+      throw new FileUploadError(error);
+    }
   }
 }

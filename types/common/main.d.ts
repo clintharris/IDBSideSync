@@ -171,7 +171,12 @@ interface SyncPlugin {
     nodeId: string;
     afterTime?: Date | null;
   }) => AsyncGenerator<OpLogEntry, void, void>;
-  addRemoteEntry: (entry: OpLogEntry) => Promise<void>;
+  saveRemoteEntry: (params: {
+    time: Date;
+    counter: number;
+    clientId: string;
+    entry: OpLogEntry;
+  }) => Promise<void>;
   getRemoteMerkles: (filter: {
     includeClientIds?: string[];
     excludeClientIds?: string[];

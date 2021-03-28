@@ -273,6 +273,8 @@
 
         // conditions.push("(not name contains 'odd' and not name contains 'boop')");
         // conditions.push("(name contains 'beep')");
+        // conditions.push("name = '108_even_boop_2021-03-25T19:39:43.508Z.json'");
+
         console.log(conditions.join(' and '));
         const response = await gapi.client.drive.files.list({
           q: conditions.join(' and '),
