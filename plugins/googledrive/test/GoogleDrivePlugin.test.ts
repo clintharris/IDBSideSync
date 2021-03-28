@@ -150,7 +150,6 @@ describe('GoogleDrivePlugin', () => {
       expect(mockListFcn).toHaveBeenCalledWith({
         ...DEFAULT_GAPI_FILE_LIST_PARAMS,
         q: `mimeType != '${GAPI_FOLDER_MIME_TYPE}' and (name contains '${FILENAME_PART.merkleExt}')`,
-        pageSize: 1,
       });
     });
   });

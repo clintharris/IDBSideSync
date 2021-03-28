@@ -20,3 +20,17 @@ export const log = {
   error: console.error.bind(console, logPrefix),
 };
 /* eslint-enable no-console */
+
+export class FileDownloadError extends Error {
+  constructor(fileName: string, error: unknown) {
+    super(`${libName}: Error on attempt to download ${fileName}. ` + error);
+    Object.setPrototypeOf(this, FileDownloadError.prototype); // https://git.io/vHLlu
+  }
+}
+
+export class FileListError extends Error {
+  constructor(error: unknown) {
+    super(`${libName}: Error on attempt to list files: ` + error);
+    Object.setPrototypeOf(this, FileListError.prototype); // https://git.io/vHLlu
+  }
+}

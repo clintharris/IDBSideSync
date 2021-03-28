@@ -1,4 +1,4 @@
-import { debug, libName, log } from './utils';
+import { debug, FileDownloadError, FileListError, libName, log } from './utils';
 
 // For full list of drive's supported MIME types: https://developers.google.com/drive/api/v3/mime-types
 export const GAPI_FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
@@ -214,9 +214,9 @@ export class GoogleDrivePlugin implements SyncPlugin {
   public async setupRemoteFolder() {
     if (!this.remoteFolderId) {
       log.debug(`Google Drive folder ID for '${this.remoteFolderName}' is unknown; attempting to find/create...`);
-      const existingFolders = await this.getFileListPage({ type: 'folders', exactName: this.remoteFolderName });
-      if (existingFolders.files.length) {
-        const existingFolder = existingFolders.files[0];
+      const existingFolderListPage = await this.getFileListPage({ type: 'folders', exactName: this.remoteFolderName });
+      if (existingFolderListPage.files.length) {
+        const existingFolder = existingFolderListPage.files[0];
         log.debug(`Found existing Google Drive folder with name '${this.remoteFolderName}`, existingFolder);
         this.remoteFolderId = existingFolder.id;
         this.remoteFolderLink = existingFolder.webViewLink;
@@ -291,7 +291,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
   /**
    * GAPI convenience wrapper for listing files.
    */
-  public getFileListPage(filter: {
+  public async getFileListPage(filter: {
     type: 'files' | 'folders';
     exactName?: string;
     nameContains?: string[];
@@ -299,66 +299,62 @@ export class GoogleDrivePlugin implements SyncPlugin {
     pageToken?: string;
     pageSize?: number;
   }): Promise<{ files: GoogleFile[]; nextPageToken?: string | undefined }> {
-    return new Promise((resolve, reject) => {
-      const queryParts = [];
-      queryParts.push('mimeType ' + (filter.type === 'folders' ? '=' : '!=') + ` '${GAPI_FOLDER_MIME_TYPE}'`);
+    const queryParts = [];
+    queryParts.push('mimeType ' + (filter.type === 'folders' ? '=' : '!=') + ` '${GAPI_FOLDER_MIME_TYPE}'`);
 
-      if (typeof filter.exactName === 'string') {
-        queryParts.push(`name = '${filter.exactName}'`);
-      } else {
-        // The GAPI `name contains '<string>'` syntax doesn't work like a wildcard search. It only matches a file if:
-        //   - File name begins with, or ends with <string>
-        //   - File name contains a space followed by <string> (i.e., ' <string>')
-        //
-        // Example search "name contains 'foo'":
-        //
-        //  - ✅ "foobar aaa": matches because overall string starts with "foo"
-        //  - ✅ "aaa foobar": matches because, after splitting on spaces, a word starts with "foo"
-        //  - ✅ "aaaafoo": matches because overall string ENDS with "foo"
-        //  - ❌ "aaaafoo bar": does NOT match
-        //  - ❌ "aaa_foo_bar": does NOT match
-        //  - ❌ "aaafoobar": does NOT match
-        //
-        // For more info see https://developers.google.com/drive/api/v3/reference/query-ref#fields.
-        if (Array.isArray(filter.nameContains) && filter.nameContains.length) {
-          const includeQuery = filter.nameContains.map((pattern) => `name contains '${pattern}'`).join(' or ');
-          queryParts.push('(' + includeQuery + ')');
-        }
-
-        if (Array.isArray(filter.nameNotContains) && filter.nameNotContains.length) {
-          const excludeQuery = filter.nameNotContains.map((pattern) => `not name contains '${pattern}'`).join(' and ');
-          queryParts.push('(' + excludeQuery + ')');
-        }
+    if (typeof filter.exactName === 'string') {
+      queryParts.push(`name = '${filter.exactName}'`);
+    } else {
+      // The GAPI `name contains '<string>'` syntax doesn't work like a wildcard search. It only matches a file if:
+      //   - File name begins with, or ends with <string>
+      //   - File name contains a space followed by <string> (i.e., ' <string>')
+      //
+      // Example search "name contains 'foo'":
+      //
+      //  - ✅ "foobar aaa": matches because overall string starts with "foo"
+      //  - ✅ "aaa foobar": matches because, after splitting on spaces, a word starts with "foo"
+      //  - ✅ "aaaafoo": matches because overall string ENDS with "foo"
+      //  - ❌ "aaaafoo bar": does NOT match
+      //  - ❌ "aaa_foo_bar": does NOT match
+      //  - ❌ "aaafoobar": does NOT match
+      //
+      // For more info see https://developers.google.com/drive/api/v3/reference/query-ref#fields.
+      if (Array.isArray(filter.nameContains) && filter.nameContains.length) {
+        const includeQuery = filter.nameContains.map((pattern) => `name contains '${pattern}'`).join(' or ');
+        queryParts.push('(' + includeQuery + ')');
       }
 
-      const listParams: Parameters<typeof gapi.client.drive.files.list>[0] = { ...DEFAULT_GAPI_FILE_LIST_PARAMS };
-      listParams.q = queryParts.join(' and ');
-
-      if (typeof filter.pageSize === 'number') {
-        listParams.pageSize = filter.pageSize;
+      if (Array.isArray(filter.nameNotContains) && filter.nameNotContains.length) {
+        const excludeQuery = filter.nameNotContains.map((pattern) => `not name contains '${pattern}'`).join(' and ');
+        queryParts.push('(' + excludeQuery + ')');
       }
+    }
 
-      if (typeof filter.pageToken === 'string' && filter.pageToken.trim().length > 0) {
-        listParams.pageToken = filter.pageToken;
-      }
+    const listParams: Parameters<typeof gapi.client.drive.files.list>[0] = { ...DEFAULT_GAPI_FILE_LIST_PARAMS };
+    listParams.q = queryParts.join(' and ');
 
-      debug && log.debug('Attempting to list Google Drive files/folders with filter:', listParams);
+    if (typeof filter.pageSize === 'number') {
+      listParams.pageSize = filter.pageSize;
+    }
 
+    if (typeof filter.pageToken === 'string' && filter.pageToken.trim().length > 0) {
+      listParams.pageToken = filter.pageToken;
+    }
+
+    debug && log.debug('Attempting to list Google Drive files/folders with filter:', listParams);
+
+    try {
       // For more info on 'list' operation see https://developers.google.com/drive/api/v3/reference/files/list
-      gapi.client.drive.files
-        .list(listParams)
-        .then(function(response) {
-          debug && log.debug('GAPI files.list() response:', response);
-          resolve({
-            files: Array.isArray(response.result.files) ? (response.result.files as GoogleFile[]) : [],
-            nextPageToken: response.result.nextPageToken,
-          });
-        })
-        .catch((error) => {
-          log.error(`Error while attempting to retrieve list of folders from Google Drive:`, error);
-          reject(error);
-        });
-    });
+      const response = await gapi.client.drive.files.list(listParams);
+      debug && log.debug('GAPI files.list() response:', response);
+      return {
+        files: Array.isArray(response.result.files) ? (response.result.files as GoogleFile[]) : [],
+        nextPageToken: response.result.nextPageToken,
+      };
+    } catch (error) {
+      log.error(`Error while attempting to retrieve list of folders from Google Drive:`, error);
+      throw new FileListError(error);
+    }
   }
 
   public createGoogleDriveFolder(folderName: string): Promise<GoogleFile> {
@@ -392,8 +388,8 @@ export class GoogleDrivePlugin implements SyncPlugin {
   }
 
   /**
-   * A convenience function that wraps the paginated results of `getFileListPage()` and returns an async iteraterable
-   * iterator so that you can do something like the following:
+   * A convenience function that wraps the paginated results of `getFileListPage()` and returns an async generator so
+   * that you can do something like the following:
    *
    * @example
    * ```
@@ -410,7 +406,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
       excludeClientIds?: string[];
     } = {}
   ): AsyncGenerator<NodeIdMerklePair, void, void> {
-    debug && log.debug('Attempting to get remote merkle(s) from Google Drive:', filter);
+    debug && log.debug('Attempting to get remote merkle(s) from Google Drive using filter criteria:', filter);
 
     const nameContains = Array.isArray(filter.includeClientIds)
       ? filter.includeClientIds.map((clientId) => clientId + FILENAME_PART.merkleExt)
@@ -426,35 +422,27 @@ export class GoogleDrivePlugin implements SyncPlugin {
     while (pageToken !== undefined) {
       pageResults = await this.getFileListPage({
         type: 'files',
-        pageSize: 1,
         nameContains,
         nameNotContains,
         pageToken,
       });
       pageToken = pageResults.nextPageToken;
 
-      const downloadFilePromises = pageResults.files.map<Promise<NodeIdMerklePair>>((file) => {
-        return new Promise((resolve, reject) => {
-          gapi.client.drive.files
-            .get({ fileId: file.id, alt: 'media' })
-            .then((response) => {
-              resolve({
-                nodeId: file.name.split('.')[0],
-                merkle: response.result as MerkleTreeCompatible,
-              });
-            })
-            .catch((error) => {
-              log.error(`Error while attempting to download Merkle tree file from Google Drive:`, error);
-              reject(error);
-            });
-        });
-      });
+      debug && log.debug(`Found ${pageResults.files.length} merkle files (${pageToken ? '' : 'no '}more pages exist).`);
 
-      const results = await Promise.all(downloadFilePromises);
-
-      debug && log.debug(`Downloaded merkle trees from Google Drive:`, results);
-      for (let result of results) {
-        yield result;
+      for (const file of pageResults.files) {
+        try {
+          debug && log.debug(`Attempting to download '${file.name}' (file ID: ${file.id}).`);
+          let response = await gapi.client.drive.files.get({ fileId: file.id, alt: 'media' });
+          yield {
+            nodeId: file.name.split('.')[0],
+            merkle: response.result as MerkleTreeCompatible,
+          };
+        } catch (error) {
+          const fileName = `'${file.name}' (file ID: ${file.id})`;
+          log.error(`Error on attempt to download '${fileName}:`, error);
+          throw new FileDownloadError(fileName, error);
+        }
       }
     }
   }
