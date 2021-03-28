@@ -10,7 +10,12 @@
     <button id="create_file_btn" style="display: none;">Create File</button>
     <button id="download_file_btn" style="display: none;">Download File</button>
 
-    <pre id="content" style="white-space: pre-wrap;"></pre>
+    <h4>Folders:</h4>
+    <pre id="folderOut" style="white-space: pre-wrap;"></pre>
+    <hr />
+    <h4>Files:</h4>
+    <pre id="fileOut" style="white-space: pre-wrap;"></pre>
+    <button id="files_next_page_btn" style="display: none;">Get Next Page of Files</button>
 
     <script type="text/javascript">
       const authorizeButton = document.getElementById('authorize_button');
@@ -18,7 +23,9 @@
       const createFolderBtn = document.getElementById('create_folder_btn');
       const createFileBtn = document.getElementById('create_file_btn');
       const downloadFileBtn = document.getElementById('download_file_btn');
+      const getFilesNextPageBtn = document.getElementById('files_next_page_btn');
       let authResponse;
+      let filesNextPageToken;
 
       function handleClientLoad() {
         // Make a GET request for the 'client' AND 'auth2' libraries (~105 KB)
@@ -49,10 +56,11 @@
               createFolderBtn.onclick = onCreateFolderBtnClick;
               createFileBtn.onclick = onCreateFileBtnClick;
               downloadFileBtn.onclick = onDownloadFileBtnClick;
+              getFilesNextPageBtn.onclick = listFiles;
             },
 
             function(error) {
-              appendPre(JSON.stringify(error, null, 2));
+              appendPre(JSON.stringify(error, null, 2), 'fileOut');
             }
           );
       }
@@ -199,8 +207,8 @@
        *
        * @param {string} message Text to be placed in pre element.
        */
-      function appendPre(message) {
-        var pre = document.getElementById('content');
+      function appendPre(message, id) {
+        var pre = document.getElementById(id);
         var textContent = document.createTextNode(message + '\n');
         pre.appendChild(textContent);
       }
@@ -217,21 +225,20 @@
             fields: 'nextPageToken, files(*)',
           })
           .then(function(response) {
-            appendPre('\nFolders (see JS console log for more info):\n');
             var files = response.result.files;
             if (files && files.length > 0) {
               for (var i = 0; i < files.length; i++) {
                 var file = files[i];
-                appendPre('  ' + file.name + ' (' + file.id + ')');
+                appendPre(file.name + ' (' + file.id + ')', 'folderOut');
                 console.log('folder:', file);
               }
             } else {
-              appendPre('  No files found.');
+              appendPre('No folders found.', 'folderOut');
             }
           });
       }
 
-      function listFiles() {
+      async function listFiles() {
         // https://developers.google.com/drive/api/v3/reference/query-ref#fields
         const conditions = [];
         conditions.push("mimeType != 'application/vnd.google-apps.folder'");
@@ -254,28 +261,28 @@
         // conditions.push("(not name contains 'odd' and not name contains 'boop')");
         // conditions.push("(name contains 'beep')");
         console.log(conditions.join(' and '));
-        gapi.client.drive.files
-          .list({
-            q: conditions.join(' and '),
-            orderBy: 'createdTime',
-            pageSize: 3,
-            // See https://developers.google.com/drive/api/v3/reference/files for list of all the file properties
-            fields: 'nextPageToken, files(*)',
-          })
-          .then(function(response) {
-            console.log('List files response:', response);
-            appendPre('\nFiles (see JS console log for more info):\n');
-            var files = response.result.files;
-            if (files && files.length > 0) {
-              for (var i = 0; i < files.length; i++) {
-                var file = files[i];
-                appendPre('  ' + file.name + ' (' + file.id + '), ' + file.createdTime);
-              }
-              appendPre('  👉 Next page: ' + response.result.nextPageToken);
-            } else {
-              appendPre('  No files found.');
-            }
-          });
+        const response = await gapi.client.drive.files.list({
+          q: conditions.join(' and '),
+          orderBy: 'createdTime',
+          pageSize: 3,
+          pageToken: filesNextPageToken,
+          // See https://developers.google.com/drive/api/v3/reference/files for list of all the file properties
+          fields: 'nextPageToken, files(*)',
+        });
+
+        console.log('List files response:', response);
+        var files = response.result.files;
+        if (files && files.length > 0) {
+          for (var i = 0; i < files.length; i++) {
+            var file = files[i];
+            appendPre(file.name + ' (' + file.id + '), ' + file.createdTime, 'fileOut');
+          }
+        } else {
+          appendPre('  No files found.', 'fileOut');
+        }
+
+        filesNextPageToken = response.result.nextPageToken;
+        getFilesNextPageBtn.style.display = filesNextPageToken ? 'block' : 'None';
       }
     </script>
 
