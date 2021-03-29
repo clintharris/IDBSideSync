@@ -301,6 +301,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
     nameNotContains?: string[];
     pageToken?: string;
     pageSize?: number;
+    createdAfter?: Date;
   }): Promise<{ files: GoogleFile[]; nextPageToken?: string | undefined }> {
     const queryParts = [];
     queryParts.push('mimeType ' + (filter.type === 'folders' ? '=' : '!=') + ` '${GAPI_FOLDER_MIME_TYPE}'`);
@@ -331,6 +332,10 @@ export class GoogleDrivePlugin implements SyncPlugin {
         const excludeQuery = filter.nameNotContains.map((pattern) => `not name contains '${pattern}'`).join(' and ');
         queryParts.push('(' + excludeQuery + ')');
       }
+    }
+
+    if (filter.createdAfter instanceof Date) {
+      queryParts.push(`createdTime > '${filter.createdAfter.toISOString()}'`);
     }
 
     const listParams: Parameters<typeof gapi.client.drive.files.list>[0] = { ...DEFAULT_GAPI_FILE_LIST_PARAMS };
@@ -408,7 +413,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
       includeClientIds?: string[];
       excludeClientIds?: string[];
     } = {}
-  ): AsyncGenerator<NodeIdMerklePair, void, void> {
+  ): AsyncGenerator<ClientIdMerklePair, void, void> {
     debug && log.debug('Attempting to get remote merkle(s) from Google Drive using filter criteria:', filter);
 
     const nameContains = Array.isArray(filter.includeClientIds)
@@ -438,7 +443,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
           debug && log.debug(`Attempting to download '${file.name}' (file ID: ${file.id}).`);
           let response = await gapi.client.drive.files.get({ fileId: file.id, alt: 'media' });
           yield {
-            nodeId: file.name.split('.')[0],
+            clientId: file.name.split('.')[0],
             merkle: response.result as MerkleTreeCompatible,
           };
         } catch (error) {
@@ -450,10 +455,45 @@ export class GoogleDrivePlugin implements SyncPlugin {
     }
   }
 
-  public async *getRemoteEntries(params: { afterTime?: Date | null } = {}): AsyncGenerator<OpLogEntry, void, void> {
+  public async *getRemoteEntries(params: {
+    clientId: string;
+    afterTime?: Date | null;
+  }): AsyncGenerator<OpLogEntry, void, void> {
     debug && log.debug('Attempting to get oplog entries from Google Drive:', params);
+
+    const nameContains = [FILENAME_PART.clientPrefix + params.clientId + FILENAME_PART.messageExt];
+
+    let pageResults;
+    let pageToken: undefined | string = '';
+
+    while (pageToken !== undefined) {
+      pageResults = await this.getFileListPage({
+        type: 'files',
+        nameContains,
+        createdAfter: params.afterTime instanceof Date ? params.afterTime : undefined,
+        pageToken,
+        pageSize: 25,
+      });
+      pageToken = pageResults.nextPageToken;
+
+      debug && log.debug(`Found ${pageResults.files.length} merkle files (${pageToken ? '' : 'no '}more pages exist).`);
+
+      for (const file of pageResults.files) {
+        try {
+          debug && log.debug(`Attempting to download '${file.name}' (file ID: ${file.id}).`);
+          let response = await gapi.client.drive.files.get({ fileId: file.id, alt: 'media' });
+          yield response.result as OpLogEntry;
+        } catch (error) {
+          const fileName = `'${file.name}' (file ID: ${file.id})`;
+          log.error(`Error on attempt to download '${fileName}:`, error);
+          throw new FileDownloadError(fileName, error);
+        }
+      }
+    }
   }
 
+  // TODO: Investigate batching:
+  // https://github.com/google/google-api-javascript-client/blob/master/docs/promises.md#batch-requests
   public async saveRemoteEntry(params: {
     time: Date;
     counter: number;
@@ -501,7 +541,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
     // before uploading, and if one exists, replace it using the corresponding File ID.
 
     // TODO: ensure filename tokens are separated by SPACES, otherwise partial-matchingin listGoogleDriveFiles breaks
-    // Example: `<nodeId>.${FILENAME_PART.merkleExt}`
+    // Example: `<clientId>.${FILENAME_PART.merkleExt}`
 
     return Promise.resolve();
   }

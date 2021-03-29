@@ -155,7 +155,7 @@ interface UserProfile {
 
 type SyncProfileSettings = Record<string, unknown>;
 
-type NodeIdMerklePair = { nodeId: string; merkle: MerkleTreeCompatible };
+type ClientIdMerklePair = { clientId: string; merkle: MerkleTreeCompatible };
 
 interface SyncPlugin {
   getPluginId(): string;
@@ -168,7 +168,7 @@ interface SyncPlugin {
   getSettings(): SyncProfileSettings;
   setSettings(settings: SyncProfileSettings): void;
   getRemoteEntries: (params: {
-    nodeId: string;
+    clientId: string;
     afterTime?: Date | null;
   }) => AsyncGenerator<OpLogEntry, void, void>;
   saveRemoteEntry: (params: {
@@ -180,7 +180,7 @@ interface SyncPlugin {
   getRemoteMerkles: (filter: {
     includeClientIds?: string[];
     excludeClientIds?: string[];
-  }) => AsyncGenerator<NodeIdMerklePair, void, void>;
+  }) => AsyncGenerator<ClientIdMerklePair, void, void>;
 }
 
 interface SyncProfile {
