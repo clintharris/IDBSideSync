@@ -181,6 +181,10 @@ interface SyncPlugin {
     includeClientIds?: string[];
     excludeClientIds?: string[];
   }) => AsyncGenerator<ClientIdMerklePair, void, void>;
+  saveRemoteMerkle(
+    clientId: string,
+    entry: MerkleTreeCompatible
+  ): Promise<void>;
 }
 
 interface SyncProfile {

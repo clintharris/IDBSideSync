@@ -517,7 +517,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
         existingFileId = response.result.files[0].id;
       }
     } catch (error) {
-      log.error(`Error while attempting to retrieve list of folders from Google Drive:`, error);
+      log.error(`Error while attempting to see if file already exists on server with name ${entryFileName}:`, error);
       throw new FileListError(error);
     }
 
@@ -534,16 +534,38 @@ export class GoogleDrivePlugin implements SyncPlugin {
     });
   }
 
-  public saveMerkle(entry: MerkleTreeCompatible): Promise<void> {
+  public async saveRemoteMerkle(clientId: string, entry: MerkleTreeCompatible): Promise<void> {
     debug && log.debug('Attempting to add oplog entry to Google Drive:', entry);
 
+    const merkleFileName = FILENAME_PART.clientPrefix + clientId + FILENAME_PART.merkleExt;
+
     // WARNING: Google Drive allows multiple files to exist with the same name. Always check to see if a file exists
-    // before uploading, and if one exists, replace it using the corresponding File ID.
+    // before uploading it and then decide if it should be overwritten (based on existing file's file ID) or ignored.
+    let existingFileId;
 
-    // TODO: ensure filename tokens are separated by SPACES, otherwise partial-matchingin listGoogleDriveFiles breaks
-    // Example: `<clientId>.${FILENAME_PART.merkleExt}`
+    try {
+      const listParams: Parameters<typeof gapi.client.drive.files.list>[0] = { ...DEFAULT_GAPI_FILE_LIST_PARAMS };
+      listParams.q = `name = '${merkleFileName}'`;
+      debug && log.debug('Checking to see if merkle file already exists on server with name:', merkleFileName);
+      const response = await gapi.client.drive.files.list(listParams);
+      if (Array.isArray(response.result.files)) {
+        existingFileId = response.result.files[0].id;
+      }
+    } catch (error) {
+      log.error(`Error while attempting to see if file already exists on server with name ${merkleFileName}:`, error);
+      throw new FileListError(error);
+    }
 
-    return Promise.resolve();
+    if (existingFileId) {
+      debug && log.debug(`Merkle file with file name ${merkleFileName} already exists; will overwrite.`);
+      return;
+    }
+
+    await this.saveFile({
+      fileId: existingFileId,
+      fileName: merkleFileName,
+      fileData: entry,
+    });
   }
 
   /**

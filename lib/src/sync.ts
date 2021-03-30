@@ -9,8 +9,8 @@ export async function sync() {
   debug && log.debug('Starting sync...');
   const { nodeId: localClientId } = db.getSettings();
 
-  // Note: if a serialized Merkle tree doesn't exist in IndexedDB, then this will cause it to be built from scratch
-  // (which could take some time if there are thousands of entries).
+  // If a serialized Merkle tree doesn't exist in IndexedDB, then this will cause it to be built from scratch (which
+  // could take some time if there are thousands of entries).
   const ownLocalMerkle = await db.getOplogMerkleTree();
 
   // By deleting any merkle tree data that has been persisted to IndexedDB, we are setting up a "fail safe" condition.
@@ -18,23 +18,12 @@ export async function sync() {
   // tree to IndexedDB, then the next sync attempt will be forced to rebuild the merkle from scratch.
   await db.deleteOplogMerkle();
 
-  // It's possible that new oplog entries have been created since the last time the merkle tree was updated. Instead of
-  // always re-building the merkle tree from scratch--iterating over the entire store of oplog entries--we will try to
-  // only add the entries that were created since the last time the merkle was updated. Since every Merkle tree path
-  // maps to a time at which some oplog entry was created (albeit in minutes, deliberately less precise than a smaller
-  // unit of time, which allows the overall tree to be smaller), we can convert the path to the most recent Merkle tree
-  // leaf back to a time and have an approximate time for the last / "most recent" oplog entry that was inserted into
-  // the merkle. We can then quickly figure out which oplog entries were added to the local store on/after that time and
-  // add them to the merkle.
-  //
-  // For this to work correctly, it's important that only "locally created" oplog entries were added to the store since
-  // the last time the merkle was updated. The algorithm will break if, for example, the most recent merkle tree time is
-  // "last week", but yesterday a bunch of month-old oplog entries from some other client were added to the local oplog
-  // store. In that scenario, we would incorrectly assume that we only need to update our merkle with oplog entries from
-  // the last week, when in fact, we need to go back one month.
-
-  // It's possible that we have made local changes (i.e., new oplog entries were created) since the last time the Merkle
-  // tree was updated.
+  // Update the oplog merkle tree (since it's only updated when syncing happens and new oplog entries may have been
+  // created since the last sync). We'll need to get all the entries that were created after the last sync and add them
+  // to the merkle. We'll do that by assuming that the most recent oplog entry in the merkle tree represents the
+  // "greatest" HLTime that this client knew about when the last sync completed, and that if this client has created any
+  // new oplog entries since that sync, they were created _after_ that time (i.e., the local hybrid logical clock
+  // was incremented past that time).
   let lastMerkleDate;
   const pathToNewestMerkleLeaf = ownLocalMerkle.pathToNewestLeaf();
   if (pathToNewestMerkleLeaf.length > 0) {
