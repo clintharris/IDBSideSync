@@ -1,4 +1,4 @@
-import murmurhash from 'murmurhash';
+import * as murmurhash from 'murmurhash';
 
 /**
  * This class is used to model immutable instances of time as measured by a Hybrid Logical Clock, which combines both a
@@ -112,12 +112,12 @@ export class HLTime {
   }
 
   hash() {
-    return murmurhash.v3(this.toString());
+    return murmurhash.default.v3(this.toString());
   }
 
   static ParseError = class ParseError extends Error {
     // Constructor param must be of type `unknown` to avoid TypeScript/Jest error: https://git.io/JqCDN
-    constructor(invalidTimestampStr: unknown, reason: string) {
+    constructor(invalidTimestampStr: unknown, reason: unknown) {
       super(`Invalid HLTime string; ${reason}: ` + JSON.stringify(invalidTimestampStr));
       Object.setPrototypeOf(this, ParseError.prototype); // https://git.io/vHLlu
     }
