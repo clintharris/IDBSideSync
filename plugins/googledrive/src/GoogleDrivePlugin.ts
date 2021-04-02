@@ -537,7 +537,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
       listParams.q = `name = '${entryFileName}'`;
       debug && log.debug('Checking to see if oplog entry already exists on server with name:', entryFileName);
       const response = await gapi.client.drive.files.list(listParams);
-      if (Array.isArray(response.result.files)) {
+      if (Array.isArray(response.result.files) && response.result.files.length > 0) {
         existingFileId = response.result.files[0].id;
       }
     } catch (error) {
