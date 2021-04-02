@@ -215,6 +215,10 @@ export class GoogleDrivePlugin implements SyncPlugin {
   }
 
   public async setupRemoteFolder() {
+    log.debug(`Attempting to find remote folder with criteria:`, {
+      name: this.remoteFolderName,
+      fileId: this.remoteFolderId,
+    });
     if (!this.remoteFolderId) {
       log.debug(`Google Drive folder ID for '${this.remoteFolderName}' is unknown; attempting to find/create...`);
       const existingFolderListPage = await this.getFileListPage({ type: 'folders', exactName: this.remoteFolderName });
@@ -234,11 +238,11 @@ export class GoogleDrivePlugin implements SyncPlugin {
       const existingFolder = await this.getFile(this.remoteFolderId);
       if (existingFolder) {
         if (typeof existingFolder.name === 'string' && existingFolder.name.trim() !== '') {
-          log.debug(`Found existing Google Drive folder with name '${this.remoteFolderName}`, existingFolder);
+          log.debug(`Successfully found remote folder:`, existingFolder);
           this.remoteFolderName = existingFolder.name;
           this.remoteFolderLink = existingFolder.webViewLink;
         } else {
-          throw new Error(`${libName} Google Drive folder with ID '${this.remoteFolderId}' lack valid name.`);
+          throw new Error(`${libName} Google Drive folder with ID '${this.remoteFolderId}' lacks valid name.`);
         }
       } else {
         log.debug(`No folder with ID '${this.remoteFolderId}' exists in Google Drive; attempting to create...`);
@@ -274,14 +278,14 @@ export class GoogleDrivePlugin implements SyncPlugin {
 
   public getFile(fileId: string): Promise<gapi.client.drive.File> {
     return new Promise((resolve, reject) => {
-      debug && log.debug(`Attempting to get Google Drive file with ID '${fileId}'...`);
+      // debug && log.debug(`Attempting to get Google Drive file with ID '${fileId}'...`);
       gapi.client.drive.files
         .get({
           fileId: fileId,
           fields: GAPI_FILE_FIELDS,
         })
         .then(function(response) {
-          debug && log.debug(`Retrieved file:`, response.result);
+          // debug && log.debug(`Retrieved file:`, response.result);
           resolve(response.result);
         })
         .catch((error) => {
@@ -354,7 +358,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
     try {
       // For more info on 'list' operation see https://developers.google.com/drive/api/v3/reference/files/list
       const response = await gapi.client.drive.files.list(listParams);
-      debug && log.debug('GAPI files.list() response:', response);
+      // debug && log.debug('GAPI files.list() response:', response);
       return {
         files: Array.isArray(response.result.files) ? (response.result.files as GoogleFile[]) : [],
         nextPageToken: response.result.nextPageToken,
@@ -530,12 +534,16 @@ export class GoogleDrivePlugin implements SyncPlugin {
       fileId: existingFileId,
       fileName: entryFileName,
       fileData: params.entry,
+      // We need to support listing/filtering for oplog entry files whose HL timestamps occur after some date/time. The
+      // way we achieve this with Google Drive is to use the 'createdTime' metadata property (since the API actually
+      // supports searching by date range using this field), so we'll manually set this field to the oplog entry
+      // timestamp.
       createdTime: params.time.toISOString(),
     });
   }
 
-  public async saveRemoteMerkle(clientId: string, entry: MerkleTreeCompatible): Promise<void> {
-    debug && log.debug('Attempting to add oplog entry to Google Drive:', entry);
+  public async saveRemoteMerkle(clientId: string, merkle: MerkleTreeCompatible): Promise<void> {
+    debug && log.debug('Attempting to add oplog entry to Google Drive:', merkle);
 
     const merkleFileName = FILENAME_PART.clientPrefix + clientId + FILENAME_PART.merkleExt;
 
@@ -548,7 +556,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
       listParams.q = `name = '${merkleFileName}'`;
       debug && log.debug('Checking to see if merkle file already exists on server with name:', merkleFileName);
       const response = await gapi.client.drive.files.list(listParams);
-      if (Array.isArray(response.result.files)) {
+      if (Array.isArray(response.result.files) && response.result.files.length > 0) {
         existingFileId = response.result.files[0].id;
       }
     } catch (error) {
@@ -564,7 +572,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
     await this.saveFile({
       fileId: existingFileId,
       fileName: merkleFileName,
-      fileData: entry,
+      fileData: merkle,
     });
   }
 
@@ -577,6 +585,11 @@ export class GoogleDrivePlugin implements SyncPlugin {
     fileData: object;
     createdTime?: string;
   }): Promise<{ id: string; name: string }> {
+    if (!this.remoteFolderId) {
+      const errMsg = `Remote folder ID hasn't been set; files can't be saved without having ID of parent folder.`;
+      log.error(errMsg);
+      throw new Error(libName + ' ' + errMsg);
+    }
     const fileData = JSON.stringify(params.fileData);
     const contentType = 'text/plain';
     const metadata: Record<string, unknown> = params.fileId
