@@ -1,24 +1,32 @@
 <!DOCTYPE html>
 <html>
-  <body>
-    <p>Drive API Quickstart</p>
+  <body style="padding: 0 25px;">
+    <h2>GAPI Sandbox</h2>
+    <p>Use this page to play with / learn about the GAPI Javascript client and the Google Drive API.</p>
 
-    <!--Add buttons to initiate auth sequence and sign out-->
+    <h4>🔐 OAuth:</h4>
     <button id="authorize_button" style="display: none;">Authorize</button>
     <button id="signout_button" style="display: none;">Sign Out</button>
 
-    <h4>Folders:</h4>
-    <pre id="folderOut" style="white-space: pre-wrap;"></pre>
+    <h4>🗂 Folders:</h4>
+    <pre id="folderOut" style="white-space: pre-wrap;border: 1px solid #d0d0d0;padding: 20px;"></pre>
     <button id="create_folder_btn" style="display: none;">Create Folder</button>
-    <hr />
-    <h4>Files:</h4>
-    <pre id="fileOut" style="white-space: pre-wrap;"></pre>
+
+    <h4>📄 Files:</h4>
+    <label for="folderId">Parent Folder:&nbsp;</label>
+    <input id="folderId" type="text" value="" style="width: 300px; font-family: monospace" />
+    <span style="font-style: italic; font-size: .85rem">
+      &nbsp;(If empty, files will be listed from / created in you "My Drive" root)
+    </span>
+    <pre id="fileOut" style="white-space: pre-wrap;border: 1px solid #d0d0d0;padding: 20px;"></pre>
+    <button id="list_files_btn" style="display: none;">List Files</button>
     <button id="files_next_page_btn" style="display: none;">Get Next Page of Files</button>
     <button id="download_file_btn" style="display: none;">Download File</button>
     <button id="create_file_btn" style="display: none;">Create File</button>
     <button id="update_file_btn" style="display: none;">Update File</button>
 
     <script type="text/javascript">
+      let qs = document.querySelector.bind(document);
       const authorizeButton = document.getElementById('authorize_button');
       const signoutButton = document.getElementById('signout_button');
       const createFolderBtn = document.getElementById('create_folder_btn');
@@ -26,6 +34,7 @@
       const downloadFileBtn = document.getElementById('download_file_btn');
       const getFilesNextPageBtn = document.getElementById('files_next_page_btn');
       const updateFileBtn = document.getElementById('update_file_btn');
+      const listFilesBtn = document.getElementById('list_files_btn');
       let authResponse;
       let filesNextPageToken;
 
@@ -59,6 +68,10 @@
               createFileBtn.onclick = onCreateFileBtnClick;
               downloadFileBtn.onclick = onDownloadFileBtnClick;
               getFilesNextPageBtn.onclick = listFiles;
+              listFilesBtn.onclick = () => {
+                qs('pre#fileOut').innerHTML = '';
+                listFiles();
+              };
               updateFileBtn.onclick = onUpdateFileBtnClick;
             },
 
@@ -83,6 +96,7 @@
           createFileBtn.style.display = 'block';
           downloadFileBtn.style.display = 'block';
           updateFileBtn.style.display = 'block';
+          listFilesBtn.style.display = 'block';
           listFolders();
           listFiles();
         } else {
@@ -93,6 +107,7 @@
           createFileBtn.style.display = 'none';
           downloadFileBtn.style.display = 'none';
           updateFileBtn.style.display = 'none';
+          listFilesBtn.style.display = 'none';
         }
       }
 
@@ -120,6 +135,7 @@
               name: folderName,
               // For full list of drive's supported MIME types: https://developers.google.com/drive/api/v3/mime-types
               mimeType: 'application/vnd.google-apps.folder',
+              parents: [PARENT_FOLDER_ID],
             },
             fields: 'id',
           })
@@ -136,7 +152,8 @@
           });
       }
 
-      function onCreateFileBtnClick() {
+      async function onCreateFileBtnClick() {
+        const parentFolderId = qs('input#folderId').value;
         const date = new Date();
         const evenOdd = Math.ceil(Math.random() * 100) % 2 === 0 ? 'even' : 'odd';
         const beepBoop = Math.ceil(Math.random() * 100) % 2 === 0 ? 'beep' : 'boop';
@@ -147,8 +164,13 @@
           mimeType: 'text/plain',
           createdTime: '2011-06-04T12:00:00.215Z', // this would be set oplog entry time
         };
+        if (parentFolderId.trim() !== '') {
+          metadata.parents = [parentFolderId];
+        }
         const data = { foo: name, bar: 123, baz: true };
-        saveFile({ metadata, data });
+        await saveFile({ metadata, data });
+        qs('pre#fileOut').innerHTML = '';
+        listFiles();
       }
 
       function onUpdateFileBtnClick() {
@@ -252,6 +274,7 @@
       }
 
       async function listFiles() {
+        const parentFolderId = qs('input#folderId').value;
         // https://developers.google.com/drive/api/v3/reference/query-ref#fields
         const conditions = [];
         conditions.push("mimeType != 'application/vnd.google-apps.folder'");
@@ -274,6 +297,10 @@
         // conditions.push("(not name contains 'odd' and not name contains 'boop')");
         // conditions.push("(name contains 'beep')");
         // conditions.push("name = '108_even_boop_2021-03-25T19:39:43.508Z.json'");
+
+        if (parentFolderId) {
+          conditions.push(`'${parentFolderId}' in parents`);
+        }
 
         console.log(conditions.join(' and '));
         const response = await gapi.client.drive.files.list({
