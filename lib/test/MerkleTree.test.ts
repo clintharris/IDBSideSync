@@ -186,7 +186,18 @@ describe('MerkleTree', () => {
       expect(tree2.findDiff(tree1)).toEqual(earlierPath);
     });
 
-    it('returns empty path when both trees are the same', () => {
+    it('returns empty array when trees differ at the root', () => {
+      const tree1 = MerkleTree.fromObj(plainObjTree);
+      const tree2 = MerkleTree.fromObj(plainObjTree);
+
+      tree1.hash = 111;
+      tree2.hash = 222;
+
+      expect(tree1.findDiff(tree2)).toEqual([]);
+      expect(tree2.findDiff(tree1)).toEqual([]);
+    });
+
+    it('returns null when both trees are the same', () => {
       const tree1 = MerkleTree.fromObj(plainObjTree);
       const tree2 = MerkleTree.fromObj(plainObjTree);
 
@@ -195,8 +206,8 @@ describe('MerkleTree', () => {
       tree1.set(['2', '1', '0'], 4444);
       tree2.set(['2', '1', '0'], 4444);
 
-      expect(tree1.findDiff(tree2)).toEqual([]);
-      expect(tree2.findDiff(tree1)).toEqual([]);
+      expect(tree1.findDiff(tree2)).toEqual(null);
+      expect(tree2.findDiff(tree1)).toEqual(null);
     });
   });
 

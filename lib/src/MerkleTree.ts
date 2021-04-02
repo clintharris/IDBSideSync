@@ -93,13 +93,16 @@ export class MerkleTree {
   }
 
   /**
-   * Compares two trees, node by node, and returns path to first node that has a different hash value (or an empty
-   * array if no difference is found).
+   * Compares two trees, node by node, and returns path to first node that has a different hash value (or null if no
+   * difference is found).
+   *
+   * @returns `BaseThreeTreePath` to the node where the trees begin to differ (if they differ at the root node, this
+   * will be an empty array), or `null` if the trees are the same (i.e., no difference exists).
    */
-  findDiff(otherTree: MerkleTree): BaseThreeTreePath {
+  findDiff(otherTree: MerkleTree): BaseThreeTreePath | null {
     // If the hash values match at the root of each tree, there's no need to go through the child nodes...
     if (this.hash === otherTree.hash) {
-      return [];
+      return null;
     }
 
     let tree1Iter: MerkleTree = this;
@@ -358,8 +361,8 @@ export class MerkleTree {
  *
  * You could use a more precise unit of time (e.g., milliseconds instead of minutes), but a more precise time means a
  * bigger number, which would result in a longer "tree path", and therefore more nodes in the merkle tree. In other
- * words, using more precise times would results in a bigger data structure and a slower diffing algorithm (because it
- * has more nodes to go through).
+ * words, using more precise times results in a bigger data structure and a slower diffing algorithm (because it has
+ * more nodes to go through).
  */
 export function convertTimeToTreePath(msecTime: number): BaseThreeTreePath {
   if (msecTime > MAX_TIME_MSEC) {
