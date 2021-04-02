@@ -2,10 +2,13 @@
 import { jest, describe, expect, it } from '@jest/globals';
 
 import { DEFAULT_GAPI_FILE_LIST_PARAMS, GAPI_FOLDER_MIME_TYPE, GoogleDrivePlugin } from '../src/GoogleDrivePlugin';
-import { FILENAME_PART } from '../src/utils';
+import { FILENAME_PART, setDebug } from '../src/utils';
 
 // Define the mock GAPI global object before the 'GoogleDrivePlugin' is loaded
 stubMockGapiGlobal();
+
+setDebug(false); // Don't display all the log.debug() output while running unit tests.
+const defaultConstructorArgs = { clientId: '1234', defaultFolderName: 'foo', remoteFolderId: 'folder123' };
 
 describe('GoogleDrivePlugin', () => {
   describe('listGoogleDriveFiles()', () => {
@@ -15,7 +18,7 @@ describe('GoogleDrivePlugin', () => {
       const mockResponse = { body: '', result: { files: [{ id: '1', name: 'file1' }] } };
       mockListFcn.mockResolvedValue(mockResponse);
 
-      const plugin = new GoogleDrivePlugin({ clientId: '1234', defaultFolderName: 'foo' });
+      const plugin = new GoogleDrivePlugin(defaultConstructorArgs);
       const page = await plugin.getFileListPage({ type: 'folders' });
 
       expect(page.files).toEqual(mockResponse.result.files);
@@ -31,7 +34,7 @@ describe('GoogleDrivePlugin', () => {
       const mockResponse = { body: '', result: { files: [{ id: '1', name: 'file1' }] } };
       mockListFcn.mockResolvedValue(mockResponse);
 
-      const plugin = new GoogleDrivePlugin({ clientId: '1234', defaultFolderName: 'foo' });
+      const plugin = new GoogleDrivePlugin(defaultConstructorArgs);
       const page = await plugin.getFileListPage({ type: 'files' });
 
       expect(page.files).toEqual(mockResponse.result.files);
@@ -47,7 +50,7 @@ describe('GoogleDrivePlugin', () => {
       const mockResponse = { body: '', result: { files: [{ id: '1', name: 'file1' }] } };
       mockListFcn.mockResolvedValue(mockResponse);
 
-      const plugin = new GoogleDrivePlugin({ clientId: '1234', defaultFolderName: 'foo' });
+      const plugin = new GoogleDrivePlugin(defaultConstructorArgs);
       const page = await plugin.getFileListPage({ type: 'files', exactName: 'foo' });
 
       expect(page.files).toEqual(mockResponse.result.files);
@@ -63,7 +66,7 @@ describe('GoogleDrivePlugin', () => {
       const mockResponse = { body: '', result: { files: [{ id: '1', name: 'file1' }] } };
       mockListFcn.mockResolvedValue(mockResponse);
 
-      const plugin = new GoogleDrivePlugin({ clientId: '1234', defaultFolderName: 'foo' });
+      const plugin = new GoogleDrivePlugin(defaultConstructorArgs);
       const { files } = await plugin.getFileListPage({ type: 'files', nameContains: ['foo', 'bar'] });
 
       expect(files).toEqual(mockResponse.result.files);
@@ -124,20 +127,20 @@ describe('GoogleDrivePlugin', () => {
       // @ts-ignore
       mockGetFcn.mockResolvedValue(mockGetResponse);
 
-      const plugin = new GoogleDrivePlugin({ clientId: '1234', defaultFolderName: 'foo' });
+      const plugin = new GoogleDrivePlugin(defaultConstructorArgs);
 
-      const results: NodeIdMerklePair[] = [];
-      for await (const nodeIdMerklePair of plugin.getRemoteMerkles()) {
-        results.push(nodeIdMerklePair);
+      const results: ClientIdMerklePair[] = [];
+      for await (const clientIdMerklePair of plugin.getRemoteMerkles()) {
+        results.push(clientIdMerklePair);
       }
 
       expect(results).toEqual([
         {
-          nodeId: 'foo',
+          clientId: 'foo',
           merkle: mockGetResponse.result,
         },
         {
-          nodeId: 'bar',
+          clientId: 'bar',
           merkle: mockGetResponse.result,
         },
       ]);
@@ -145,9 +148,27 @@ describe('GoogleDrivePlugin', () => {
       // expect(files).toEqual(mockListResponse.result.files);
       expect(mockListFcn).toHaveBeenCalledWith({
         ...DEFAULT_GAPI_FILE_LIST_PARAMS,
-        q: `mimeType != '${GAPI_FOLDER_MIME_TYPE}' and (name contains '${FILENAME_PART.merkleExt}')`,
+        q:
+          `mimeType != '${GAPI_FOLDER_MIME_TYPE}' and (name contains '${FILENAME_PART.merkleExt}') and ` +
+          `('${defaultConstructorArgs.remoteFolderId}' in parents)`,
       });
     });
+  });
+
+  describe('getRemoteEntries()', () => {
+    it.todo('makes correct GAPI query for remote oplog entries');
+  });
+
+  describe('saveFile()', () => {
+    it.todo('works correctly');
+  });
+
+  describe('saveRemoteMerkle()', () => {
+    it.todo('works correctly');
+  });
+
+  describe('saveRemoteEntry()', () => {
+    it.todo('works correctly');
   });
 });
 

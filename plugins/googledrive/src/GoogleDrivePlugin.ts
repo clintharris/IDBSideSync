@@ -41,7 +41,12 @@ export class GoogleDrivePlugin implements SyncPlugin {
     signInChange: [],
   };
 
-  constructor(options: { clientId: string; defaultFolderName: string; onSignInChange?: SignInChangeHandler }) {
+  constructor(options: {
+    clientId: string;
+    defaultFolderName: string;
+    remoteFolderId?: string;
+    onSignInChange?: SignInChangeHandler;
+  }) {
     if (!options || typeof options.clientId !== 'string') {
       const errMsg = `Missing options param with clientId. Example: setup({ clientId: '...' })`;
       log.error(errMsg);
@@ -50,6 +55,10 @@ export class GoogleDrivePlugin implements SyncPlugin {
 
     this.clientId = options.clientId;
     this.remoteFolderName = options.defaultFolderName;
+
+    if (typeof options.remoteFolderId === 'string') {
+      this.remoteFolderId = options.remoteFolderId;
+    }
 
     if (options.onSignInChange instanceof Function) {
       this.addSignInChangeListener(options.onSignInChange);
@@ -306,6 +315,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
     pageToken?: string;
     pageSize?: number;
     createdAfter?: Date;
+    limitToPluginFolder?: boolean;
   }): Promise<{ files: GoogleFile[]; nextPageToken?: string | undefined }> {
     const queryParts = [];
     queryParts.push('mimeType ' + (filter.type === 'folders' ? '=' : '!=') + ` '${GAPI_FOLDER_MIME_TYPE}'`);
@@ -340,6 +350,15 @@ export class GoogleDrivePlugin implements SyncPlugin {
 
     if (filter.createdAfter instanceof Date) {
       queryParts.push(`createdTime > '${filter.createdAfter.toISOString()}'`);
+    }
+
+    if (filter.limitToPluginFolder) {
+      if (!this.remoteFolderId) {
+        const errMsg = `Remote folder ID hasn't been set; file listing can't proceed.`;
+        log.error(errMsg);
+        throw new Error(libName + ' ' + errMsg);
+      }
+      queryParts.push(`('${this.remoteFolderId}' in parents)`);
     }
 
     const listParams: Parameters<typeof gapi.client.drive.files.list>[0] = { ...DEFAULT_GAPI_FILE_LIST_PARAMS };
@@ -437,6 +456,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
         nameContains,
         nameNotContains,
         pageToken,
+        limitToPluginFolder: true,
       });
       pageToken = pageResults.nextPageToken;
 
@@ -476,6 +496,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
         createdAfter: params.afterTime instanceof Date ? params.afterTime : undefined,
         pageToken,
         pageSize: 25,
+        limitToPluginFolder: true,
       });
       pageToken = pageResults.nextPageToken;
 
@@ -596,6 +617,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
       : {
           name: params.fileName,
           mimeType: contentType,
+          parents: [this.remoteFolderId],
         };
 
     if (!params.fileId && typeof params.createdTime === 'string') {
