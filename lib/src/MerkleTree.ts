@@ -296,7 +296,7 @@ export class MerkleTree {
 
     const test = obj as MerkleTree;
 
-    if (typeof test.hash !== 'number' || test.hash < 0) {
+    if (typeof test.hash !== 'number') {
       return false;
     }
 
