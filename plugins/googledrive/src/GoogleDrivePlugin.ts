@@ -446,10 +446,9 @@ export class GoogleDrivePlugin implements SyncPlugin {
         try {
           debug && log.debug(`Attempting to download '${file.name}' (file ID: ${file.id}).`);
           let response = await gapi.client.drive.files.get({ fileId: file.id, alt: 'media' });
-          yield {
-            clientId: file.name.split('.')[0],
-            merkle: response.result as MerkleTreeCompatible,
-          };
+          const clientIdWithPrefix = file.name.split('.')[0];
+          const clientId = clientIdWithPrefix.replace(FILENAME_PART.clientPrefix, '');
+          yield { clientId, merkle: response.result as MerkleTreeCompatible };
         } catch (error) {
           const fileName = `'${file.name}' (file ID: ${file.id})`;
           log.error(`Error on attempt to download '${fileName}:`, error);
