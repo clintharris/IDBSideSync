@@ -151,6 +151,32 @@ export function saveSettings(newSettings: Settings): Promise<Settings> {
   });
 }
 
+export async function saveOplogMerkle(merkle: MerkleTree): Promise<void> {
+  if (!cachedDb) {
+    throw new Error(`${libName} hasn't been initialized. Please call init() first.`);
+  }
+
+  return new Promise((resolve, reject) => {
+    const txReq = cachedDb.transaction([STORE_NAME.META], 'readwrite');
+    txReq.onabort = () => reject(new TransactionAbortedError(txReq.error));
+    txReq.onerror = (event) => {
+      const error = isEventWithTargetError(event) ? event.target.error : txReq.error;
+      const errMsg = `Error while attempting to save merkle tree to '${STORE_NAME.META}'`;
+      log.error(errMsg, error);
+      reject(new Error(`${libName} ${errMsg}`));
+    };
+
+    const metaStore = txReq.objectStore(STORE_NAME.META);
+    const putReq = metaStore.put(merkle, OPLOG_MERKLE_OBJ_KEY);
+
+    putReq.onsuccess = () => {
+      cachedMerkle = merkle;
+      debug && log.debug('Successfully saved merkle:', merkle);
+      resolve();
+    };
+  });
+}
+
 export async function getOplogMerkleTree(): Promise<MerkleTree> {
   if (!cachedDb) {
     throw new Error(`${libName} hasn't been initialized. Please call init() first.`);
@@ -166,8 +192,9 @@ export async function getOplogMerkleTree(): Promise<MerkleTree> {
     txReq.onabort = () => reject(new TransactionAbortedError(txReq.error));
     txReq.onerror = (event) => {
       const error = isEventWithTargetError(event) ? event.target.error : txReq.error;
-      log.error('Failed to init settings:', error);
-      reject(new Error(`${libName} Error while attempting to load merkle tree from '${STORE_NAME.META}'`));
+      const errMsg = `Error while attempting to load merkle tree from '${STORE_NAME.META}'`;
+      log.error(errMsg, error);
+      reject(new Error(`${libName} ${errMsg}`));
     };
 
     const metaStore = txReq.objectStore(STORE_NAME.META);
