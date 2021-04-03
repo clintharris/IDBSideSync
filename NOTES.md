@@ -466,8 +466,8 @@ following sequence of time (which is basically counting up in base-3):
 
   - t₀ = 000
   - t₁ = 001
-  - t₃ = 010
   - t₂ = 002
+  - t₃ = 010
   - t₄ = 011
   - t₅ = 012
   - t₆ = 020

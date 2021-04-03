@@ -1,8 +1,8 @@
 # Overview
 
-IDBSideSync is a JavaScript library that makes it possible to sync IndexedDB object stores using CRDT concepts. It works by intercepting the CRUD calls to IndexedDB objects and automatically logging all the operations "on the side" in a separate store--the operation log. The objects in the operation log can be uploaded somewhere, then downloaded and "replayed" somewhere else, in effect, synchronizing IndexedDB stores across devices without conflict.
+IDBSideSync is a JavaScript library/experiment that makes it possible to sync IndexedDB object stores using CRDT concepts. It works by intercepting the CRUD calls to IndexedDB stores and automatically logging all the operations "on the side" in a separate store--the operation log. The objects in the operation log can be uploaded somewhere, then downloaded and "replayed" somewhere else, in effect, synchronizing IndexedDB databases across devices without conflict.
 
-You can use this library to, for example, build a "[local first](https://www.inkandswitch.com/local-first.html)" [PWA](https://developer.mozilla.org/en-US/docs/Web/Apps/Progressive/) that also supports syncing across different devices without having to run a custom backend server. Once a user enables a remote data store (e.g., Google Drive, Dropbox, iCloud, or something else via custom plugin), the application can use that store for backup and sync. This "bring your own remote data store" model allows users to maintain ownership of their data--even while it is on a server--and gives them the flexibility change to a different remote storage service at any time.
+You can use this library to, for example, build a "[local first](https://www.inkandswitch.com/local-first.html)" [PWA](https://developer.mozilla.org/en-US/docs/Web/Apps/Progressive/) that also supports syncing across different devices without having to run a custom server application. Once a user enables a remote file storage API (e.g., Google Drive, Dropbox, iCloud, or something else via custom plugin), the application can use that store for backup and sync. This "bring your own remote data store" model allows users to maintain ownership of their data--even while it is on a server--and gives them the flexibility change to a different remote storage service at any time. The CRDT messages are stored as simple JSON text files, easily usable by other software.
 
 The idea for the library came from studying [James Long](https://twitter.com/jlongster)'s
 [crdt-example-app](https://github.com/jlongster/crdt-example-app), which offers a fantastic demonstration of how to use [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type), [hybrid logical clock](https://jaredforsyth.com/posts/hybrid-logical-clocks/), and merkle tree concepts to build a simple, in-memory data store that uses a custom server for synchronization. `IDBSideSync` is an attempt at applying those concepts (and in some cases, modified versions of James' code) to work with [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API), specifically. It also adds the ability for HTTP-accessible data storage APIs that users already have (or host themselves) as the means for syncing data instead of relying on a single, developer-owned, server application. `IDBSideSync` was deliberately forked from `crdt-example-app` to make that "heritage" literally part of this project's own history.
@@ -200,6 +200,7 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
   - make sure to prevent the "many changes in same ~10sec window causes issue" problem (https://twitter.com/jaredforsyth/status/1228366315569565696)
 - [ ] Set up the project to work with [CodeSandbox CI](https://codesandbox.io/docs/ci).
 - [ ] Add a [Code Tour](https://github.com/microsoft/codetour)
+- [ ] Modify README structure to follow an "API Docs, Usage, Examples" structure like this: https://github.com/sql-js/sql.js
 - [ ] Support _syncing_ with remote file storage services
   - Once a standard API exists for the _local_ data store (which can be implemented with different adapters), modify the sync code so that it uses a standard API, which would allow for different remote storage providers to be plugged in.
   - `sidesync-gdrive`, `sidesync-icloud`, etc.
@@ -227,7 +228,8 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
 
     - this could be done by "searching" for files using a filename pattern that will exclude oplog entries before some time (see https://stackoverflow.com/a/11011934/62694)
     - OR (maybe simpler but much less efficient), download all file _names_ (i.e., list dir), iterate over them (parsing each filename to an actual HLC time that can be compared to the reference HLC time), and download each one that occurs on/after the reference time.
-
+  - [ ] Explore using JSZip to compress the oplog json. This can/should be done on a per-plugin basis; the core lib should not be doing anything 
+  - [ ] Explore and document worst-case scenarios (e.g., what happens if a node's clock is off by hours/days?)
   - [ ] Support sharing/collaboration with other users
 
     To collaborate, the following is necessary:
