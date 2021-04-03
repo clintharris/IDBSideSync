@@ -832,6 +832,7 @@ setTimeout(setupSync, 1000);
 async function syncNow() {
   console.log('Starting sync...');
   await IDBSideSync.sync();
+  render();
 }
 
 // onSync(hasChanged => {
