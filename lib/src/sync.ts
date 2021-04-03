@@ -40,28 +40,33 @@ export async function sync() {
   }
   debug && log.debug(`Added ${counter} new (local) oplog entries to merkle tree.`);
 
-  //TODO: break logic below into separate functions for readability
+  // Attempt to do a sync using each registered plugin
   for (const plugin of plugins) {
     const pluginId = plugin.getPluginId();
     try {
       debug && log.debug(`Attempting to sync with remote storage using '${pluginId}' plugin.`);
 
-      // How/when does our own merkle differ from what's on the remote server?
-      let ownLocalRemoteDiffDate;
-      let ownRemoteMerkleCandidateCounter = 0;
-
+      // Attempt to retrieve the remote merkle for the current client. We only expect one to exist, but technically
+      // we could get multiple back if something weird happened (e.g., the user duplicated a file).
+      const ownRemoteMerkleCandidates = [];
       for await (const ownRemoteMerkleCandidate of plugin.getRemoteMerkles({ includeClientIds: [localClientId] })) {
-        ownRemoteMerkleCandidateCounter++;
-        if (ownRemoteMerkleCandidateCounter > 1) {
-          continue;
-        }
+        ownRemoteMerkleCandidates.push(ownRemoteMerkleCandidate);
+      }
 
+      // How/when does this client's own LOCAL merkle differ from its own REMOTE merkle on the server? Default to a date
+      // that occurs far enough in the past to cause all local oplog entries to be uploaded.
+      let ownLocalRemoteDiffDate: Date | null = new Date(0);
+      let deleteOwnRemoteMerkles = false;
+
+      if (ownRemoteMerkleCandidates.length === 0) {
+        debug && log.debug(`No merkle trees exist on remote for current client (${localClientId}).`);
+      } else if (ownRemoteMerkleCandidates.length === 1) {
         try {
-          ownLocalRemoteDiffDate = findMerkleDiffDate(ownRemoteMerkleCandidate.merkle, ownLocalMerkle);
+          ownLocalRemoteDiffDate = findMerkleDiffDate(ownRemoteMerkleCandidates[0].merkle, ownLocalMerkle);
           if (ownLocalRemoteDiffDate) {
-            log.debug(`Own local merkle differs from own remote merkle at ${ownLocalRemoteDiffDate.toISOString()}`);
+            log.debug(`Own LOCAL merkle differs from own REMOTE merkle at ${ownLocalRemoteDiffDate.toISOString()}`);
           } else {
-            log.debug(`Own local merkle is SAME as own remote merkle; won't upload any local oplog entries.`);
+            log.debug(`Own LOCAL merkle is same as own REMOTE merkle.`);
           }
         } catch (error) {
           let msg =
@@ -69,44 +74,51 @@ export async function sync() {
             `re-uploading ALL oplog entries (and a new merkle).`;
           log.warn(msg, error);
         }
-      }
-
-      if (ownRemoteMerkleCandidateCounter === 0) {
-        debug && log.debug(`No merkle trees exist on remote for current client (${localClientId}).`);
-      } else if (ownRemoteMerkleCandidateCounter > 1) {
+      } else {
         let msg =
           `Expected to find 0 or 1 remote merkles for client ${localClientId} but found ` +
-          `${ownRemoteMerkleCandidateCounter}; will attempt to delete these and upload a single merkle.`;
+          `${ownRemoteMerkleCandidates.length}; will attempt to delete these and upload a single merkle.`;
         log.warn(msg);
+        deleteOwnRemoteMerkles = true;
+      }
+
+      if (deleteOwnRemoteMerkles) {
+        log.debug(`Attempting to delete all remote merkles for client '${localClientId}' using '${pluginId}'`);
         //TODO: delete all of our own remote merkle files
       }
 
-      // Upload own oplog entries that are missing from the server
-      if (debug && ownLocalRemoteDiffDate) {
-        log.debug(`Uploading local entries created after ${ownLocalRemoteDiffDate.toISOString()} using ${pluginId}.`);
+      if (ownLocalRemoteDiffDate) {
+        log.debug(`Uploading OWN local entries created after ${ownLocalRemoteDiffDate.toISOString()}.`);
+        counter = 0;
+        for await (const localEntry of db.getEntries({ afterTime: ownLocalRemoteDiffDate })) {
+          //TODO: Add support for uploading more than one entry at a time
+          let hlTime = HLTime.parse(localEntry.hlcTime);
+          await plugin.saveRemoteEntry({
+            time: new Date(hlTime.millis()),
+            counter: hlTime.counter(),
+            clientId: hlTime.node(),
+            entry: localEntry,
+          });
+          counter++;
+        }
+        debug && log.debug(`Uploaded ${counter} OWN local oplog entries.`);
+
+        // At this point we have A) updated the local merkle with the latest, local oplog entries, and B) uploaded all
+        // of the client's own oplog entries that were missing from the server for the current plugin.
+        plugin.saveRemoteMerkle(localClientId, ownLocalMerkle);
+        db.saveOplogMerkle(ownLocalMerkle);
       } else {
-        log.debug(`Attempting to upload ALL local entries to using ${pluginId}.`);
+        log.debug(`Own local merkle matches own remote merkle; no oplog entries need to be uploaded`);
       }
-      counter = 0;
-      for await (const localEntry of db.getEntries({ afterTime: ownLocalRemoteDiffDate })) {
-        //TODO: Add support for uploading more than one entry at a time
-        let hlTime = HLTime.parse(localEntry.hlcTime);
-        await plugin.saveRemoteEntry({
-          time: new Date(hlTime.millis()),
-          counter: hlTime.counter(),
-          clientId: hlTime.node(),
-          entry: localEntry,
-        });
-        counter++;
-      }
-      debug && log.debug(`Uploaded ${counter} local oplog entries to ${pluginId}.`);
 
       // Download oplog entries created by other clients
+      log.debug(`Attempting to discover merkles for OTHER clients on server and download their oplog entries...`);
       for await (const remoteMerkleCandidate of plugin.getRemoteMerkles({ excludeClientIds: [localClientId] })) {
         let diffDate = null;
         const { merkle: remoteMerkle, clientId: remoteClientId } = remoteMerkleCandidate;
         try {
           diffDate = findMerkleDiffDate(remoteMerkle, ownLocalMerkle);
+          log.debug(`Local/remote merkle comparison results:`, { remoteMerkle, ownLocalMerkle, diffDate });
           if (diffDate) {
             log.debug(`Own merkle differs from ${remoteClientId} merkle at ${diffDate.toISOString()}`);
           } else {
@@ -119,12 +131,23 @@ export async function sync() {
           );
         }
 
-        for await (const remoteEntry of plugin.getRemoteEntries({ clientId: remoteClientId, afterTime: diffDate })) {
-          db.applyOplogEntry(remoteEntry); // Note that this will increment the local HLC time.
+        let appliedRemoteEntriesCounter = 0;
+        if (diffDate) {
+          for await (const remoteEntry of plugin.getRemoteEntries({ clientId: remoteClientId, afterTime: diffDate })) {
+            db.applyOplogEntry(remoteEntry); // Note that this will increment the local HLC time.
 
-          // If flow of execution makes it this far, we know that at least one remote oplog entry was successfully
-          // downloaded AND applied to our local oplog store, therefore it's safe to update the local merkle.
-          ownLocalMerkle.insertHLTime(HLTime.parse(remoteEntry.hlcTime));
+            // If flow of execution makes it this far, we know that at least one remote oplog entry was successfully
+            // downloaded AND applied to our local oplog store, therefore it's safe to update the local merkle.
+            ownLocalMerkle.insertHLTime(HLTime.parse(remoteEntry.hlcTime));
+
+            appliedRemoteEntriesCounter++;
+          }
+        }
+
+        // Don't bother uploading/saving our merkle unless we actually applied new entries.
+        if (appliedRemoteEntriesCounter > 0) {
+          plugin.saveRemoteMerkle(localClientId, ownLocalMerkle);
+          db.saveOplogMerkle(ownLocalMerkle);
         }
       }
     } catch (error) {
@@ -136,7 +159,11 @@ export async function sync() {
 function findMerkleDiffDate(merkleCandidate: MerkleTreeCompatible, merkle2: MerkleTree): Date | null {
   const merkle1 = MerkleTree.fromObj(merkleCandidate);
   const diffPath = merkle2.findDiff(merkle1);
-  return diffPath.length > 0 ? new Date(convertTreePathToTime(diffPath)) : null;
+  if (Array.isArray(diffPath)) {
+    return diffPath.length > 0 ? new Date(convertTreePathToTime(diffPath)) : new Date(0);
+  } else {
+    return null;
+  }
 }
 
 export async function registerSyncPlugin(plugin: SyncPlugin) {
