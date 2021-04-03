@@ -1,6 +1,7 @@
 /// <reference types="../../types/common" />
 import { describe, expect, it } from '@jest/globals';
 import { fail } from 'assert';
+import * as sampleMerkle1 from './sample_merkle_01.json';
 
 import {
   convertTimeToTreePath,
@@ -220,13 +221,18 @@ describe('MerkleTree', () => {
     expect(tree.pathToOldestLeaf()).toEqual(['0', '0', '2']);
   });
 
-  it('pathToNewestLeaf() works', () => {
+  it('pathToNewestLeaf() works with a small tree', () => {
     const tree = MerkleTree.fromObj(plainObjTree);
     expect(tree.pathToNewestLeaf()).toEqual(['2']);
 
     tree.set(['2', '1', '2'], 222);
     tree.set(['0', '1', '2'], 111);
     expect(tree.pathToNewestLeaf()).toEqual(['2', '1', '2']);
+  });
+
+  it('pathToNewestLeaf() works with a BIG tree', () => {
+    const tree = MerkleTree.fromObj(sampleMerkle1);
+    expect(tree.pathToNewestLeaf().join('')).toEqual('1212201110111001');
   });
 
   describe('prune()', () => {
@@ -250,7 +256,7 @@ describe('MerkleTree', () => {
 
   describe('convertTimeToTreePath()', () => {
     it('works with the smallest allowed time', () => {
-      expect(convertTimeToTreePath(1)).toEqual(['0']);
+      expect(convertTimeToTreePath(1)).toEqual('00000000000000000'.split(''));
     });
 
     it('works with the max time', () => {
@@ -258,9 +264,9 @@ describe('MerkleTree', () => {
     });
 
     it.each([
-      [883747, '112'],
-      [1581859883747, '1211121110001201'],
-      [2208988800000, '2120021110201100'],
+      [883747, '00000000000000112'],
+      [1581859883747, '01211121110001201'],
+      [2208988800000, '02120021110201100'],
     ])('converts time "%i" to path %s)', (time, expectedPath) => {
       expect(convertTimeToTreePath(time)).toEqual(expectedPath.split(''));
     });

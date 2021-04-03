@@ -386,9 +386,11 @@ export function convertTimeToTreePath(msecTime: number): BaseThreeTreePath {
   // Use .toString(radix) to convert the number to base-3 (e.g., 36816480 becomes '2120021110201100')
   const baseThreeMinutes = Number(minutesInt).toString(3);
 
+  const paddedBaseThreeMinutes = '0'.repeat(MAX_TREEPATH_LENGTH - baseThreeMinutes.length) + baseThreeMinutes;
+
   // Split the string into an array. Technically you could skip this since the string can be used like an array in
   // most cases; we're doing it to make things a bit more explicit/strict.
-  const treePath = baseThreeMinutes.split('') as BaseThreeTreePath;
+  const treePath = paddedBaseThreeMinutes.split('') as BaseThreeTreePath;
 
   if (treePath.length > MAX_TREEPATH_LENGTH) {
     throw new MerkleTree.MaxPathLengthError(treePath);
