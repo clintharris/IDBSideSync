@@ -692,7 +692,7 @@ let googleDrivePlugin = null;
 
 async function loadGoogleDrivePlugin() {
   googleDrivePlugin = new IDBSideSync.plugins.googledrive.GoogleDrivePlugin({
-    clientId: '1004853515655-8qhi3kf64cllut2no4trescfq3p6jknm.apps.googleusercontent.com',
+    googleAppClientId: '1004853515655-8qhi3kf64cllut2no4trescfq3p6jknm.apps.googleusercontent.com',
     defaultFolderName: 'IDBSideSync ToDo App',
     onSignInChange: onGoogleSignInChange,
   });
@@ -829,9 +829,9 @@ async function setupSync() {
 // Delay the sync setup a bit to avoid taking resources away from getting the app to a usable state.
 setTimeout(setupSync, 1000);
 
-async function syncNow() {
+async function syncNow(forceFullSync) {
   console.log('Starting sync...');
-  await IDBSideSync.sync();
+  await IDBSideSync.sync({ forceFullSync });
   render();
 }
 

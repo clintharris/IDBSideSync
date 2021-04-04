@@ -25,15 +25,14 @@ export const DEFAULT_GAPI_FILE_LIST_PARAMS = {
   fields: `nextPageToken, files(${GAPI_FILE_FIELDS})`,
 };
 
-type SignInChangeHandler = (userProfile: UserProfile | null, settings: SyncProfileSettings) => void;
-
 export class GoogleDrivePlugin implements SyncPlugin {
   public static PLUGIN_ID = libName;
 
-  private clientId: string;
+  private googleAppClientId: string;
   private remoteFolderName: string;
   private remoteFolderId?: string;
   private remoteFolderLink?: string;
+  private mostRecentUploadedEntryTimeMsec: number = 0;
 
   private listeners: {
     signInChange: SignInChangeHandler[];
@@ -42,18 +41,18 @@ export class GoogleDrivePlugin implements SyncPlugin {
   };
 
   constructor(options: {
-    clientId: string;
+    googleAppClientId: string;
     defaultFolderName: string;
     remoteFolderId?: string;
     onSignInChange?: SignInChangeHandler;
   }) {
-    if (!options || typeof options.clientId !== 'string') {
-      const errMsg = `Missing options param with clientId. Example: setup({ clientId: '...' })`;
+    if (!options || typeof options.googleAppClientId !== 'string') {
+      const errMsg = `Missing options param with googleAppClientId. Example: setup({ googleAppClientId: '...' })`;
       log.error(errMsg);
       throw new Error(`[${libName}] ${errMsg}`);
     }
 
-    this.clientId = options.clientId;
+    this.googleAppClientId = options.googleAppClientId;
     this.remoteFolderName = options.defaultFolderName;
 
     if (typeof options.remoteFolderId === 'string') {
@@ -129,7 +128,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
             // a browser, and specify that the application will access user data, it states that only the clientId can
             // be used securely. See https://developer.okta.com/blog/2019/01/22/oauth-api-keys-arent-safe-in-mobile-apps
             // for more info on why including the API key in a browser app is a bad idea.
-            clientId: this.clientId,
+            clientId: this.googleAppClientId,
             discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
             scope: 'https://www.googleapis.com/auth/drive.file',
           })
@@ -187,6 +186,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
       remoteFolderName: this.remoteFolderName,
       remoteFolderId: this.remoteFolderId,
       remoteFolderLink: this.remoteFolderLink,
+      mostRecentUploadedEntryTime: this.mostRecentUploadedEntryTimeMsec,
     };
   }
 
@@ -201,6 +201,10 @@ export class GoogleDrivePlugin implements SyncPlugin {
 
     if (typeof settings.remoteFolderLink === 'string' && settings.remoteFolderLink !== '') {
       this.remoteFolderLink = settings.remoteFolderLink;
+    }
+
+    if (typeof settings.mostRecentUploadedEntryTime === 'number') {
+      this.mostRecentUploadedEntryTimeMsec = settings.mostRecentUploadedEntryTime;
     }
 
     this.setupRemoteFolder();
@@ -419,32 +423,45 @@ export class GoogleDrivePlugin implements SyncPlugin {
   }
 
   /**
+   * Returns the time of the most recent oplog entry known to have been uploaded to the remote server for the current
+   * client. Ideally this would be determined by querying Google Drive. That approach involves asking the Google Drive
+   * API to order the results of a "list files" operation (i.e., order by date). Unfortunately, as of April 2021, the
+   * "list files" documentation states that "order by" doesn't work for users that have > ~1M files (see `orderBy` in
+   * https://developers.google.com/drive/api/v3/reference/files/list). To avoid that problem (even though it's rare),
+   * we're going to determine "most recent uploaded entry" by using a local state variable that is updated whenever
+   * oplog entries are uploaded.
+   */
+  public async getMostRecentUploadedEntryTime(): Promise<Date> {
+    return new Date(this.mostRecentUploadedEntryTimeMsec);
+  }
+
+  /**
    * A convenience function that wraps the paginated results of `getFileListPage()` and returns an async generator so
    * that you can do something like the following:
    *
    * @example
    * ```
-   * for await (let merkle of getRemoteMerkles()) {
-   *   await doSomethingAsyncWith(entry)
+   * for await (let record of getRemoteClientRecords()) {
+   *   await doSomethingAsyncWith(record)
    * }
    * ```
    *
    * For more info on async generators, etc., see https://javascript.info/async-iterators-generators.
    */
-  public async *getRemoteMerkles(
+  public async *getRemoteClientRecords(
     filter: {
       includeClientIds?: string[];
       excludeClientIds?: string[];
     } = {}
-  ): AsyncGenerator<ClientIdMerklePair, void, void> {
-    debug && log.debug('Attempting to get remote merkle(s) from Google Drive using filter criteria:', filter);
+  ): AsyncGenerator<ClientRecord, void, void> {
+    debug && log.debug('Attempting to get remote client record(s) from Google Drive using filter criteria:', filter);
 
     const nameContains = Array.isArray(filter.includeClientIds)
-      ? filter.includeClientIds.map((clientId) => clientId + FILENAME_PART.merkleExt)
-      : [FILENAME_PART.merkleExt];
+      ? filter.includeClientIds.map((clientId) => clientId + FILENAME_PART.clientInfoExt)
+      : [FILENAME_PART.clientInfoExt];
 
     const nameNotContains = Array.isArray(filter.excludeClientIds)
-      ? filter.excludeClientIds.map((clientId) => clientId + FILENAME_PART.merkleExt)
+      ? filter.excludeClientIds.map((clientId) => clientId + FILENAME_PART.clientInfoExt)
       : undefined;
 
     let pageResults;
@@ -460,7 +477,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
       });
       pageToken = pageResults.nextPageToken;
 
-      debug && log.debug(`Found ${pageResults.files.length} merkle files (${pageToken ? '' : 'no '}more pages exist).`);
+      log.debug(`Found ${pageResults.files.length} client record files (${pageToken ? '' : 'no '}more pages exist).`);
 
       for (const file of pageResults.files) {
         try {
@@ -468,7 +485,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
           let response = await gapi.client.drive.files.get({ fileId: file.id, alt: 'media' });
           const clientIdWithPrefix = file.name.split('.')[0];
           const clientId = clientIdWithPrefix.replace(FILENAME_PART.clientPrefix, '');
-          yield { clientId, merkle: response.result as MerkleTreeCompatible };
+          yield { clientId, data: response.result };
         } catch (error) {
           const fileName = `'${file.name}' (file ID: ${file.id})`;
           log.error(`Error on attempt to download '${fileName}:`, error);
@@ -500,7 +517,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
       });
       pageToken = pageResults.nextPageToken;
 
-      debug && log.debug(`Found ${pageResults.files.length} merkle files (${pageToken ? '' : 'no '}more pages exist).`);
+      log.debug(`Found ${pageResults.files.length} oplog entry files (${pageToken ? '' : 'no '}more pages exist).`);
 
       for (const file of pageResults.files) {
         try {
@@ -523,10 +540,10 @@ export class GoogleDrivePlugin implements SyncPlugin {
     counter: number;
     clientId: string;
     entry: OpLogEntry;
-  }): Promise<void> {
-    debug && log.debug('Attempting to save oplog entry to Google Drive:', params.entry);
-
+    overwriteExisting?: boolean;
+  }): Promise<{ numUploaded: number }> {
     const entryFileName = oplogEntryToFileName(params);
+    debug && log.debug('Attempting to save oplog entry:', entryFileName);
 
     // WARNING: Google Drive allows multiple files to exist with the same name. Always check to see if a file exists
     // before uploading it and then decide if it should be overwritten (based on existing file's file ID) or ignored.
@@ -535,7 +552,6 @@ export class GoogleDrivePlugin implements SyncPlugin {
     try {
       const listParams: Parameters<typeof gapi.client.drive.files.list>[0] = { ...DEFAULT_GAPI_FILE_LIST_PARAMS };
       listParams.q = `name = '${entryFileName}'`;
-      debug && log.debug('Checking to see if oplog entry already exists on server with name:', entryFileName);
       const response = await gapi.client.drive.files.list(listParams);
       if (Array.isArray(response.result.files) && response.result.files.length > 0) {
         existingFileId = response.result.files[0].id;
@@ -545,9 +561,9 @@ export class GoogleDrivePlugin implements SyncPlugin {
       throw new FileListError(error);
     }
 
-    if (existingFileId) {
-      log.warn(`Oplog entry with file name ${entryFileName} already exists; won't upload/overwrite.`);
-      return;
+    if (existingFileId && !params.overwriteExisting) {
+      debug && log.debug(`Oplog entry already exists; won't overwrite.`, entryFileName);
+      return { numUploaded: 0 };
     }
 
     await this.saveFile({
@@ -560,12 +576,18 @@ export class GoogleDrivePlugin implements SyncPlugin {
       // timestamp.
       createdTime: params.time.toISOString(),
     });
+
+    if (params.time.getTime() > this.mostRecentUploadedEntryTimeMsec) {
+      this.mostRecentUploadedEntryTimeMsec = params.time.getTime();
+    }
+
+    return { numUploaded: 1 };
   }
 
-  public async saveRemoteMerkle(clientId: string, merkle: MerkleTreeCompatible): Promise<void> {
-    debug && log.debug('Attempting to add oplog entry to Google Drive:', merkle);
+  public async saveRemoteClientRecord(clientId: string, options: { overwriteIfExists?: boolean } = {}): Promise<void> {
+    debug && log.debug('Attempting to save client record to Google Drive.');
 
-    const merkleFileName = FILENAME_PART.clientPrefix + clientId + FILENAME_PART.merkleExt;
+    const fileName = FILENAME_PART.clientPrefix + clientId + FILENAME_PART.clientInfoExt;
 
     // WARNING: Google Drive allows multiple files to exist with the same name. Always check to see if a file exists
     // before uploading it and then decide if it should be overwritten (based on existing file's file ID) or ignored.
@@ -573,26 +595,30 @@ export class GoogleDrivePlugin implements SyncPlugin {
 
     try {
       const listParams: Parameters<typeof gapi.client.drive.files.list>[0] = { ...DEFAULT_GAPI_FILE_LIST_PARAMS };
-      listParams.q = `name = '${merkleFileName}'`;
-      debug && log.debug('Checking to see if merkle file already exists on server with name:', merkleFileName);
+      listParams.q = `name = '${fileName}'`;
+      debug && log.debug('Checking to see if client record file already exists on server with name:', fileName);
       const response = await gapi.client.drive.files.list(listParams);
       if (Array.isArray(response.result.files) && response.result.files.length > 0) {
         existingFileId = response.result.files[0].id;
       }
     } catch (error) {
-      log.error(`Error while attempting to see if file already exists on server with name ${merkleFileName}:`, error);
+      log.error(`Error while attempting to see if file already exists on server with name ${fileName}:`, error);
       throw new FileListError(error);
     }
 
     if (existingFileId) {
-      debug && log.debug(`Merkle file with file name ${merkleFileName} already exists; will overwrite.`);
-      return;
+      if (!options.overwriteIfExists) {
+        log.debug(`Client record with file name ${fileName} already exists; won't bother overwriting.`);
+        return;
+      } else {
+        log.debug(`Overwriting existing client record file '${fileName}'.`);
+      }
     }
 
     await this.saveFile({
       fileId: existingFileId,
-      fileName: merkleFileName,
-      fileData: merkle,
+      fileName: fileName,
+      fileData: {},
     });
   }
 
@@ -663,7 +689,6 @@ export class GoogleDrivePlugin implements SyncPlugin {
         body: multipartRequestBody,
       });
 
-      debug && log.debug('Successfully saved file; response:', response);
       return response.result;
     } catch (error) {
       log.error('Error on attempt to save file:', error);

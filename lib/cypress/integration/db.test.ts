@@ -1,9 +1,7 @@
-import { lowerFirst } from 'cypress/types/lodash';
 import { HLTime } from '../../src/HLTime';
 import * as IDBSideSync from '../../src/index';
 import { HLClock, OPLOG_STORE } from '../../src/index';
-import { MerkleTree } from '../../src/MerkleTree';
-import { makeNodeId, request } from '../../src/utils';
+import { makeClientId } from '../../src/utils';
 import {
   assertEntries,
   deleteDb,
@@ -11,7 +9,6 @@ import {
   GLOBAL_SETTINGS_STORE,
   insertDummyOpLogEntries,
   log,
-  resolveOnTxComplete,
   SCOPED_SETTINGS_STORE,
   TODOS_DB,
   TODO_ITEMS_STORE,
@@ -43,8 +40,8 @@ context('db', () => {
 
     const txReq = db.transaction(IDBSideSync.OPLOG_STORE, 'readonly');
     const storeReq = txReq.objectStore(IDBSideSync.OPLOG_STORE);
-    const indexReq = storeReq.index(IDBSideSync.OPLOG_INDEX);
-    expect(indexReq.name).to.equal(IDBSideSync.OPLOG_INDEX);
+    const indexReq = storeReq.index(IDBSideSync.OPLOG_INDEX_BY_STORE_OBJKEY_PROP_TIME);
+    expect(indexReq.name).to.equal(IDBSideSync.OPLOG_INDEX_BY_STORE_OBJKEY_PROP_TIME);
   });
 
   it('init() initializes all settings', async () => {
@@ -59,76 +56,6 @@ context('db', () => {
     expect(settings).to.exist;
     expect(settings).to.have.property('nodeId');
     expect(settings.nodeId).not.to.be.empty;
-  });
-
-  describe('getOplogMerkleTree()', () => {
-    it('creates a new/empty merkle when none exists in IndexedDB', async () => {
-      const merkle = await IDBSideSync.getOplogMerkleTree();
-      assert(merkle instanceof MerkleTree, 'Should return an instance of MerkleTree');
-      assert(merkle.hasBranches() === false, `Should be new/empty.`);
-    });
-
-    it('loads a valid, saved merkle from IndexedDB', async () => {
-      const merklePlainObj: MerkleTreeCompatible = {
-        hash: 111 ^ 222 ^ 333,
-        branches: {
-          '0': {
-            hash: 111 ^ 222,
-            branches: {
-              '0': {
-                hash: 111,
-                branches: {},
-              },
-              '2': {
-                hash: 222,
-                branches: {},
-              },
-            },
-          },
-          '2': {
-            hash: 333,
-            branches: {},
-          },
-        },
-      };
-      const expectedMerkle = MerkleTree.fromObj(merklePlainObj);
-
-      // Save a valid Merkle tree object to IndexedDB
-      await resolveOnTxComplete([IDBSideSync.META_STORE], 'readwrite', async (metaStore) => {
-        metaStore.put(expectedMerkle, IDBSideSync.OPLOG_MERKLE_OBJ_KEY);
-      });
-
-      const actualMerkle = await IDBSideSync.getOplogMerkleTree();
-
-      assert(actualMerkle instanceof MerkleTree, 'Should return an instance of MerkleTree');
-      expect(actualMerkle).deep.equals(expectedMerkle);
-    });
-
-    it('creates new merkle if saved version is invalid', async () => {
-      // Save an invalid Merkle tree object to IndexedDB
-      await resolveOnTxComplete([IDBSideSync.META_STORE], 'readwrite', async (metaStore) => {
-        metaStore.put({}, IDBSideSync.OPLOG_MERKLE_OBJ_KEY);
-      });
-
-      const actualMerkle = await IDBSideSync.getOplogMerkleTree();
-      assert(actualMerkle instanceof MerkleTree, 'Should return an instance of MerkleTree');
-      assert(actualMerkle.hasBranches() === false, `Should be new/empty.`);
-    });
-  });
-
-  it('deleteOplogMerkle() works', async () => {
-    await resolveOnTxComplete([IDBSideSync.META_STORE], 'readwrite', async (metaStore) => {
-      metaStore.put({}, IDBSideSync.OPLOG_MERKLE_OBJ_KEY);
-    });
-
-    await IDBSideSync.deleteOplogMerkle();
-
-    let actualMerkle;
-    await resolveOnTxComplete([IDBSideSync.META_STORE], 'readonly', async (metaStore) => {
-      actualMerkle = await request(metaStore.get(IDBSideSync.OPLOG_MERKLE_OBJ_KEY));
-    });
-
-    assert(actualMerkle === undefined, 'Expected merkle to not exist in IndexedDB');
   });
 
   describe('applyOplogEntry()', () => {
@@ -154,9 +81,11 @@ context('db', () => {
       };
       let foundSettingObj;
       const objectKey = [expectedSettingObj.scope, expectedSettingObj.name];
+      let clientId = makeClientId();
 
       await IDBSideSync.applyOplogEntry({
-        hlcTime: `2021-01-24T13:23:14.203Z_0000_${makeNodeId()}`,
+        clientId,
+        hlcTime: `2021-01-24T13:23:14.203Z_0000_${clientId}`,
         objectKey: objectKey,
         prop: 'bgColor',
         store: SCOPED_SETTINGS_STORE,
@@ -173,9 +102,11 @@ context('db', () => {
       let foundTodo;
       const objectKey = 123;
       const expected = { id: objectKey, name: 'foo ' };
+      let clientId = makeClientId();
 
       await IDBSideSync.applyOplogEntry({
-        hlcTime: `2021-01-24T13:23:14.203Z_0001_${makeNodeId()}`,
+        clientId,
+        hlcTime: `2021-01-24T13:23:14.203Z_0001_${clientId}`,
         objectKey: objectKey,
         prop: 'name',
         store: TODO_ITEMS_STORE,
@@ -190,15 +121,17 @@ context('db', () => {
     });
 
     it('ignores oplog entry if a newer one exists', async () => {
+      const clientId = makeClientId();
       const objectKey = 123;
       const olderEntry = {
-        hlcTime: `2021-01-24T13:23:14.203Z_0000_${makeNodeId()}`,
+        clientId,
+        hlcTime: `2021-01-24T13:23:14.203Z_0000_${clientId}`,
         objectKey: objectKey,
         prop: 'name',
         store: TODO_ITEMS_STORE,
         value: 'old',
       };
-      const newerEntry = { ...olderEntry, hlcTime: `2021-01-24T13:23:14.203Z_0001_${makeNodeId()}`, value: 'new' };
+      const newerEntry = { ...olderEntry, hlcTime: `2021-01-24T13:23:14.203Z_0001_${clientId}`, value: 'new' };
       let foundTodo;
       let foundEntries;
 
@@ -216,9 +149,11 @@ context('db', () => {
     });
 
     it('advances local HL clock time to be more recent than oplog entry HLC timestamp', async () => {
-      IDBSideSync.HLClock.setTime(new HLTime(Date.now(), 0, 'thisnode'));
+      const clientId = 'thisnode';
+      IDBSideSync.HLClock.setTime(new HLTime(Date.now(), 0, clientId));
 
       let oplogEntry: OpLogEntry = {
+        clientId,
         hlcTime: '',
         objectKey: 123,
         prop: 'name',
@@ -254,23 +189,27 @@ context('db', () => {
 
     it('works when multiple entries affect same object in store with a keyPath', async () => {
       const expectedTodo: TodoItem = { id: 1, name: 'buy cookies', done: false };
+      const clientId = makeClientId();
       const todoOplogEntries = [
         {
-          hlcTime: `2021-01-24T13:23:14.203Z_0000_${makeNodeId()}`,
+          clientId,
+          hlcTime: `2021-01-24T13:23:14.203Z_0000_${makeClientId()}`,
           objectKey: expectedTodo.id,
           prop: 'id',
           store: TODO_ITEMS_STORE,
           value: expectedTodo.id,
         },
         {
-          hlcTime: `2021-01-24T13:23:14.203Z_0001_${makeNodeId()}`,
+          clientId,
+          hlcTime: `2021-01-24T13:23:14.203Z_0001_${makeClientId()}`,
           objectKey: expectedTodo.id,
           prop: 'name',
           store: TODO_ITEMS_STORE,
           value: expectedTodo.name,
         },
         {
-          hlcTime: `2021-01-24T13:23:14.203Z_0002_${makeNodeId()}`,
+          clientId,
+          hlcTime: `2021-01-24T13:23:14.203Z_0002_${makeClientId()}`,
           objectKey: expectedTodo.id,
           prop: 'done',
           store: TODO_ITEMS_STORE,
@@ -303,6 +242,7 @@ context('db', () => {
     });
 
     it('works when multiple entries affect same object in store without a keyPath', async () => {
+      const clientId = makeClientId();
       const objectKey = [111, 222];
       const sharedWhere = { store: GLOBAL_SETTINGS_STORE, objectKey: objectKey };
       let foundObj;
@@ -310,21 +250,24 @@ context('db', () => {
 
       const oplogEntries = [
         {
-          hlcTime: `2021-01-24T13:23:14.203Z_0000_${makeNodeId()}`,
+          clientId,
+          hlcTime: `2021-01-24T13:23:14.203Z_0000_${makeClientId()}`,
           objectKey: objectKey,
           prop: 'foo',
           store: GLOBAL_SETTINGS_STORE,
           value: 'bar',
         },
         {
-          hlcTime: `2021-01-24T13:23:14.203Z_0001_${makeNodeId()}`,
+          clientId,
+          hlcTime: `2021-01-24T13:23:14.203Z_0001_${makeClientId()}`,
           objectKey: objectKey,
           prop: 'meaning',
           store: GLOBAL_SETTINGS_STORE,
           value: 42,
         },
         {
-          hlcTime: `2021-01-24T13:23:14.203Z_0002_${makeNodeId()}`,
+          clientId,
+          hlcTime: `2021-01-24T13:23:14.203Z_0002_${makeClientId()}`,
           objectKey: objectKey,
           prop: 'foo',
           store: GLOBAL_SETTINGS_STORE,
@@ -347,22 +290,110 @@ context('db', () => {
     });
   });
 
-  describe('getEntriesPage()', async () => {
+  describe('getMostRecentEntryForClient()', async () => {
+    const dummyEntryCount = 5;
+    const firstEntryTime = Date.parse('2021-03-01T20:00:00.000Z');
+    const clientId1 = makeClientId();
+    const clientId2 = makeClientId();
+    let mostRecentClientId1Entry;
+
+    beforeEach(async () => {
+      log(`Inserting ${dummyEntryCount} dummy objects into ${OPLOG_STORE} for client ${clientId1}.`);
+      mostRecentClientId1Entry = await insertDummyOpLogEntries(dummyEntryCount, firstEntryTime, clientId1);
+      log(`Inserting ${dummyEntryCount} dummy objects into ${OPLOG_STORE} for client ${clientId2}.`);
+      await insertDummyOpLogEntries(dummyEntryCount, firstEntryTime, clientId2);
+    });
+
+    it('returns expected', async () => {
+      const expectedEntry = mostRecentClientId1Entry;
+      let actual = await IDBSideSync.getMostRecentEntryForClient(expectedEntry.clientId);
+      expect(actual).to.deep.equal(expectedEntry);
+    });
+  });
+
+  describe('getEntriesByClientPage()', async () => {
     const dummyEntryCount = 42;
     const firstEntryTime = Date.parse('2021-03-01T20:00:00.000Z');
+    const clientId1 = makeClientId();
+    const clientId2 = makeClientId();
 
-    function firstEntryTimePlus(msec: number): Date {
-      return new Date(firstEntryTime + msec);
-    }
+    beforeEach(async () => {
+      log(`Inserting ${dummyEntryCount} dummy objects into ${OPLOG_STORE}.`);
+      await insertDummyOpLogEntries(dummyEntryCount, firstEntryTime, clientId1);
+      await insertDummyOpLogEntries(dummyEntryCount, firstEntryTime, clientId2);
+    });
+
+    it('returns expected with default parameters', async () => {
+      let expectedClientId = clientId2;
+      let entries = await IDBSideSync.getEntriesByClientPage(expectedClientId);
+      let prevHlcTime = '';
+
+      if (dummyEntryCount < IDBSideSync.DEFAULT_ENTRY_PAGE_SIZE) {
+        expect(entries).to.have.lengthOf(dummyEntryCount);
+      } else {
+        expect(entries).to.have.lengthOf(IDBSideSync.DEFAULT_ENTRY_PAGE_SIZE);
+      }
+
+      let foundEntryWithWrongClientId = false;
+      for (let entry of entries) {
+        if (entry.clientId !== expectedClientId) {
+          foundEntryWithWrongClientId = true;
+          break;
+        }
+        assert.isTrue(entry.hlcTime > prevHlcTime, `entries are returned in order of HLC time`);
+        prevHlcTime = entry.hlcTime;
+      }
+      assert.isFalse(foundEntryWithWrongClientId, `All all entries to have .clientId === ${expectedClientId}`);
+    });
+
+    it('paginates results correctly', async () => {
+      const pageSize = 10;
+      let prevHlcTime = '99999';
+      let counter = 0;
+      let expectedClientId = clientId1;
+
+      for (let page = 0; true; page++) {
+        let entries = await IDBSideSync.getEntriesByClientPage(expectedClientId, { page, pageSize, newestFirst: true });
+        counter += entries.length;
+        let foundEntryWithWrongClientId = false;
+
+        for (let entry of entries) {
+          if (entry.clientId !== expectedClientId) {
+            foundEntryWithWrongClientId = true;
+            break;
+          }
+          assert.isTrue(entry.hlcTime < prevHlcTime, `entries are returned in order of HLC time, NEWEST first`);
+          prevHlcTime = entry.hlcTime;
+        }
+
+        assert.isFalse(foundEntryWithWrongClientId, `All all entries to have .clientId === ${expectedClientId}`);
+
+        if (entries.length < pageSize) {
+          break;
+        }
+      }
+
+      assert.equal(counter, dummyEntryCount);
+    });
+  });
+
+  describe('getEntriesByTimePage()', async () => {
+    const dummyEntryCount = 42;
+    const firstEntryTime = Date.parse('2021-03-01T20:00:00.000Z');
 
     beforeEach(async () => {
       log(`Inserting ${dummyEntryCount} dummy objects into ${OPLOG_STORE}.`);
       await insertDummyOpLogEntries(dummyEntryCount, firstEntryTime);
     });
 
-    it('returns expected when no parameters are specified', async () => {
-      let entries = await IDBSideSync.getEntriesPage();
-      expect(entries).to.have.lengthOf(5);
+    it('returns expected with default parameters', async () => {
+      let entries = await IDBSideSync.getEntriesByTimePage();
+
+      if (dummyEntryCount < IDBSideSync.DEFAULT_ENTRY_PAGE_SIZE) {
+        expect(entries).to.have.lengthOf(dummyEntryCount);
+      } else {
+        expect(entries).to.have.lengthOf(IDBSideSync.DEFAULT_ENTRY_PAGE_SIZE);
+      }
     });
 
     it('paginates results correctly', async () => {
@@ -371,7 +402,7 @@ context('db', () => {
       let counter = 0;
 
       for (let page = 0; true; page++) {
-        let entries = await IDBSideSync.getEntriesPage({ page, pageSize });
+        let entries = await IDBSideSync.getEntriesByTimePage({ page, pageSize });
         counter += entries.length;
         for (let entry of entries) {
           assert.isTrue(entry.hlcTime > prevHlcTime, `entries are returned in order of HLC time`);
@@ -387,7 +418,7 @@ context('db', () => {
     });
   });
 
-  describe('getEntries()', async () => {
+  describe('getEntriesByTime()', async () => {
     const dummyEntryCount = 62;
     const firstEntryTime = Date.parse('2021-03-01T20:00:00.000Z');
 
@@ -400,10 +431,10 @@ context('db', () => {
       await insertDummyOpLogEntries(dummyEntryCount, firstEntryTime);
     });
 
-    it('returns expected when no parameters are specified', async () => {
+    it('returns expected with default parameters', async () => {
       let counter = 0;
       let prevHlcTime = '';
-      for await (const entry of IDBSideSync.getEntries()) {
+      for await (const entry of IDBSideSync.getEntriesByTime()) {
         assert.isTrue(entry.hlcTime > prevHlcTime, `entries are returned in order of HLC time`);
         counter++;
         prevHlcTime = entry.hlcTime;
@@ -416,7 +447,7 @@ context('db', () => {
       const minDate = firstEntryTimePlus(skipCount);
       let counter = 0;
       let prevHlcTime = '';
-      for await (const entry of IDBSideSync.getEntries({ afterTime: minDate })) {
+      for await (const entry of IDBSideSync.getEntriesByTime({ afterTime: minDate })) {
         if (prevHlcTime === '') {
           assert.isTrue(
             entry.hlcTime.startsWith(minDate.toISOString()),

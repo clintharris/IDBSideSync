@@ -107,6 +107,7 @@ export class HLTime {
     return this._state.counter;
   }
 
+  //TODO: remove node ID from HLTime?
   node() {
     return this._state.node;
   }

@@ -17,7 +17,7 @@ export function noOp() {}
  *
  * @returns a 16-char, presumably-unique string.
  */
-export function makeNodeId(): string {
+export function makeClientId(): string {
   return uuid()
     .replace(/-/g, '')
     .slice(-HLTime.NODE_PART_STR_LENGTH);
@@ -130,6 +130,7 @@ export function isEventWithTargetError(thing: unknown): thing is EventWithTarget
 export const logPrefix = '[' + libName + ']';
 export const log = {
   log: console.log.bind(console, logPrefix),
+  todo: console.log.bind(console, '%c[TODO]', 'color:blue;font-weight:bold;'),
   debug: debug ? console.log.bind(console, logPrefix) : noOp,
   warn: console.warn.bind(console, logPrefix),
   error: console.error.bind(console, logPrefix),

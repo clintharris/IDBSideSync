@@ -137,11 +137,16 @@ export function waitForAFew(msec = 50): Promise<void> {
   });
 }
 
-export async function insertDummyOpLogEntries(dummyEntryCount: number, firstEntryTime: number): Promise<void> {
+export async function insertDummyOpLogEntries(
+  dummyEntryCount: number,
+  firstEntryTime: number,
+  clientId = 'testclient'
+): Promise<OpLogEntry> {
   const oplogEntries: OpLogEntry[] = [];
   for (let i = 1; i <= dummyEntryCount; i++) {
     oplogEntries.push({
-      hlcTime: `${new Date(firstEntryTime + i - 1).toISOString()}_0000_testnode`,
+      clientId,
+      hlcTime: `${new Date(firstEntryTime + i - 1).toISOString()}_0000_${clientId}`,
       objectKey: i,
       prop: 'foo',
       store: TODO_ITEMS_STORE,
@@ -156,6 +161,8 @@ export async function insertDummyOpLogEntries(dummyEntryCount: number, firstEntr
       oplogStore.add(entry);
     }
   });
+
+  return oplogEntries[oplogEntries.length - 1];
 }
 
 // Copied from https://github.com/sindresorhus/array-shuffle/blob/main/index.js

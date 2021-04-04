@@ -227,8 +227,10 @@ export class IDBObjectStoreProxy {
     if (typeof newValue === 'object') {
       // Convert each property in the `value` to an OpLogEntry.
       for (const property in newValue) {
+        let hlTime = HLClock.tick();
         entries.push({
-          hlcTime: HLClock.tick().toString(),
+          clientId: hlTime.node(),
+          hlcTime: hlTime.toString(),
           store: this.target.name,
           objectKey: objectKey,
           prop: property,
@@ -237,8 +239,10 @@ export class IDBObjectStoreProxy {
       }
     } else {
       // It's possible to store non-object primitives in an object store, too (e.g., `store.put(true, "someKey")`).
+      let hlTime = HLClock.tick();
       entries.push({
-        hlcTime: HLClock.tick().toString(),
+        clientId: hlTime.node(),
+        hlcTime: hlTime.toString(),
         store: this.target.name,
         objectKey: objectKey,
         // If a non-object/primitive is being updated, then there isn't a property that's being updated--we're just

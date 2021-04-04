@@ -2,7 +2,6 @@
 
 import { HLClock } from './HLClock';
 import { HLTime } from './HLTime';
-import { MerkleTree } from './MerkleTree';
 import {
   debug,
   isEventWithTargetError,
@@ -10,8 +9,7 @@ import {
   isValidSideSyncSettings,
   libName,
   log,
-  makeNodeId,
-  transaction,
+  makeClientId,
 } from './utils';
 
 export enum STORE_NAME {
@@ -21,9 +19,11 @@ export enum STORE_NAME {
 
 export const OPLOG_STORE = STORE_NAME.OPLOG;
 export const META_STORE = STORE_NAME.META;
-export const OPLOG_INDEX = 'Indexed by: store, objectKey, prop, hlcTime';
+export const OPLOG_INDEX_BY_STORE_OBJKEY_PROP_TIME = 'Indexed by: store, objectKey, prop, hlcTime';
+export const OPLOG_INDEX_BY_CLIENTID_TIME = 'Indexed by: client ID, hlcTime';
 export const CACHED_SETTINGS_OBJ_KEY = 'settings';
 export const OPLOG_MERKLE_OBJ_KEY = 'oplogMerkle';
+export const DEFAULT_ENTRY_PAGE_SIZE = 100;
 
 // This is technically unnecessary, but a nice way to help make sure we're always referencing a valid OpLogEntry
 // property name when defining a `keyPath` for the object store.
@@ -31,7 +31,6 @@ const OPLOG_ENTRY_HLC_TIME_PROP_NAME: keyof OpLogEntry = 'hlcTime';
 
 let cachedDb: IDBDatabase;
 let cachedSettings: Settings;
-let cachedMerkle: MerkleTree;
 
 /**
  * This should be called as part of the upstream library handling an onupgradeneeded event (i.e., this won't be called
@@ -71,8 +70,12 @@ export function onupgradeneeded(event: IDBVersionChangeEvent): void {
   // `hlcTime` is included in the index `keyPath` is to affect the sorting.
   //
   // For more info see https://stackoverflow.com/a/15625231/62694.
-  const indexKeyPath: Array<keyof OpLogEntry> = ['store', 'objectKey', 'prop', 'hlcTime'];
-  oplogStore.createIndex(OPLOG_INDEX, indexKeyPath);
+  const indexByStoreObjKeyPropTimeKeyPath: Array<keyof OpLogEntry> = ['store', 'objectKey', 'prop', 'hlcTime'];
+  oplogStore.createIndex(OPLOG_INDEX_BY_STORE_OBJKEY_PROP_TIME, indexByStoreObjKeyPropTimeKeyPath);
+
+  // Create an index tailored to finding oplog entries by clientId
+  const indexbyClientIdTimeKeyPath: Array<keyof OpLogEntry> = ['clientId', 'hlcTime'];
+  oplogStore.createIndex(OPLOG_INDEX_BY_CLIENTID_TIME, indexbyClientIdTimeKeyPath);
 }
 
 /**
@@ -120,7 +123,7 @@ export function initSettings(): Promise<typeof cachedSettings> {
         resolve(cachedSettings);
       } else {
         debug && log.debug('No valid settings found in database; initializing new settings...');
-        cachedSettings = { nodeId: makeNodeId(), syncProfiles: [] };
+        cachedSettings = { nodeId: makeClientId(), syncProfiles: [] };
         const putReq = metaStore.put(cachedSettings, CACHED_SETTINGS_OBJ_KEY);
         putReq.onsuccess = () => {
           debug && log.debug('Successfully saved initial settings:', cachedSettings);
@@ -151,121 +154,114 @@ export function saveSettings(newSettings: Settings): Promise<Settings> {
   });
 }
 
-export async function saveOplogMerkle(merkle: MerkleTree): Promise<void> {
-  if (!cachedDb) {
-    throw new Error(`${libName} hasn't been initialized. Please call init() first.`);
-  }
-
-  return new Promise((resolve, reject) => {
-    const txReq = cachedDb.transaction([STORE_NAME.META], 'readwrite');
-    txReq.onabort = () => reject(new TransactionAbortedError(txReq.error));
-    txReq.onerror = (event) => {
-      const error = isEventWithTargetError(event) ? event.target.error : txReq.error;
-      const errMsg = `Error while attempting to save merkle tree to '${STORE_NAME.META}'`;
-      log.error(errMsg, error);
-      reject(new Error(`${libName} ${errMsg}`));
-    };
-
-    const metaStore = txReq.objectStore(STORE_NAME.META);
-    const putReq = metaStore.put(merkle, OPLOG_MERKLE_OBJ_KEY);
-
-    putReq.onsuccess = () => {
-      cachedMerkle = merkle;
-      debug && log.debug('Successfully saved merkle:', merkle);
-      resolve();
-    };
-  });
+export async function getMostRecentEntryForClient(clientId: string): Promise<OpLogEntry | null> {
+  const entries = await getEntriesByClientPage(clientId, { newestFirst: true, page: 0, pageSize: 1 });
+  return Promise.resolve(entries.length > 0 ? entries[0] : null);
 }
 
-export async function getOplogMerkleTree(): Promise<MerkleTree> {
-  if (!cachedDb) {
-    throw new Error(`${libName} hasn't been initialized. Please call init() first.`);
+export async function* getEntriesByClient(
+  clientId: string,
+  options: { afterTime?: Date | null } = {}
+): AsyncGenerator<OpLogEntry, void, void> {
+  let page = 0;
+  while (page >= 0) {
+    const entries = await getEntriesByClientPage(clientId, {
+      afterTime: options.afterTime,
+      page,
+      pageSize: DEFAULT_ENTRY_PAGE_SIZE,
+    });
+    page = entries.length ? page + 1 : -1;
+    for (const entry of entries) {
+      yield entry;
+    }
   }
+}
 
-  if (cachedMerkle) {
-    log.debug('Returning cached merkle tree.');
-    return Promise.resolve(cachedMerkle);
+export function getEntriesByClientPage(
+  clientId: string,
+  options: { afterTime?: Date | null; newestFirst?: boolean; page: number; pageSize: number } = {
+    page: 0,
+    pageSize: DEFAULT_ENTRY_PAGE_SIZE,
   }
-
+): Promise<OpLogEntry[]> {
   return new Promise((resolve, reject) => {
-    const txReq = cachedDb.transaction([STORE_NAME.META], 'readwrite');
+    let startTime = performance.now();
+    const txReq = cachedDb.transaction([STORE_NAME.OPLOG], 'readonly');
+    // txReq.oncomplete = () => resolve(txReq);
     txReq.onabort = () => reject(new TransactionAbortedError(txReq.error));
-    txReq.onerror = (event) => {
-      const error = isEventWithTargetError(event) ? event.target.error : txReq.error;
-      const errMsg = `Error while attempting to load merkle tree from '${STORE_NAME.META}'`;
-      log.error(errMsg, error);
-      reject(new Error(`${libName} ${errMsg}`));
-    };
+    txReq.onerror = (event) => reject(isEventWithTargetError(event) ? event.target.error : txReq.error);
 
-    const metaStore = txReq.objectStore(STORE_NAME.META);
-    const getReq = metaStore.get(OPLOG_MERKLE_OBJ_KEY);
+    const oplogStore = txReq.objectStore(STORE_NAME.OPLOG);
+    const oplogIndex = oplogStore.index(OPLOG_INDEX_BY_CLIENTID_TIME);
 
-    getReq.onsuccess = () => {
-      const result = getReq.result;
+    // Each key in the index (an array) must be "greater than or equal to" the "lower bounds" array (which, in effect,
+    // means each element of the key array needs to be >= the corresponding element in the lower bounds array).
+    const lowerBound = [clientId, options.afterTime instanceof Date ? options.afterTime.toISOString() : ''];
 
-      let newMerkle: MerkleTree = new MerkleTree();
+    // Each key in the index must be "less than or equal to" the following upper bounds key. We're using '9' for the
+    // upper bound of the `hlcTime` key element because we want to include all possible hlcTime values (i.e., we want
+    // all possible hlcTime values to be LESS THAN OR EQUAL TO this string), and the string '9' should always be >= any
+    // hlcTime value (e.g., '9' >= '2021-01-01...', etc.).
+    const upperBound = [clientId, '9'];
 
-      if (!result) {
-        log.debug(`No existing merkle data in ${STORE_NAME.META}; creating new merkle tree.`);
-      } else {
-        try {
-          debug && log.debug(`Attempting to parse merkle tree previously saved to ${STORE_NAME.META}.`);
-          newMerkle = MerkleTree.fromObj(result);
-        } catch (error) {
-          log.warn(`Invalid merkle saved to ${STORE_NAME.META}; deleting saved data and using new merkle instead.`);
-          metaStore.delete(OPLOG_MERKLE_OBJ_KEY).onsuccess = () => {
-            debug && log.debug(`Successfully deleted invalid merkle from '${STORE_NAME.META}'`);
-          };
-        }
+    const idxCursorReq = oplogIndex.openCursor(
+      IDBKeyRange.bound(lowerBound, upperBound),
+      options.newestFirst ? 'prev' : 'next'
+    );
+
+    const entries: OpLogEntry[] = [];
+    let cursorWasAdvanced = false;
+
+    idxCursorReq.onsuccess = function() {
+      const cursor = idxCursorReq.result;
+      if (!cursor) {
+        resolve(entries);
+        return;
       }
 
-      resolve(newMerkle);
+      if (!cursorWasAdvanced && options.page > 0) {
+        cursorWasAdvanced = true;
+        cursor.advance(options.page * options.pageSize);
+        return;
+      }
+
+      entries.push(cursor.value);
+
+      if (entries.length < options.pageSize) {
+        cursor.continue();
+      } else {
+        let stopTime = performance.now();
+        log.debug(`⏱ Took ${stopTime - startTime}msec to get ${options.pageSize} entries at page ${options.page}.`);
+        resolve(entries);
+      }
     };
   });
-}
-
-export async function deleteOplogMerkle(): Promise<void> {
-  if (!cachedDb) {
-    throw new Error(`${libName} hasn't been initialized. Please call init() first.`);
-  }
-
-  await transaction(cachedDb, [STORE_NAME.META], 'readwrite', async (metaStore) => {
-    metaStore.delete(OPLOG_MERKLE_OBJ_KEY).onsuccess = () => {
-      debug && log.debug(`Successfully deleted merkle from '${STORE_NAME.META}/OPLOG_MERKLE_OBJ_KEY'`);
-    };
-  });
-}
-
-export async function updateOplogMerkle(merkle: MerkleTree): Promise<void> {
-  let counter = 0;
-  let startTime = performance.now();
-
-  //TODO: get the right-most branch of the merkle tree, then get all local entries after that time
-  for await (const oplogEntry of getEntries()) {
-    merkle.insertHLTime(HLTime.parse(oplogEntry.hlcTime));
-    counter++;
-  }
-  let stopTime = performance.now();
-  log.debug(`⏱ Took ${stopTime - startTime}msec to add ${counter} entries to merkle tree.`);
 }
 
 /**
- * A convenience function that wraps the paginated results of `getEntriesPage()` and returns an async iteraterable
- * iterator so that you can do something like the following:
+ * A convenience function for iterating over local oplog entries in order of their HLTime, oldest first, and optionally
+ * including criteria for starting where the HLTime is >= some value. This function wraps the paginated results of
+ * `getEntriesByTimePage()` and returns an async iteraterable iterator so that you can do something like the following:
  *
  * @example
  * ```
- * for await (let entry of getEntries()) {
+ * for await (let entry of getEntriesByTime()) {
  *   await doSomethingAsyncWith(entry)
  * }
  * ```
  *
  * For more info on async generators, etc., see https://javascript.info/async-iterators-generators.
  */
-export async function* getEntries(params: { afterTime?: Date | null } = {}): AsyncGenerator<OpLogEntry, void, void> {
+export async function* getEntriesByTime(
+  params: { afterTime?: Date | null } = {}
+): AsyncGenerator<OpLogEntry, void, void> {
   let page = 0;
   while (page >= 0) {
-    const entries = await getEntriesPage({ afterTime: params.afterTime, page, pageSize: 100 });
+    const entries = await getEntriesByTimePage({
+      afterTime: params.afterTime,
+      page,
+      pageSize: DEFAULT_ENTRY_PAGE_SIZE,
+    });
     page = entries.length ? page + 1 : -1;
     for (const entry of entries) {
       yield entry;
@@ -274,7 +270,7 @@ export async function* getEntries(params: { afterTime?: Date | null } = {}): Asy
 }
 
 /**
- * Use this function to retrieve paginated oplog entries from the IndexedDB object store.
+ * Use this function to retrieve paginated oplog entries from the IndexedDB object store in order of HLTime value.
  *
  * Pagination is used to eliminate the possibility of async operations being attempted during the IndexedDB transaction
  * used to retrieve the entries. Some number of objects are read from the database, the transaction finishes, and the
@@ -283,8 +279,8 @@ export async function* getEntries(params: { afterTime?: Date | null } = {}): Asy
  * Note that the pagination algorithm is a modified version of an example shared by Raymond Camden at
  * https://www.raymondcamden.com/2016/09/02/pagination-and-indexeddb/.
  */
-export function getEntriesPage(
-  params: { afterTime?: Date | null; page: number; pageSize: number } = { page: 0, pageSize: 5 }
+export function getEntriesByTimePage(
+  params: { afterTime?: Date | null; page: number; pageSize: number } = { page: 0, pageSize: DEFAULT_ENTRY_PAGE_SIZE }
 ): Promise<OpLogEntry[]> {
   let startTime = performance.now();
   let query: IDBKeyRange | null = null;
@@ -410,11 +406,11 @@ export function applyOplogEntry(candidate: OpLogEntry) {
 
     const oplogStore = txReq.objectStore(STORE_NAME.OPLOG);
     const targetStore = txReq.objectStore(candidate.store);
-    const oplogIndex = oplogStore.index(OPLOG_INDEX);
+    const oplogIndex = oplogStore.index(OPLOG_INDEX_BY_STORE_OBJKEY_PROP_TIME);
 
-    // Each key in the index (an array) must be "greater than or equal to" the following array (which, in effect, means
-    // each element of the key array needs to be >= the corresponding element in the following array). Given the
-    // following example bounds and keys, BOTH keys are >= the lower bounds:
+    // Each key in the index (an array) must be "greater than or equal to" the "lower bounds" array (which, in effect,
+    // means each element of the key array needs to be >= the corresponding element in the lower bounds array). Given
+    // the following example bounds and keys, BOTH keys are >= the lower bounds:
     //
     //  - Lower bounds key: ['todo_items', '123', 'name', '']
     //
@@ -623,7 +619,7 @@ export function applyOplogEntry(candidate: OpLogEntry) {
     };
 
     idxCursorReq.onerror = (event) => {
-      const errMsg = `${libName} encountered an error while trying to open a cursor on the "${OPLOG_INDEX}" index.`;
+      const errMsg = `${libName} encountered an error while trying to open a cursor on the "${OPLOG_INDEX_BY_STORE_OBJKEY_PROP_TIME}" index.`;
       log.error(errMsg, event);
       reject(new Error(errMsg));
     };
@@ -634,7 +630,7 @@ class UnexpectedOpLogEntryError extends Error {
   constructor(noun: keyof OpLogEntry, expected: string, actual: string) {
     super(
       `${libName}: invalid "most recent oplog entry"; expected '${noun}' value of '${expected}' but got ` +
-        `'${actual}'. (This might mean there's a problem with the IDBKeyRange used to iterate over ${OPLOG_INDEX}.)`
+        `'${actual}'. (This might mean there's a problem with the IDBKeyRange used to iterate over ${OPLOG_INDEX_BY_STORE_OBJKEY_PROP_TIME}.)`
     );
     Object.setPrototypeOf(this, UnexpectedOpLogEntryError.prototype); // https://git.io/vHLlu
   }

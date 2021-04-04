@@ -1,14 +1,3 @@
-/// <reference types="../../lib/src/MerkleTree" />
-
-interface MerkleTreeCompatible {
-  hash: number;
-  branches: {
-    "0"?: unknown;
-    "1"?: unknown;
-    "2"?: unknown;
-  };
-}
-
 /**
  * Objects with this shape respresent a recorded data mutation that took place at some time, on some node, as specified
  * by the Hybrid Logical Clock timestamp (`hlcTime`). When shared with another node, it should be possible to identify
@@ -140,6 +129,7 @@ interface MerkleTreeCompatible {
  * ```
  */
 interface OpLogEntry {
+  clientId: string;
   hlcTime: string;
   store: string;
   objectKey: number | string | Date | Array<number | string | Date>;
@@ -155,7 +145,15 @@ interface UserProfile {
 
 type SyncProfileSettings = Record<string, unknown>;
 
-type ClientIdMerklePair = { clientId: string; merkle: MerkleTreeCompatible };
+type SignInChangeHandler = (
+  userProfile: UserProfile | null,
+  settings: SyncProfileSettings
+) => void;
+
+interface ClientRecord {
+  clientId: string;
+  data: unknown;
+}
 
 interface SyncPlugin {
   getPluginId(): string;
@@ -167,6 +165,7 @@ interface SyncPlugin {
   addSignInChangeListener(handlerFcn: SignInChangeHandler): void;
   getSettings(): SyncProfileSettings;
   setSettings(settings: SyncProfileSettings): void;
+  getMostRecentUploadedEntryTime(): Promise<Date>;
   getRemoteEntries: (params: {
     clientId: string;
     afterTime?: Date | null;
@@ -176,14 +175,15 @@ interface SyncPlugin {
     counter: number;
     clientId: string;
     entry: OpLogEntry;
-  }) => Promise<void>;
-  getRemoteMerkles: (filter: {
+    overwriteExisting?: boolean;
+  }) => Promise<{ numUploaded: number }>;
+  getRemoteClientRecords: (filter: {
     includeClientIds?: string[];
     excludeClientIds?: string[];
-  }) => AsyncGenerator<ClientIdMerklePair, void, void>;
-  saveRemoteMerkle(
+  }) => AsyncGenerator<ClientRecord, void, void>;
+  saveRemoteClientRecord(
     clientId: string,
-    entry: MerkleTreeCompatible
+    options?: { overwriteIfExists?: boolean }
   ): Promise<void>;
 }
 

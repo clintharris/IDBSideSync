@@ -2,7 +2,7 @@ export const libName = 'IDBSideSync.plugins.googledrive';
 export const logPrefix = '[' + libName + ']';
 
 export function noOp() {}
-
+export const COUNTER_PART_STR_LENGTH = 4;
 export let debug = process.env.NODE_ENV !== 'production';
 
 export function setDebug(isEnabled: boolean) {
@@ -20,7 +20,7 @@ export const log = {
 
 export const FILENAME_PART = {
   clientPrefix: 'clientId:',
-  merkleExt: '.oplogmerkle.json',
+  clientInfoExt: '.clientinfo.json',
   messageExt: '.oplogmsg.json',
 };
 
@@ -35,7 +35,7 @@ export function oplogEntryToFileName(params: {
   let fileName =
     params.time.toISOString() +
     ' ' +
-    params.counter +
+    ('0'.repeat(COUNTER_PART_STR_LENGTH) + params.counter).slice(-COUNTER_PART_STR_LENGTH) +
     ' ' +
     FILENAME_PART.clientPrefix +
     params.clientId +

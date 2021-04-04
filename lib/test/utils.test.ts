@@ -1,13 +1,13 @@
 /// <reference types="../../types/common" />
 import { expect, describe, it } from '@jest/globals';
 import * as utils from '../src/utils';
-import { makeNodeId } from '../src/utils';
+import { makeClientId } from '../src/utils';
 
 describe('utils', () => {
   const unsupportedObjectKeys = [{}, null, undefined, new Date(), [1, {}], [1, null], [1, undefined], [1, new Date()]];
 
   describe('makeNodeId()', () => {
-    const clientIds = Array.from({ length: 1000 }, utils.makeNodeId);
+    const clientIds = Array.from({ length: 1000 }, utils.makeClientId);
 
     it('returns values in correct format.', () => {
       const lowerAlphaNumRegex = new RegExp('[a-z|\\d]{16}');
@@ -39,8 +39,10 @@ describe('utils', () => {
   });
 
   describe('isValidOplogEntry()', () => {
+    const clientId = makeClientId();
     const oplogEntry: OpLogEntry = {
-      hlcTime: `2021-01-24T13:23:14.203Z-0000-${makeNodeId}`,
+      clientId,
+      hlcTime: `2021-01-24T13:23:14.203Z-0000-${clientId}`,
       objectKey: 1,
       prop: 'id',
       store: 'someStore',

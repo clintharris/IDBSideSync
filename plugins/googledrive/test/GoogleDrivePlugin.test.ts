@@ -95,7 +95,11 @@ describe('GoogleDrivePlugin', () => {
     });
   });
 
-  describe('getRemoteMerkles()', () => {
+  describe('saveRemoteClientRecord()', () => {
+    it.todo('works correctly');
+  });
+
+  describe('getRemoteClientRecords()', () => {
     it('makes correct GAPI query for all merkle files', async () => {
       // @ts-ignore
       const mockListFcn = jest.spyOn(gapi.client.drive.files, 'list');
@@ -103,8 +107,8 @@ describe('GoogleDrivePlugin', () => {
         body: '',
         result: {
           files: [
-            { id: '1', name: 'foo' + FILENAME_PART.merkleExt },
-            { id: '2', name: 'bar' + FILENAME_PART.merkleExt },
+            { id: '1', name: 'foo' + FILENAME_PART.clientInfoExt },
+            { id: '2', name: 'bar' + FILENAME_PART.clientInfoExt },
           ],
         },
       };
@@ -114,34 +118,26 @@ describe('GoogleDrivePlugin', () => {
       const mockGetFcn = jest.spyOn(gapi.client.drive.files, 'get');
       const mockGetResponse = {
         body: '',
-        result: {
-          hash: 333,
-          branches: {
-            '2': {
-              hash: 333,
-              branches: {},
-            },
-          },
-        },
+        result: {},
       };
       // @ts-ignore
       mockGetFcn.mockResolvedValue(mockGetResponse);
 
       const plugin = new GoogleDrivePlugin(defaultConstructorArgs);
 
-      const results: ClientIdMerklePair[] = [];
-      for await (const clientIdMerklePair of plugin.getRemoteMerkles()) {
+      const results: ClientRecord[] = [];
+      for await (const clientIdMerklePair of plugin.getRemoteClientRecords()) {
         results.push(clientIdMerklePair);
       }
 
       expect(results).toEqual([
         {
           clientId: 'foo',
-          merkle: mockGetResponse.result,
+          data: {},
         },
         {
           clientId: 'bar',
-          merkle: mockGetResponse.result,
+          data: {},
         },
       ]);
 
@@ -149,7 +145,7 @@ describe('GoogleDrivePlugin', () => {
       expect(mockListFcn).toHaveBeenCalledWith({
         ...DEFAULT_GAPI_FILE_LIST_PARAMS,
         q:
-          `mimeType != '${GAPI_FOLDER_MIME_TYPE}' and (name contains '${FILENAME_PART.merkleExt}') and ` +
+          `mimeType != '${GAPI_FOLDER_MIME_TYPE}' and (name contains '${FILENAME_PART.clientInfoExt}') and ` +
           `('${defaultConstructorArgs.remoteFolderId}' in parents)`,
       });
     });
@@ -160,10 +156,6 @@ describe('GoogleDrivePlugin', () => {
   });
 
   describe('saveFile()', () => {
-    it.todo('works correctly');
-  });
-
-  describe('saveRemoteMerkle()', () => {
     it.todo('works correctly');
   });
 
