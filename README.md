@@ -1,20 +1,34 @@
 # Overview
 
-IDBSideSync is a JavaScript library/experiment that makes it possible to sync IndexedDB object stores using CRDT concepts. It works by intercepting the CRUD calls to IndexedDB stores and automatically logging all the operations "on the side" in a separate store--the operation log. The objects in the operation log can be uploaded somewhere, then downloaded and "replayed" somewhere else, in effect, synchronizing IndexedDB databases across devices without conflict.
+IDBSideSync is a JavaScript library/experiment that makes it possible to sync IndexedDB object stores using [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type) concepts. It works by intercepting the CRUD calls to IndexedDB stores and automatically logging all the operations "on the side" in a separate store--the operation log. The objects in the operation log ("oplog entries") can be copied and "replayed" somewhere else to (eventually) synchronize IndexedDB databases across devices without conflict.
 
-You can use this library to, for example, build a "[local first](https://www.inkandswitch.com/local-first.html)" [PWA](https://developer.mozilla.org/en-US/docs/Web/Apps/Progressive/) that also supports syncing across different devices without having to run a custom server application. Once a user enables a remote file storage API (e.g., Google Drive, Dropbox, iCloud, or something else via custom plugin), the application can use that store for backup and sync. This "bring your own remote data store" model allows users to maintain ownership of their data--even while it is on a server--and gives them the flexibility change to a different remote storage service at any time. The CRDT messages are stored as simple JSON text files, easily usable by other software.
+You could use this library to, for example, build a "[local first](https://www.inkandswitch.com/local-first.html)" [PWA](https://developer.mozilla.org/en-US/docs/Web/Apps/Progressive/) that optionally syncs across devices without having to run a custom server application. IDBSideSync allows plugins to be used to add support for syncing data with different HTTP-accessible remote storage APIs (e.g., Google Drive). This "bring your own server" model allows users to maintain ownership of their data even while it is on a server--and gives them the flexibility change to a different remote storage service at any time. The data is sync'ed as simple JSON text files (CRDT messages), easily usable by other software which helps give users the option to "[bring [their] own client](https://www.geoffreylitt.com/2021/03/05/bring-your-own-client.html)".
 
 The idea for the library came from studying [James Long](https://twitter.com/jlongster)'s
-[crdt-example-app](https://github.com/jlongster/crdt-example-app), which offers a fantastic demonstration of how to use [CRDT](https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type), [hybrid logical clock](https://jaredforsyth.com/posts/hybrid-logical-clocks/), and merkle tree concepts to build a simple, in-memory data store that uses a custom server for synchronization. `IDBSideSync` is an attempt at applying those concepts (and in some cases, modified versions of James' code) to work with [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API), specifically. It also adds the ability for HTTP-accessible data storage APIs that users already have (or host themselves) as the means for syncing data instead of relying on a single, developer-owned, server application. `IDBSideSync` was deliberately forked from `crdt-example-app` to make that "heritage" literally part of this project's own history.
+[crdt-example-app](https://github.com/jlongster/crdt-example-app), which offers a great intro to CRDT concepts. `IDBSideSync` is an attempt at applying those concepts (and in some cases, modified versions of James' code) in a different direction, with a goal of letting in-browser app developers use [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API) as they normally would while CRDT messages are maintained and synchronized "on the side" (notably, using HTTP-accessible data storage that non-technical users already have instead using a developer-managed server or service). `IDBSideSync` was deliberately forked from `crdt-example-app` to make that "heritage" literally part of this project's own history.
 
 # ⚠️ Disclaimer
 
 IDBSideSync is still experimental and under development. Some parts of it have not been tested, some things are incomplete, etc. It is not ready for production.
 
+# Who is this for?
+
+App developers who want to build PWA's that use IndexedDB for the local database and still have the ability to sync across devices.
+
+Don't like IndexedDB? Take a look at Jake Archibald's fantastic [idb](https://github.com/jakearchibald/idb) library--it makes using IndexedDB a easier.
+
+# How it Works
+
+## The "OpLog": creating "something changed" messages on the side
+
+## Remote Sync: use whatever remote storage service the user has
+
+A guiding objective for remote sync is: meet the user where they are (i.e., with whatever hosted provider account they already have), and avoid asking them to create a new account.
+
 # Usage
 
 ```
-npm install --save @clintharris/IDBSideSync
+npm install --save idbsidesync
 ```
 
 First, you'll need to add a few lines to your existing IndexedDB setup code for initializing `IDBSideSync`:
@@ -84,7 +98,7 @@ If, instead, if you pass in a "complete" version of an object with all the prope
 
 ```javascript
 // 👎 User only changed priority, but let's update all the props anyways: BAD
-todoStore.put({ title: "Buy cookies" , priority: "high", done: false }, todoId);
+todoStore.put({ title: "Buy cookies", priority: "high", done: false }, todoId);
 
 // In a separate transaction...
 todoStore.get(todoId).onsuccess = (event) => {
@@ -133,7 +147,15 @@ todo
 
 Also, `IDBSideSync` currently doesn't support `add(value, key)` or `put(value, key)` calls when `key` is of type `ArrayBuffer` or `DataView`.
 
-## FAQ
+# Sync
+
+The idea with syncing is to somehow copy oplog entries from one client (i.e., an instance of your app, running in a browser) to another client, where they can then be "replayed" (or applied) another IndexedDB object stores.
+
+The core IDBSideSync library is built to work with one or more sync plugins. In other words, instead of hard-coding in logic about how to sync with Google Drive, for example, it offers a way for you to register a separate class or object that has that logic--a plugin.
+
+TODO: info on the plugin interface and how to register a custom plugin with IDBSideSync.
+
+# FAQ
 
 ### Q: But I really dislike the IndexedDB API...
 
@@ -157,6 +179,12 @@ IDBSideSync uses these stores to record all of the change operations (operation 
 
 These object stores need to live in your application's database so that the library can easily read and write to your app's object stores. More specifically, IDBSideSync needs to be able to include both its own stores _and_ your app's stores in the same IndexedDB transactions; this can only be done if the stores are in the same database.
 
+### Q: Is the remote syncing mechanism resilient tampering?
+
+Any entity that has access to the oplog entry data while stored on a remote file system has the ability to alter those CRDT messages. Ganting an entity access to a data store used for remote sync implies trusting that entity. In other words, the remote syncing store--usually something like a shared folder within Dropbox or Google Drive--should only be shared with people you trust.
+
+That said, it would be nice to detect (and possibly fix) accidental deletion or alteration of oplog entry data. This feature is planned as part of Issue #4.
+
 # Contributing
 
 Want to submit a PR for adding a new feature or bugfix? Or maybe you just want to create a new fork that demonstrates an issue? Do all this and more with just a few clicks using the amazing Contrib-o-matic™️ process (_actual clicks and results may vary_):
@@ -165,96 +193,3 @@ Want to submit a PR for adding a new feature or bugfix? Or maybe you just want t
 2. Modify the project.
 3. Submit a PR.
 4. CodeSandbox CE will automatically build an installable version of the library from your PR and create a new Sandbox in which your fix/improvement can be tested.
-
-# Roadmap
-
-- [ ] Find a way to add support for increment and array insert operations (currently only "set" is supported).
-  - There's no good way to do this without deviating from the IndexedDB API (which really only supports "set" ops)
-  - It would involve modifying the oplog entry objects to specify the _type_ of operation (set/increment/insert). Example:
-      ```
-      {
-        hlcTime: '2021-01-24T13:23:14.203Z-0002-testnode',
-        store: TODO_ITEMS_STORE,
-        objectKey: defaultTodo.id,
-        operation: 'increment' // 'set' | 'arrayInsert'
-        prop: 'someCounter',
-        value: -1
-      }
-      ```
-  - Note that supporting array operations (i.e., insert, mutate at index, etc.) is not a pre-requisite! A feasible (and possibly simpler) solution is to normalize objects. Instead of `{ id: 1, things: [thing1, thing 2] }`, create a separate object collection for things and associate them with the parent object.
-- [ ] Add Cypress tests that run against the example app UI
-  - This would both help ensure that example app isn't broken with some changes and (bonus) also tests the library.
-- [ ] Publish to NPM; take a look at [np](https://github.com/sindresorhus/np) (recommended by tsdx)
-- [ ] Investigate using Chrome's Native File System API and using the local file system as one option for testing/developing oplog entries being "sync'ed". In other words, instead of worrying about the details of the Google Drive API, for example, just have two windows open that are both reading/writing to the same local drive--so a "shared local folder" is being used to sync the files.
-- [ ] Modify Rollup to bundle murmurhash and uuid _with_ the library
-  - see "https://www.mixmax.com/engineering/rollup-externals/" section of https://www.mixmax.com/engineering/rollup-externals/ for example of which rollup plugins to install and use
-  - see https://tsdx.io/customization#example-adding-postcss for example of how to customize tsdx's rollup config to use rollup plugins
-- [ ] Incorporate Jared Forsyth's HLC string formatting improvements that allow for longer timestamp and counter strings:
-  - `physTime.toString().padStart(15, '0')` // 13 digits is enough for the next 100 years, so 15 is plenty
-  - `count.toString(36).padStart(5, '0') // 5 digits base 36 is enough for more than 6 million "out of order" changes
-  - https://jaredforsyth.com/posts/hybrid-logical-clocks/
-- [ ] Add full integration test/simulation of messages from multiple nodes being processed
-  - verify that event ordering is correct (i.e., that various table/row/column values end up with values specified by "most recent" corresponding operation)
-  - this will require implementation of in-memory data store
-  - how will this work without the use of the merkle tree for efficient diffing? is that even necessary?
-  - make sure to prevent the "many changes in same ~10sec window causes issue" problem (https://twitter.com/jaredforsyth/status/1228366315569565696)
-- [ ] Set up the project to work with [CodeSandbox CI](https://codesandbox.io/docs/ci).
-- [ ] Add a [Code Tour](https://github.com/microsoft/codetour)
-- [ ] Modify README structure to follow an "API Docs, Usage, Examples" structure like this: https://github.com/sql-js/sql.js
-- [ ] Support _syncing_ with remote file storage services
-  - Once a standard API exists for the _local_ data store (which can be implemented with different adapters), modify the sync code so that it uses a standard API, which would allow for different remote storage providers to be plugged in.
-  - `sidesync-gdrive`, `sidesync-icloud`, etc.
-  - each node (e.g., user-owned device) uploads every oplog entry to the server
-  - each entry has a filename: the timestamp.toString() value
-    - since every timestamp is unique, there shouldn't be any filename collisions
-  - each node uploads (and updates) a JSONified version of their merkle tree
-    - these merkle tree files should all have a standard extension to be easily discovered by via filename pattern searching (e.g., {nodeId}.merkle.json)
-    - with GDrive API, you'd use a query like `name contains '.merkle.json.7z'`
-  - a node can download the merkle trees from other nodes and diff _locally_ to more efficiently determine a _time_ at which the merkle trees began to differ
-    - it can then download and ingest all oplog entries on/after that time
-  - each node updates and uploads an "index" file: an _ordered_ list of all the HLC timestamps (i.e., filenames) for events _that node_ has created
-    - these files should all have a standard extension to be easily discovered by via filename pattern searching (e.g., {nodeId}.index.txt)
-    - this file should be uploaded to the server on each sync (overwriting the existing file if one exists)
-    - other nodes can download this (pre-sorted) list and, after having compared merkle trees with this node to find a timestamp when they began to differ, iterate over (ordered) list of timestamps until it gets to the point where the divergence began--all filenames after that point in the list should be downloaded and processed.
-    - these files could get BIG; adding 1M timestamps resulted in a 45MB text file
-    - compression could help; this could be diferred to server and browser (assuming server compression is enabled), or _maybe_ done in the browser (JSZip compressed 45MB realistic text file to 134 KB in 1.2 sec)
-    - another option that adds complexity is to chunk the indices, maybe putting timestamp ranges in index filenames to help decide which index to download (e.g., `{nodeId}.{firstTimeStamp__lastTimeStamp}.index.txt`)
-  - Google Drive doesn't support searching/filtering by regex expressions, so it's probably necessary to:
-
-    1. retrieve a list of _all_ filenames (and just the names--so we know what to try to download)
-    2. parse/order that list and start downloading each file with filename after the diff time, OR
-    3. OR just iterate over the full list (without sorting) and download each file as necessary
-       - if there are thousands of files, this would more efficient since it's not necessary to load the entire list into memory (similar to using a DB cursor)
-
-    - this could be done by "searching" for files using a filename pattern that will exclude oplog entries before some time (see https://stackoverflow.com/a/11011934/62694)
-    - OR (maybe simpler but much less efficient), download all file _names_ (i.e., list dir), iterate over them (parsing each filename to an actual HLC time that can be compared to the reference HLC time), and download each one that occurs on/after the reference time.
-  - [ ] Explore using JSZip to compress the oplog json. This can/should be done on a per-plugin basis; the core lib should not be doing anything 
-  - [ ] Explore and document worst-case scenarios (e.g., what happens if a node's clock is off by hours/days?)
-  - [ ] Support sharing/collaboration with other users
-
-    To collaborate, the following is necessary:
-
-    - all oplog entries have 0..1 remote location identifiers
-    - when you download oplog entries from a remote location, it will have that remote's identifier
-    - when you create an oplog entry, you will need to specify which remote it should be associated with
-      - if you haven't set up a remote, the entry won't have a remote identifier
-      - if you have set up 2+ remotes, you'll need to pick which remote it should be associated with
-    - the sync function will only upload oplog entries to their specified remote (if one is set)
-    - in a single-user app, the user will need to set up the same remote on each device to sync across devices
-    - in a collaborative app, each user will need to set up a remote to which all users have read access, and at least one user has write access
-      - example, a shared google drive folder
-    - when a user decides to share an object, a NEW set of oplog entries should be created for all props of the object, with the specified remote identifier.
-    - From that point on, all oplog entries for that destination are only uploaded to that destination.
-    - other users will download those entries and recreate the object
-    - the app on other users devices should know if the user has write access to the remote, and prevent the user from attempting to edit those objects (for good UX; note that permissions are enforced by remote storage service).
-    - if you download oplog entries associated with a shared remote, an object will be created locally.
-
-
-## Refactoring
-
-- [ ] Consider increasing the allowed difference for clock times coming from other systems; only allowing for a 1-minute difference between any other clock in the distributed system seems like it could be error prone...
-- [ ] Modify HLTime.parse() to do a better job of checking for issues with the passed-in string and throwing errors if necessary (e.g., throwing if an invalid month is specified)
-- [ ] Merkle tree:
-  - [ ] consider only allowing inserts to proceed for "full" 17-digit paths. This would prevent the possibility of setting hash value for non-leaf nodes (which would result in a node whose hash is, technically, not derived from the hashes of all its children). The downside of this is that it would make unit testing harder to easily understand (since you can't use "simple" testing trees with only a few nodes).
-
-
