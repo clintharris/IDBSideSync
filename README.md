@@ -51,7 +51,7 @@ openRequest.onupgradeneeded = (event) => {
   // is because if IndexedDB were allowed to auto-assign the "keys" for objects, there would be
   // no guarantee of uniqueness.
   //
-  // ⛔️ Also, IDBSideSync doesn't currently support "nested" keyPath values (e.g., `keyPath: 'foo.bar'`).
+  // ⛔️ IDBSideSync doesn't currently support "nested" keyPath values (e.g., `keyPath: 'foo.bar'`).
   const todosStore = db.createObjectStore("todos", { keyPath: "id" });
 
   // Give IDBSideSync a chance to create its own object stores and indices.
@@ -88,8 +88,8 @@ todoStore.add({ id: todoId, title: "Buy milk" }); // { id: 123, title: "Buy milk
 IDBSideSync, acting as a [JavaScript proxy](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Proxy) to the standard [`IDBObjectStore.put()`](https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/put) function, modifies the default behavior of `put()` so that it no longer completely replaces any existing object with the value you pass to it. Instead, you now have the ability to pass in "partial updates"--objects with only a subset of properties--that will be applied to any existing object. (You can still pass in complete objects with all properties if you want, of course.)
 
 ```javascript
-// Assuming a full todo object looks like `{ id: 123, title: "Buy cookies", priority: "low", done: false }`, let's say
-// the user just changed its priority from "low" to "high"...
+// Given a "full" todo object of `{ id: 123, title: "Buy cookies", priority: "low", done: false }`,
+// let's say the user just changed its priority from "low" to "high"...
 todoStore.put({ priority: "high" }, todoId); // 👍 Only update the prop that was changed: GOOD.
 
 // In a separate transaction...
@@ -108,10 +108,10 @@ todoStore.put({ title: "Buy cookies", priority: "high", done: false }, todoId);
 
 // In a separate transaction...
 todoStore.get(todoId).onsuccess = (event) => {
-  // 😭 If someone else had previously marked this todo as "done", their change will be lost once they receive these
-  // changes since an operation log entry was just created that overwrites all props on the todo--including the "done"
-  // property.
-  console.log(event.target.result); // { id: 123, title: "Buy cookies", priority: "high", done: false }
+  // 😭 If someone else had previously marked this todo as "done", their change will be lost once
+  // they receive these changes since an operation log entry was just created that overwrites all
+  // props on the todo--including the "done" property.
+  console.log(event.target.result); //{id: 123, title: "Buy cookies", priority: "high", done: false}
 };
 ```
 
@@ -169,15 +169,15 @@ await IDBSideSync.sync();
 Although a plugin doesn't have to be implemented in TypeScript, the `SyncPlugin` interface in [`main.d.ts`](types/common/main.d.ts) defines the functions that a plugin needs to implement. For example, a plugin needs to implement a `getRemoteEntriesForClient()` function, which is used as follows in the `sync()` function of the core library's [`sync.ts`](lib/src/sync.ts) file:
 
 ```javascript
-let remoteEntryDownloadCounter = 0;
+let downloadCounter = 0;
 for await (const remoteEntry of plugin.getRemoteEntries({
   clientId: remoteClientId,
   afterTime: mostRecentKnownOplogTimeForRemoteClient,
 })) {
   db.applyOplogEntry(remoteEntry);
-  remoteEntryDownloadCounter++;
+  downloadCounter++;
 }
-log.debug(`Downloaded ${remoteEntryDownloadCounter} oplog entries for remote client '${remoteClientId}'.`);
+log.debug(`Downloaded ${downloadCounter} oplog entries for remote client '${remoteClientId}'.`);
 ```
 
 ## FAQ
