@@ -58,15 +58,6 @@ After sign-in has completed successfully, the GDrive Plugin will automatically c
 
 No, the gapi client that the GDrive Plugin uses will automatically refresh the OAuth access token that is needed to make calls to the Google Drive API. It will attempt this once an hour. If you need to manually fresh the token for some reason, this can be done with a call to `gapi.auth2.getAuthInstance().currentUser.get().reloadAuthResponse()`.
 
-# Roadmap
-
-- [x] Create simple GDrive test app to help learn how to use the gapi library, OAuth, etc.
-- [x] Incorporate the library via `<script src...>` into the main `plainjs_todos` app
-- [x] Find/create remote sync folder on startup.
-- [ ] Find/create `0_README.txt` on startup explaining nature of folder.
-- [ ] Test on mobile browsers.
-- [ ] Build a really basic version of `.sync()` that just uploads oplog entries to GDrive
-
 # Technical notes
 
 ## Google Drive Access
