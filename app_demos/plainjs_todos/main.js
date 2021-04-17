@@ -61,34 +61,6 @@ const classes = {
 
 let uiState = defaultUiState();
 
-let _syncTimer = null;
-function backgroundSync() {
-  _syncTimer = setInterval(async () => {
-    // Don't sync if an input is focused, otherwise if changes come in
-    // we will clear the input (since everything is rerendered :))
-    if (document.activeElement === document.body) {
-      try {
-        await sync();
-        setOffline(false);
-      } catch (e) {
-        if (e.message === 'network-failure') {
-          setOffline(true);
-        } else {
-          throw e;
-        }
-      }
-    }
-  }, 4000);
-}
-
-function setOffline(flag) {
-  if (flag !== uiState.offline) {
-    uiState.offline = flag;
-    setSyncingEnabled(!flag);
-    render();
-  }
-}
-
 let _scrollTop = 0;
 function saveScroll() {
   let scroller = qs('#scroller');
@@ -149,14 +121,14 @@ async function renderTodoTypes({ className = '', showBlank = true } = {}) {
 
 async function renderProfileNames() {
   return `
-    <label for="profiles" class="flex justify-between items-center mb-4 w-32 mr-7">
-      <span class="text-gray-500">Profile:</span>
+    <label for="profiles" class="flex justify-between items-center mb-4 mr-7">
+      <span class="text-gray-500 flex-grow">Theme:</span>
       <select name="profiles" onchange="onStyleProfileChange()" class="${classes.select}">
         ${(await getAllProfileNames()).map(
           (profile) =>
             `<option ${uiState.activeProfileName === profile.name ? 'selected' : ''}>${profile.name}</option>`
         )}
-        <option value="add-new-profile">Add new profile...</option>
+        <option value="add-new-profile">Add new theme...</option>
       </select>
     </label>
     
@@ -176,14 +148,6 @@ function renderTodos({ root, todos, isDeleted = false }) {
               ${todo.type ? sanitize(todo.type.name) : ''}
             </div>
           </div>
-          <select
-            class="p-0 focus:outline-none border-0"
-            style="background-image: url(&quot;./img/options-icon.svg&quot;);"
-          >
-            <option value=""></option>
-            <option value="edit-todo">Edit</option>
-            <option value="delete-todo">Delete</option>
-          </select>
           <button class="btn-edit hover:bg-gray-400 px-2 rounded" data-id="${todo.id}">✏️</button>
           <button class="btn-delete ml-1 hover:bg-gray-400 px-2 rounded" data-id="${todo.id}">${isDeleted ? '♻️' : '🗑'}</button>
         </div>
@@ -203,9 +167,11 @@ async function render() {
   let root = qs('#root');
   root.style.height = '100%';
 
-  let { offline, editingTodo } = uiState;
+  let { editingTodo } = uiState;
 
   clear();
+
+  const disableSyncBtn = uiState.sync.inProgress || !uiState.sync.enabled;
 
   // prettier-ignore
   append(`
@@ -224,7 +190,7 @@ async function render() {
               <line x1="11" y1="12" x2="20" y2="12" />
               <line x1="11" y1="18" x2="20" y2="18" />
             </svg>
-            <h3 class="ml-1">IDBSideSync To-Do Demo</h3>
+            <h3 class="ml-1">IDBSideSync: To-Do Test/Demo</h3>
           </div>
           <button id="btn-show-style-modal">
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" stroke-width="1.5" stroke="#fff" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -266,11 +232,15 @@ async function render() {
 
       <div class="fixed w-screen bottom-0 flex justify-center bg-gray-200 border-gray-400 border-t">
         <div class="max-w-screen-md">
-          <button id="btn-offline-simulate" class="text-sm hover:bg-gray-300 px-2 py-1 rounded ${offline ? 'text-blue-700' : 'text-red-700'}">${offline ? 'Go online' : 'Simulate offline'}</button>
+          <button
+            ${disableSyncBtn ? 'disabled' : ''}
+            onclick="syncNow()" 
+            class="m-4 mr-6 text-white rounded p-2 bg-blue-${disableSyncBtn ? '300 cursor-default' : '600'}"
+          >Sync${uiState.sync.inProgress ? 'ing...' : ''}</button>
 
           <button 
             onclick="onSyncSettingsBtnClick()" 
-            class="m-4 mr-6 ${offline ? 'bg-red-600' : 'bg-blue-600'} text-white rounded p-2"
+            class="m-4 mr-6 bg-blue-600 text-white rounded p-2"
           >Sync Settings</button>
         </div>
       </div>
@@ -461,7 +431,7 @@ async function render() {
     append(`
       <div class="${classes.modalBackground}">
         <div class="${classes.modalContainer}">
-          <h2 class="${classes.modalTitle}">Preferences</h2>
+          <h2 class="${classes.modalTitle}">Theme Preferences</h2>
           <div class="flex flex-col">
             ${await renderProfileNames()}
             <label for="bg-color-setting" class="flex justify-between items-center mb-4">
@@ -521,16 +491,6 @@ function addEventHandlers() {
     render();
   });
 
-  qs('#btn-offline-simulate').addEventListener('click', () => {
-    if (uiState.offline) {
-      setOffline(false);
-      backgroundSync();
-    } else {
-      setOffline(true);
-      clearInterval(_syncTimer);
-    }
-  });
-
   for (let editBtn of qsa('.todo-item .btn-edit')) {
     editBtn.addEventListener('click', async (e) => {
       let todo = await getTodo(editBtn.dataset.id);
@@ -583,7 +543,7 @@ function addEventHandlers() {
       let input = e.target.parentNode.parentNode.querySelector('input');
       let value = input.value;
 
-      let colors = ['green', 'blue', 'red', 'orange', 'yellow', 'teal', 'purple', 'pink'];
+      let colors = ['red', 'orange', 'yellow', 'teal', 'purple', 'pink'];
 
       addTodoType({
         name: value,
@@ -638,7 +598,7 @@ function addEventHandlers() {
 async function onStyleProfileChange(e) {
   const selection = qs('select[name=profiles]').value;
   if (selection === 'add-new-profile') {
-    const newVal = prompt('ADD PROFILE\n(shared across devices if syncing enabled)\n\nProfile name:');
+    const newVal = prompt('ADD THEME\n(shared across devices if syncing enabled)\n\nTheme name:');
     if (newVal.trim() === '') {
       alert(`Ignoring invalid profile name. Please specify a non-empty value.`);
       return;
@@ -648,7 +608,7 @@ async function onStyleProfileChange(e) {
   } else {
     await updateActiveProfileName(selection);
     uiState.activeProfileName = selection;
-    await loadAndApplyProfileSettings();
+    await applyProfileSettings();
   }
 
   render();
@@ -656,7 +616,6 @@ async function onStyleProfileChange(e) {
 
 function defaultUiState() {
   return {
-    offline: false,
     editingTodo: null,
     activeProfileName: null,
     modal: null,
@@ -664,6 +623,11 @@ function defaultUiState() {
     gdrive: {
       email: null,
       loginError: null,
+    },
+    sync: {
+      enabled: false,
+      inProgress: false,
+      message: null,
     },
   };
 }
@@ -783,26 +747,24 @@ function setFontSize(size) {
   qs('html').style.fontSize = `${size}px`;
 }
 
-async function loadAndApplyProfileSettings(profileName) {
+async function applyProfileSettings(profileName) {
   setBgColor((await getBgColorSetting(uiState.activeProfileName)) || 'white');
   setFontSize(await getFontSizeSetting(uiState.activeProfileName));
 }
 
-(async () => {
+async function loadAndApplyProfileSettings() {
   const activeProfileName = await getActiveProfileName();
   if (activeProfileName) {
     uiState.activeProfileName = activeProfileName;
     // If a profile exists, try loading profile-specific settings
-    await loadAndApplyProfileSettings();
+    await applyProfileSettings();
   } else {
     const defaultProfileName = 'Default';
     await addProfileName(defaultProfileName);
     await updateActiveProfileName(defaultProfileName);
     uiState.activeProfileName = defaultProfileName;
   }
-
-  render();
-})();
+}
 
 let syncTimer;
 
@@ -822,38 +784,28 @@ async function setupSync() {
       await loadGoogleDrivePlugin();
       uiState.gdrive.currentUser = syncProfile.userProfile;
       uiState.gdrive.settings = syncProfile.settings;
+      uiState.sync.enabled = true;
     }
   }
+  render();
 }
 
 // Delay the sync setup a bit to avoid taking resources away from getting the app to a usable state.
 setTimeout(setupSync, 1000);
 
 async function syncNow(forceFullSync) {
-  console.log('Starting sync...');
+  uiState.sync.inProgress = true;
+  render();
   await IDBSideSync.sync({ forceFullSync });
+  uiState.sync.inProgress = false;
+  await loadAndApplyProfileSettings();
   render();
 }
 
-// onSync(hasChanged => {
-//   render();
+loadAndApplyProfileSettings();
 
-//   let message = qs('#up-to-date');
-//   message.style.transition = 'none';
-//   message.style.opacity = 1;
-
-//   clearTimeout(_syncMessageTimer);
-//   _syncMessageTimer = setTimeout(() => {
-//     message.style.transition = 'opacity .7s';
-//     message.style.opacity = 0;
-//   }, 1000);
-// });
-
-// sync().then(() => {
-//   if (getTodoTypes().length === 0) {
-//     // Insert some default types
-//     insertTodoType({ name: 'Personal', color: 'green' });
-//     insertTodoType({ name: 'Work', color: 'blue' });
-//   }
-// });
-// backgroundSync();
+if (getTodoTypes().length === 0) {
+  // Insert some default types
+  addTodoType({ name: 'Groceries', color: 'green' });
+  addTodoType({ name: 'Chores', color: 'blue' });
+}
