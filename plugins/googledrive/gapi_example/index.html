@@ -157,8 +157,14 @@
         const date = new Date();
         const evenOdd = Math.ceil(Math.random() * 100) % 2 === 0 ? 'even' : 'odd';
         const beepBoop = Math.ceil(Math.random() * 100) % 2 === 0 ? 'beep' : 'boop';
-        const name =
+        const defaultName =
           Math.floor(Math.random() * 1000) + ' ' + evenOdd + '_' + beepBoop + ' ' + date.toISOString() + '.json';
+
+        const name = prompt('Specify name of file to be created:', defaultName);
+        if (name === null) {
+          return;
+        }
+
         const metadata = {
           name: name,
           mimeType: 'text/plain',

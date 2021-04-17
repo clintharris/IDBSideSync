@@ -608,7 +608,7 @@ export class GoogleDrivePlugin implements SyncPlugin {
 
     if (existingFileId) {
       if (!options.overwriteIfExists) {
-        log.debug(`Client record with file name ${fileName} already exists; won't bother overwriting.`);
+        log.debug(`Client record with file name ${fileName} already exists; won't overwrite.`);
         return;
       } else {
         log.debug(`Overwriting existing client record file '${fileName}'.`);
