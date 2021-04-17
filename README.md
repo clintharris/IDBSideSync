@@ -25,11 +25,19 @@ The decision to focus on using IndexedDB comes from wanting to be pragmmatic. In
 
 ## Demo
 
-You can try out a crude "to do" demo app that uses the library [here](todo).
+You can check out the "to-dos" app used for dev/testing that syncs with Google Drive at [https://idbsidesync-todo-demo.vercel.app](https://idbsidesync-todo-demo.vercel.app).
+
+Try opening the site in a couple of browsers and creating some tasks. Then, in each browser, click the "Sync Settings" button to grant (limited) access to Google Drive--this will create a new folder in your Google Drive called `IDBSideSync ToDo App` where app data will be copied and sync'ed across browsers.
+
+> ⚠️ The demo app cannot access _all_ of your Google Drive data--just the files/folders that it creates (and your name and email address, which can't be avoided due to how Google OAuth works), as indicated by Google's authorization pop-up.
+
+> ⚠️ You might need to disable some browser privacy features that prevent the Google Drive setup from working, such as pop-up and/or cookie blockers. The Google OAuth process involves displaying a pop-up and using local storage to remember who you are when the app tries to sync with Google Drive.
+
+After clicking the "Sync" button in both browsers, you'll see a folder in your Google Drive called `IDBSideSync ToDo App` where you can access all the oplog entries and other sync-related files. Each time you click "Sync", the browser will upload any new changes to this folder, and download any new changes made from other browsers.
 
 The demo source can be found in [`app_demos/plainjs_todos`](./app_demos/plainjs_todos). Take a look at `main.js` and `db.js`, in particular, to see how things work.
 
-Note that the goal of the "plain JS" app is to be a "framework agnostic" example of how to use IDBSideSync, without needing prior knowledge of a particular library like React. It's not meant to be efficient or very pretty, but hopefully it's easy to understand (and credit for the super-simple approach goes to James).
+Lastly, note that the goal of the "plain JS" app is to provide a "framework agnostic" testing and development tool, and an example of how to use IDBSideSync, without requiring prior understanding of other libraries like React. It's not meant to be efficient or very pretty--but hopefully it's easy for other developers to understand and modify (and credit for the super-simple approach goes to James).
 
 ## Usage
 
