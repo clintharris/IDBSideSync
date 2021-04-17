@@ -4,10 +4,13 @@
   "license": "MIT",
   "scripts": {
     "clean": "del dist",
-    "prestart": "npm run clean; npm run copyLibs",
+    "prestart": "npm run clean; npm run deps:copy",
     "start": "serve --listen 3000 --no-clipboard",
     "watch": "nodemon -x 'npm start' -w ../../lib/dist -w ../../plugins/googledrive/dist --ext .umd.development.js --delay 1",
-    "copyLibs": "cpy '../../lib/dist/*.umd.*' '../../plugins/googledrive/dist/*.umd.*' ./dist",
+    "deps:copy": "cpy '../../lib/dist/*.umd.*' '../../plugins/googledrive/dist/*.umd.*' ./dist",
+    "deps:build": "npm run deps:build:lib && npm run deps:build:gdrive-plugin",
+    "deps:build:lib": "cd ../../lib && npm i && npm run build",
+    "deps:build:gdrive-plugin": "cd ../../plugins/googledrive && npm i && npm run build",
     "ngrok": "ngrok http 3000"
   },
   "devDependencies": {
