@@ -41,10 +41,6 @@ Lastly, note that the goal of the "plain JS" app is to provide a "framework agno
 
 ## Usage
 
-```
-npm install --save idbsidesync
-```
-
 ### Setup
 
 First, you'll need to add a few lines to your existing IndexedDB setup code for initializing `IDBSideSync`:
