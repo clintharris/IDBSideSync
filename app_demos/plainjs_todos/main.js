@@ -50,7 +50,7 @@ const buttonClasses = 'h-12 sm:h-10 px-8 rounded focus:ring-2 focus:ring-blue-60
 const classes = {
   buttonPrimary: `${buttonClasses} bg-blue-600`,
   buttonSecondary: `${buttonClasses} bg-gray-400`,
-  buttonDanger: `${buttonClasses} bg-red-600`,
+  buttonDanger: `${buttonClasses} bg-red-500`,
   textInput: 'h-12 px-4 shadow-sm border border-gray-300 rounded',
   select: 'h-12 rounded shadow-sm border border-gray-300 text-gray-500',
   modalBackground:
@@ -242,6 +242,11 @@ async function render() {
             onclick="onSyncSettingsBtnClick()" 
             class="m-4 mr-6 bg-blue-600 text-white rounded p-2"
           >Sync Settings</button>
+
+          <button 
+            onclick="showResetWarningModal()" 
+            class="m-4 mr-6 bg-red-500 text-white rounded p-2"
+          >Reset</button>
         </div>
       </div>
     </div>
@@ -304,6 +309,25 @@ async function render() {
                 <button id="btn-edit-cancel" class="${classes.buttonSecondary}">Cancel</button>
                 <button id="btn-edit-save" class="${classes.buttonPrimary} ml-4">Save</button>
               </div>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
+  if (uiState.modal === 'reset-warning') {
+    append(`
+      <div class="${classes.modalBackground}">
+        <div class="${classes.modalContainer}">
+          <h2 class="${classes.modalTitle}">Reset local data?</h2>
+          <div class="text-gray-700 text-sm">
+            This will delete all locally-stored data, including sync login settings. It will NOT delete anything stored remotely.
+          </div>
+          <div class="flex flex-col">
+            <button
+              onClick="onResetDataBtnClick()"
+              class="${classes.buttonDanger} mt-6 mb-4">Yes, Reset Local Data</button>
+            <button onClick="closeModal()" class="${classes.buttonSecondary}">Cancel</button>
           </div>
         </div>
       </div>
@@ -647,6 +671,16 @@ function showWaitModal(optionalMessage) {
   render();
 }
 
+function showResetWarningModal() {
+  uiState.modal = 'reset-warning';
+  render();
+}
+
+async function onResetDataBtnClick() {
+  await deleteDb();
+  window.location.reload();
+}
+
 function onSyncSettingsBtnClick() {
   uiState.modal = 'sync-settings/main-menu';
   render();
@@ -699,7 +733,8 @@ async function onGDriveLoginBtnClick() {
 function onGoogleSignInChange(googleUser, settings) {
   uiState.gdrive.currentUser = googleUser;
   uiState.gdrive.settings = settings;
-  if (uiState.modal === 'sync-settings/gdrive/sign-in/in-progress') {
+  uiState.sync.enabled = !googleUser ? false : true;
+  if (uiState.modal && uiState.modal.startsWith('sync-settings/gdrive/sign-in/in-progress')) {
     uiState.modal = 'sync-settings/gdrive';
   }
   render();
@@ -713,7 +748,7 @@ function showGDriveLoginFailedModal(errorMessage) {
 
 function onGDriveLogoutBtnClick() {
   googleDrivePlugin.signOut();
-  closeModal();
+  uiState.modal = 'sync-settings/main-menu';
 }
 
 async function onBgColorSettingClick() {
@@ -781,10 +816,16 @@ async function setupSync() {
   await getDB();
   for (let syncProfile of IDBSideSync.getSyncProfiles()) {
     if (syncProfile.pluginId === IDBSideSync.plugins.googledrive.GoogleDrivePlugin.PLUGIN_ID) {
-      await loadGoogleDrivePlugin();
-      uiState.gdrive.currentUser = syncProfile.userProfile;
-      uiState.gdrive.settings = syncProfile.settings;
-      uiState.sync.enabled = true;
+      try {
+        console.log('Attempting to load the google drive plugin...');
+        await loadGoogleDrivePlugin();
+        uiState.gdrive.currentUser = syncProfile.userProfile;
+        uiState.gdrive.settings = syncProfile.settings;
+        uiState.sync.enabled = true;
+      } catch (error) {
+        console.error('Failed to load Google Drive plugin:', error);
+        alert('Unable to load the Google Drive Plugin! See the JavaScript console for more info.');
+      }
     }
   }
   render();
