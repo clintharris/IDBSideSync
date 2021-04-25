@@ -7,10 +7,11 @@ const TODO_TYPES_BY_DELETED_INDEX = 'todo_types-index_by_deleted';
 const TODO_ITEMS = 'todo_items';
 const TODO_ITEMS_BY_DELETED_INDEX = 'todo_items-index_by_deleted';
 const DELETED_PROP = 'deleted';
+const DB_NAME = 'todo-app';
 let db;
 
-if(!indexedDB) {
-  alert(`💔 Your browser doesn't seem to support IndexedDB! This app can't work without it.`)
+if (!indexedDB) {
+  alert(`💔 Your browser doesn't seem to support IndexedDB! This app can't work without it.`);
 }
 
 /**
@@ -22,7 +23,7 @@ if(!indexedDB) {
 function getDB() {
   if (!db) {
     db = new Promise((resolve, reject) => {
-      const openreq = indexedDB.open('todo-app', 1);
+      const openreq = indexedDB.open(DB_NAME, 1);
 
       openreq.onerror = () => {
         let errorMsg = `🦖 Whoopsie, the app can't run if it can't open an IndexedDB database!`;
@@ -90,6 +91,33 @@ function getDB() {
     });
   }
   return db;
+}
+
+function deleteDb() {
+  return new Promise((resolve, reject) => {
+    getDB().then((db) => {
+      console.log('db:', db);
+      console.log('Attempting to close database...');
+      db.close();
+      console.log('Attempting to delete database...');
+      const deleteReq = indexedDB.deleteDatabase(DB_NAME);
+      deleteReq.onblocked = () => {
+        console.log('Blocked');
+      };
+      deleteReq.onerror = (event) => {
+        console.error('Failed to delete database');
+        reject(event);
+      };
+      deleteReq.onsuccess = () => {
+        console.log('onsuccess deleted database');
+        resolve();
+      };
+      deleteReq.oncomplete = () => {
+        console.log('oncomplete deleted database');
+        resolve();
+      };
+    });
+  });
 }
 
 /**
