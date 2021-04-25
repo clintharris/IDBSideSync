@@ -45,21 +45,21 @@ export function oplogEntryToFileName(params: {
 
 export class FileDownloadError extends Error {
   constructor(fileName: string, error: unknown) {
-    super(`${libName}: Error on attempt to download ${fileName}. ` + error);
+    super(`${libName}: Error on attempt to download ${fileName}. ` + JSON.stringify(error));
     Object.setPrototypeOf(this, FileDownloadError.prototype); // https://git.io/vHLlu
   }
 }
 
 export class FileListError extends Error {
   constructor(error: unknown) {
-    super(`${libName}: Error on attempt to list files: ` + error);
+    super(`${libName}: Error on attempt to list files: ` + JSON.stringify(error));
     Object.setPrototypeOf(this, FileListError.prototype); // https://git.io/vHLlu
   }
 }
 
 export class FileUploadError extends Error {
   constructor(error: unknown) {
-    super(`${libName}: Error on attempt to upload file: ` + error);
+    super(`${libName}: Error on attempt to upload file: ` + JSON.stringify(error));
     Object.setPrototypeOf(this, FileUploadError.prototype); // https://git.io/vHLlu
   }
 }
