@@ -315,6 +315,21 @@ async function render() {
     `);
   }
 
+  if (uiState.modal === 'error-modal') {
+    append(`
+      <div class="${classes.modalBackground}">
+        <div class="${classes.modalContainer}">
+          <h2 class="${classes.modalTitle}">🦖 Whoops!</h2>
+          <div class="text-sm">Looks like something went wrong...</div>
+          <div class="text-xs text-red-700 font-mono m-2 p-2">${uiState.errorMsg}</div>
+          <div class="flex flex-col">
+            <button onClick="closeModal()" class="${classes.buttonPrimary}">OK</button>
+          </div>
+        </div>
+      </div>
+    `);
+  }
+
   if (uiState.modal === 'reset-warning') {
     append(`
       <div class="${classes.modalBackground}">
@@ -347,7 +362,7 @@ async function render() {
             <button
               onClick="onGDriveSettingsBtnClick()"
               class="${classes.buttonPrimary} mt-6 mb-4">Google Drive</button>
-            <button onClick="closeModal()" class="${classes.buttonSecondary}">Cancel</button>
+            <button onClick="closeModal()" class="${classes.buttonSecondary}">Done</button>
           </div>
         </div>
       </div>
@@ -644,6 +659,7 @@ function defaultUiState() {
     activeProfileName: null,
     modal: null,
     waitModalMessage: null,
+    errorMsg: null,
     gdrive: {
       email: null,
       loginError: null,
@@ -824,7 +840,19 @@ async function setupSync() {
         uiState.sync.enabled = true;
       } catch (error) {
         console.error('Failed to load Google Drive plugin:', error);
-        alert('Unable to load the Google Drive Plugin! See the JavaScript console for more info.');
+        let errorMsg = `Unable to load the Google Drive plugin.`;
+        if (typeof error.details === 'string' && error.details.includes('sessionStorage is not available')) {
+          if (navigator.userAgent.includes('Firefox')) {
+            errorMsg += ` Have you tried disabling Enhanced Tracking Protection for this site? If it's turned on,`;
+            errorMsg += ` browser session storage is disabled--which breaks the Google Drive JavaScript client.`;
+          } else {
+            errorMsg += ' You might need to disable privacy blocking for this site.';
+          }
+        } else if (error.message) {
+          errorMsg += ' ' + error.message;
+        }
+        uiState.modal = 'error-modal';
+        uiState.errorMsg = errorMsg;
       }
     }
   }

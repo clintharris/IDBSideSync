@@ -165,8 +165,24 @@ export class GoogleDrivePlugin implements SyncPlugin {
     return gapi.auth2.getAuthInstance().isSignedIn.get();
   }
 
-  public signIn(): void {
-    gapi.auth2.getAuthInstance().signIn({ fetch_basic_profile: false, ux_mode: 'popup' });
+  public signIn(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      gapi.auth2
+        .getAuthInstance()
+        .signIn({ fetch_basic_profile: false, ux_mode: 'popup' })
+        .then(() => {
+          debug && log.debug(`GAPI client sign-in completed successfully.`);
+          resolve();
+        })
+        .catch((error) => {
+          log.error(`GAPI client sign-in failed:`, error);
+          let errorMsg = `Google sign-in process failed.`;
+          if (error && error.error === 'popup_blocked_by_browser') {
+            errorMsg += ` Please try disabling pop-up blocking for this site.`;
+          }
+          reject(new Error(errorMsg));
+        });
+    });
   }
 
   public signOut(): void {

@@ -160,7 +160,7 @@ interface SyncPlugin {
   isLoaded(): boolean;
   load(): Promise<void>;
   isSignedIn(): boolean;
-  signIn(): void;
+  signIn(): Promise<void>;
   signOut(): void;
   addSignInChangeListener(handlerFcn: SignInChangeHandler): void;
   getSettings(): SyncProfileSettings;

@@ -81,7 +81,12 @@ export async function registerSyncPlugin(plugin: SyncPlugin) {
     throw new Error(`${libName}: argument does not properly implement the SyncPlugin interface`);
   }
 
-  await plugin.load();
+  try {
+    await plugin.load();
+  } catch (error) {
+    log.error(`Failed to load plugin '${plugin.getPluginId()}':`, error);
+    throw error;
+  }
 
   plugin.addSignInChangeListener((userProfile: UserProfile | null) => {
     onPluginSignInChange(plugin, userProfile);
@@ -96,7 +101,12 @@ export async function registerSyncPlugin(plugin: SyncPlugin) {
 
     if (!plugin.isSignedIn()) {
       debug && log.debug(`Asking '${plugin.getPluginId()}' plugin to sign-in to remote service...`);
-      plugin.signIn();
+      try {
+        await plugin.signIn();
+      } catch (error) {
+        log.error(`Plugin sign-in failed for '${plugin.getPluginId()}':`, error);
+        throw error;
+      }
     }
   }
 }
